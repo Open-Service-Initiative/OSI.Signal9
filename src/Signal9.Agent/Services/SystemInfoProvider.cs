@@ -2,15 +2,19 @@ using Microsoft.Extensions.Logging;
 using System.Management;
 using System.Net;
 using System.Net.NetworkInformation;
+using System.Buffers.Text;
+using System.Text;
+using Signal9.Shared.DTOs;
 
 namespace Signal9.Agent.Services;
 
 /// <summary>
-/// Service for collecting system information
+/// Service for collecting system information with .NET 9 performance optimizations
 /// </summary>
 public class SystemInfoProvider : ISystemInfoProvider
 {
     private readonly ILogger<SystemInfoProvider> _logger;
+    private readonly SemaphoreSlim _semaphore = new(1, 1);
 
     public SystemInfoProvider(ILogger<SystemInfoProvider> logger)
     {
@@ -19,6 +23,8 @@ public class SystemInfoProvider : ISystemInfoProvider
 
     public async Task<SystemInfoDto> GetSystemInfoAsync()
     {
+        // Use semaphore to prevent concurrent system info collection
+        await _semaphore.WaitAsync();
         try
         {
             var systemInfo = new SystemInfoDto
@@ -32,17 +38,11 @@ public class SystemInfoProvider : ISystemInfoProvider
                 Version = "1.0.0"
             };
 
-            // Get total memory
-            systemInfo.TotalMemoryMB = await GetTotalMemoryAsync();
-
-            // Get processor name
-            systemInfo.ProcessorName = await GetProcessorNameAsync();
-
-            // Get IP address
-            systemInfo.IpAddress = await GetIpAddressAsync();
-
-            // Get MAC address
-            systemInfo.MacAddress = await GetMacAddressAsync();
+            // Use ConfigureAwait(false) for better performance in library code
+            systemInfo.TotalMemoryMB = await GetTotalMemoryAsync().ConfigureAwait(false);
+            systemInfo.ProcessorName = await GetProcessorNameAsync().ConfigureAwait(false);
+            systemInfo.IpAddress = await GetIpAddressAsync().ConfigureAwait(false);
+            systemInfo.MacAddress = await GetMacAddressAsync().ConfigureAwait(false);
 
             return systemInfo;
         }
@@ -51,48 +51,70 @@ public class SystemInfoProvider : ISystemInfoProvider
             _logger.LogError(ex, "Error getting system information");
             return new SystemInfoDto();
         }
+        finally
+        {
+            _semaphore.Release();
+        }
     }
 
     private async Task<long> GetTotalMemoryAsync()
     {
+        if (!OperatingSystem.IsWindows())
+        {
+            return 0;
+        }
+
         try
         {
-            using var searcher = new ManagementObjectSearcher("SELECT TotalPhysicalMemory FROM Win32_ComputerSystem");
-            foreach (ManagementObject obj in searcher.Get())
+            return await Task.Run(() =>
             {
-                var totalMemory = Convert.ToInt64(obj["TotalPhysicalMemory"]);
-                return totalMemory / 1024 / 1024; // Convert to MB
-            }
+                using var searcher = new ManagementObjectSearcher("SELECT TotalPhysicalMemory FROM Win32_ComputerSystem");
+                foreach (ManagementObject obj in searcher.Get())
+                {
+                    var totalMemory = Convert.ToInt64(obj["TotalPhysicalMemory"]);
+                    return totalMemory / 1024 / 1024; // Convert to MB
+                }
+                return 0L;
+            }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting total memory");
+            return 0;
         }
-        return 0;
     }
 
     private async Task<string> GetProcessorNameAsync()
     {
+        if (!OperatingSystem.IsWindows())
+        {
+            return "Unknown";
+        }
+
         try
         {
-            using var searcher = new ManagementObjectSearcher("SELECT Name FROM Win32_Processor");
-            foreach (ManagementObject obj in searcher.Get())
+            return await Task.Run(() =>
             {
-                return obj["Name"]?.ToString() ?? "Unknown";
-            }
+                using var searcher = new ManagementObjectSearcher("SELECT Name FROM Win32_Processor");
+                foreach (ManagementObject obj in searcher.Get())
+                {
+                    return obj["Name"]?.ToString() ?? "Unknown";
+                }
+                return "Unknown";
+            }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting processor name");
+            return "Unknown";
         }
-        return "Unknown";
     }
 
     private async Task<string> GetIpAddressAsync()
     {
         try
         {
-            var host = await Dns.GetHostEntryAsync(Dns.GetHostName());
+            var host = await Dns.GetHostEntryAsync(Dns.GetHostName()).ConfigureAwait(false);
             var ipAddress = host.AddressList
                 .FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
             return ipAddress?.ToString() ?? "Unknown";
@@ -108,11 +130,14 @@ public class SystemInfoProvider : ISystemInfoProvider
     {
         try
         {
-            var networkInterface = NetworkInterface.GetAllNetworkInterfaces()
-                .FirstOrDefault(n => n.OperationalStatus == OperationalStatus.Up && 
-                                   n.NetworkInterfaceType != NetworkInterfaceType.Loopback);
-            
-            return networkInterface?.GetPhysicalAddress().ToString() ?? "Unknown";
+            return await Task.Run(() =>
+            {
+                var networkInterface = NetworkInterface.GetAllNetworkInterfaces()
+                    .FirstOrDefault(n => n.OperationalStatus == OperationalStatus.Up && 
+                                       n.NetworkInterfaceType != NetworkInterfaceType.Loopback);
+                
+                return networkInterface?.GetPhysicalAddress().ToString() ?? "Unknown";
+            }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -127,7 +152,7 @@ public class SystemInfoProvider : ISystemInfoProvider
         {
             var metrics = new PerformanceMetricsDto
             {
-                CpuUsagePercent = await GetCpuUsageAsync(),
+                CpuUsagePercent = await GetCpuUsageAsync().ConfigureAwait(false),
                 MemoryUsedMB = GetMemoryUsed(),
                 MemoryAvailableMB = GetMemoryAvailable(),
                 DiskUsagePercent = GetDiskUsage(),

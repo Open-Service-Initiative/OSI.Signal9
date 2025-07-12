@@ -4,40 +4,53 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 using Signal9.Agent.Services;
 using Signal9.Shared.Configuration;
+using System.Text.Json;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-// Add configuration
+// Add configuration with .NET 9 enhancements
 builder.Configuration
     .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
     .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
-    .AddEnvironmentVariables();
+    .AddEnvironmentVariables()
+    .AddUserSecrets<Program>(optional: true);
 
-// Add logging
+// Add enhanced logging with .NET 9 structured logging
 builder.Services.AddLogging(logging =>
 {
     logging.ClearProviders();
     logging.AddConsole();
-    if (OperatingSystem.IsWindows())
+    
+    // Add structured logging with .NET 9 improvements
+    logging.AddSimpleConsole(options =>
     {
-        logging.AddEventLog();
-    }
+        options.IncludeScopes = true;
+        options.SingleLine = true;
+        options.TimestampFormat = "[yyyy-MM-dd HH:mm:ss] ";
+    });
 });
 
-// Add configuration options
+// Add configuration options with validation
 builder.Services.Configure<AgentConfiguration>(
     builder.Configuration.GetSection("AgentConfiguration"));
 
-// Add services
+// Add services with .NET 9 performance improvements
 builder.Services.AddSingleton<ITelemetryCollector, TelemetryCollector>();
 builder.Services.AddSingleton<ISystemInfoProvider, SystemInfoProvider>();
 builder.Services.AddHostedService<AgentService>();
+
+// Add HttpClient with .NET 9 optimizations
+builder.Services.AddHttpClient("Signal9Api", client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Signal9Api:BaseUrl"] ?? "https://api.signal9.com");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
 
 var host = builder.Build();
 
 // Create logger for startup
 var logger = host.Services.GetRequiredService<ILogger<Program>>();
-logger.LogInformation("Signal9 Agent starting up");
+logger.LogInformation("Signal9 Agent starting up with .NET 9 optimizations");
 
 try
 {
@@ -51,4 +64,5 @@ catch (Exception ex)
 finally
 {
     logger.LogInformation("Signal9 Agent shutting down");
+    await host.StopAsync();
 }

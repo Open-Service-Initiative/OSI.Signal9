@@ -7,10 +7,14 @@ using Signal9.Shared.DTOs;
 using Signal9.Shared.Models;
 using System.Text.Json;
 using System.Text;
+using System.Threading.Channels;
 
-namespace Signal9.Agent.Services;    /// <summary>
-    /// Main agent service that handles communication with the Agent Functions and SignalR service
-    /// </summary>
+namespace Signal9.Agent.Services;
+
+/// <summary>
+/// Main agent service that handles communication with the Agent Functions and SignalR service
+/// Enhanced with .NET 9 performance optimizations
+/// </summary>
 public class AgentService : BackgroundService
 {
     private readonly ILogger<AgentService> _logger;
@@ -24,6 +28,11 @@ public class AgentService : BackgroundService
     private string _agentId;
     private int _reconnectAttempts = 0;
     private readonly JsonSerializerOptions _jsonOptions;
+    
+    // .NET 9 Channel-based command processing for better performance
+    private readonly Channel<AgentCommand> _commandChannel;
+    private readonly ChannelWriter<AgentCommand> _commandWriter;
+    private readonly ChannelReader<AgentCommand> _commandReader;
 
     public AgentService(
         ILogger<AgentService> logger,
@@ -38,42 +47,115 @@ public class AgentService : BackgroundService
         _agentId = Environment.MachineName + "_" + Guid.NewGuid().ToString("N")[..8];
         _httpClient = new HttpClient();
         _jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        
+        // Initialize high-performance command channel
+        var channelOptions = new BoundedChannelOptions(1000)
+        {
+            FullMode = BoundedChannelFullMode.Wait,
+            SingleReader = true,
+            SingleWriter = false
+        };
+        _commandChannel = Channel.CreateBounded<AgentCommand>(channelOptions);
+        _commandWriter = _commandChannel.Writer;
+        _commandReader = _commandChannel.Reader;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Agent service starting with ID: {AgentId}", _agentId);
 
+        // Start command processing task
+        var commandProcessingTask = ProcessCommandsAsync(stoppingToken);
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 // Register agent with Agent Functions
-                await RegisterWithAgentFunctions();
+                await RegisterWithAgentFunctions().ConfigureAwait(false);
                 
-                // Connect to SignalR for real-time communication
-                await ConnectToSignalR();
-
-                // Start periodic tasks
+                // Connect to SignalR hub
+                await ConnectToSignalRHub().ConfigureAwait(false);
+                
+                // Start heartbeat and telemetry timers
                 StartTimers();
-
-                // Keep the service running while connected
-                while (_signalRConnection?.State == HubConnectionState.Connected && !stoppingToken.IsCancellationRequested)
-                {
-                    await Task.Delay(1000, stoppingToken);
-                }
+                
+                // Wait for connection to close or cancellation
+                await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in agent service execution");
                 _reconnectAttempts++;
                 
-                // Exponential backoff for reconnection attempts
                 var delaySeconds = Math.Min(Math.Pow(2, _reconnectAttempts), 300); // Max 5 minutes
                 var delay = TimeSpan.FromSeconds(delaySeconds);
                 _logger.LogInformation("Reconnecting in {Delay} seconds (attempt {Attempt})", delay.TotalSeconds, _reconnectAttempts);
-                await Task.Delay(delay, stoppingToken);
+                await Task.Delay(delay, stoppingToken).ConfigureAwait(false);
             }
+        }
+
+        await commandProcessingTask.ConfigureAwait(false);
+    }
+
+    private async Task ProcessCommandsAsync(CancellationToken cancellationToken)
+    {
+        await foreach (var command in _commandReader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+        {
+            try
+            {
+                await ProcessCommandAsync(command).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing command {CommandType}", command.Type);
+            }
+        }
+    }
+
+    private async Task ProcessCommandAsync(AgentCommand command)
+    {
+        _logger.LogInformation("Processing command: {CommandType}", command.Type);
+        
+        switch (command.Type)
+        {
+            case "GetSystemInfo":
+                var systemInfo = await _systemInfoProvider.GetSystemInfoAsync().ConfigureAwait(false);
+                await SendCommandResponse(command.Id, systemInfo).ConfigureAwait(false);
+                break;
+                
+            case "GetPerformanceMetrics":
+                var metrics = await _systemInfoProvider.GetPerformanceMetricsAsync().ConfigureAwait(false);
+                await SendCommandResponse(command.Id, metrics).ConfigureAwait(false);
+                break;
+                
+            case "RestartAgent":
+                _logger.LogInformation("Restart command received");
+                Environment.Exit(0);
+                break;
+                
+            default:
+                _logger.LogWarning("Unknown command type: {CommandType}", command.Type);
+                break;
+        }
+    }
+
+    private async Task SendCommandResponse(string commandId, object response)
+    {
+        try
+        {
+            if (_signalRConnection?.State == HubConnectionState.Connected)
+            {
+                await _signalRConnection.SendAsync("CommandResponse", commandId, response).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error sending command response");
         }
     }
 
@@ -81,7 +163,7 @@ public class AgentService : BackgroundService
     {
         try
         {
-            var systemInfo = await _systemInfoProvider.GetSystemInfoAsync();
+            var systemInfo = await _systemInfoProvider.GetSystemInfoAsync().ConfigureAwait(false);
             var registrationData = new AgentRegistrationDto
             {
                 AgentId = _agentId,
@@ -98,9 +180,10 @@ public class AgentService : BackgroundService
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
             var registrationUrl = $"{_config.AgentFunctionsUrl}/api/RegisterAgent";
+            _httpClient.DefaultRequestHeaders.Clear();
             _httpClient.DefaultRequestHeaders.Add("x-functions-key", _config.FunctionKey);
 
-            var response = await _httpClient.PostAsync(registrationUrl, content);
+            var response = await _httpClient.PostAsync(registrationUrl, content).ConfigureAwait(false);
             if (response.IsSuccessStatusCode)
             {
                 _logger.LogInformation("Agent {AgentId} registered successfully with Agent Functions", _agentId);
@@ -120,21 +203,27 @@ public class AgentService : BackgroundService
         }
     }
 
-    private async Task ConnectToSignalR()
+    private async Task ConnectToSignalRHub()
     {
         try
-        {        _signalRConnection = new HubConnectionBuilder()
-            .WithUrl($"{_config.AgentFunctionsUrl}/api")
-            .WithAutomaticReconnect()
-            .Build();
+        {
+            _signalRConnection = new HubConnectionBuilder()
+                .WithUrl($"{_config.AgentFunctionsUrl}/api")
+                .WithAutomaticReconnect()
+                .Build();
 
-            // Set up event handlers
-            _signalRConnection.On<AgentCommand>("ExecuteCommand", ExecuteCommandAsync);
-            _signalRConnection.On<object>("UpdateConfiguration", UpdateConfigurationAsync);
-            _signalRConnection.On<string[]>("CollectTelemetry", CollectTelemetryAsync);
-            _signalRConnection.On("RestartAgent", RestartAgentAsync);
-            _signalRConnection.On("ShutdownAgent", ShutdownAgentAsync);
-            _signalRConnection.On<string>("ConnectionStatusChanged", OnConnectionStatusChanged);
+            // Set up event handlers for commands
+            _signalRConnection.On<AgentCommand>("ExecuteCommand", async (command) =>
+            {
+                if (_commandWriter.TryWrite(command))
+                {
+                    _logger.LogInformation("Command {CommandType} queued for execution", command.Type);
+                }
+                else
+                {
+                    _logger.LogWarning("Command queue full, dropping command {CommandType}", command.Type);
+                }
+            });
 
             _signalRConnection.Reconnecting += (exception) =>
             {
@@ -155,7 +244,7 @@ public class AgentService : BackgroundService
                 return Task.CompletedTask;
             };
 
-            await _signalRConnection.StartAsync();
+            await _signalRConnection.StartAsync().ConfigureAwait(false);
             _logger.LogInformation("Connected to SignalR service");
         }
         catch (Exception ex)
@@ -168,11 +257,11 @@ public class AgentService : BackgroundService
     private void StartTimers()
     {
         // Start heartbeat timer
-        _heartbeatTimer = new Timer(async _ => await SendHeartbeatAsync(), 
+        _heartbeatTimer = new Timer(async _ => await SendHeartbeatAsync().ConfigureAwait(false), 
             null, TimeSpan.Zero, TimeSpan.FromSeconds(30));
 
         // Start telemetry timer
-        _telemetryTimer = new Timer(async _ => await SendTelemetryAsync(), 
+        _telemetryTimer = new Timer(async _ => await SendTelemetryAsync().ConfigureAwait(false), 
             null, TimeSpan.FromSeconds(10), TimeSpan.FromMinutes(1));
     }
 
@@ -188,7 +277,7 @@ public class AgentService : BackgroundService
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
 
                 var heartbeatUrl = $"{_config.AgentFunctionsUrl}/api/agents/{_agentId}/heartbeat";
-                await _httpClient.PostAsync(heartbeatUrl, content);
+                await _httpClient.PostAsync(heartbeatUrl, content).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -201,7 +290,7 @@ public class AgentService : BackgroundService
     {
         try
         {
-            var telemetryData = await _telemetryCollector.CollectTelemetryAsync();
+            var telemetryData = await _telemetryCollector.CollectTelemetryAsync().ConfigureAwait(false);
             telemetryData.AgentId = _agentId;
             telemetryData.TenantCode = _config.TenantCode ?? string.Empty;
 
@@ -209,7 +298,7 @@ public class AgentService : BackgroundService
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
             var telemetryUrl = $"{_config.AgentFunctionsUrl}/api/ReceiveTelemetry";
-            var response = await _httpClient.PostAsync(telemetryUrl, content);
+            var response = await _httpClient.PostAsync(telemetryUrl, content).ConfigureAwait(false);
 
             if (response.IsSuccessStatusCode)
             {
@@ -227,83 +316,6 @@ public class AgentService : BackgroundService
         }
     }
 
-    private async Task ExecuteCommandAsync(AgentCommand command)
-    {
-        _logger.LogInformation("Executing command {CommandType} for agent {AgentId}", command.CommandType, _agentId);
-
-        try
-        {
-            // TODO: Implement command execution logic
-            object result;
-            switch (command.CommandType)
-            {
-                case "GetSystemInfo":
-                    result = await _systemInfoProvider.GetSystemInfoAsync();
-                    break;
-                case "RestartService":
-                    {
-                        // For now, use a hardcoded service name until Parameters issue is resolved
-                        var serviceName = "default-service";
-                        await Task.Delay(100); // Placeholder for service restart logic
-                        result = new { Success = true, Message = $"Service {serviceName} restart initiated" };
-                    }
-                    break;
-                case "RunScript":
-                    {
-                        // For now, use a hardcoded script until Parameters issue is resolved
-                        await Task.Delay(100); // Placeholder for script execution logic
-                        result = new { Success = true, Output = "Script executed successfully" };
-                    }
-                    break;
-                default:
-                    result = new { Error = $"Unknown command type: {command.CommandType}" };
-                    break;
-            }
-
-            _logger.LogInformation("Command {CommandType} executed successfully", command.CommandType);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error executing command {CommandType}", command.CommandType);
-        }
-    }
-
-    // Method definitions removed due to compilation conflicts
-    
-    private async Task UpdateConfigurationAsync(object configuration)
-    {
-        _logger.LogInformation("Updating configuration for agent {AgentId}", _agentId);
-        // TODO: Implement configuration update logic
-        await Task.CompletedTask;
-    }
-
-    private async Task CollectTelemetryAsync(string[] metrics)
-    {
-        _logger.LogInformation("Collecting specific telemetry metrics for agent {AgentId}: {Metrics}", 
-            _agentId, string.Join(", ", metrics));
-        await SendTelemetryAsync();
-    }
-
-    private async Task RestartAgentAsync()
-    {
-        _logger.LogInformation("Restart requested for agent {AgentId}", _agentId);
-        // TODO: Implement agent restart logic
-        await Task.CompletedTask;
-    }
-
-    private async Task ShutdownAgentAsync()
-    {
-        _logger.LogInformation("Shutdown requested for agent {AgentId}", _agentId);
-        // TODO: Implement agent shutdown logic
-        await Task.CompletedTask;
-    }
-
-    private async Task OnConnectionStatusChanged(string status)
-    {
-        _logger.LogInformation("Connection status changed to {Status} for agent {AgentId}", status, _agentId);
-        await Task.CompletedTask;
-    }
-
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Agent service stopping for agent {AgentId}", _agentId);
@@ -317,6 +329,7 @@ public class AgentService : BackgroundService
         }
 
         _httpClient?.Dispose();
+        _commandWriter.Complete();
 
         await base.StopAsync(cancellationToken);
     }
