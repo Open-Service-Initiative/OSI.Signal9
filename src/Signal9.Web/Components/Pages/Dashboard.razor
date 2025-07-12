@@ -1,0 +1,203 @@
+@page "/"
+@using Signal9.Web.Services
+@*@inject IDashboardService DashboardService*@
+
+<PageTitle>Dashboard - Signal9 RMM</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h1>Dashboard</h1>
+            <p class="text-muted">Welcome to Signal9 Remote Monitoring and Management</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-3 mb-4">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h5 class="card-title">Total Devices</h5>
+                            <h2 class="card-text">@deviceCount</h2>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-pc-display fs-1"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-4">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h5 class="card-title">Online Devices</h5>
+                            <h2 class="card-text">@onlineCount</h2>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-check-circle fs-1"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-4">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h5 class="card-title">Alerts</h5>
+                            <h2 class="card-text">@alertCount</h2>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-exclamation-triangle fs-1"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-4">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h5 class="card-title">Tenants</h5>
+                            <h2 class="card-text">@tenantCount</h2>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-building fs-1"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Recent Devices</h5>
+                </div>
+                <div class="card-body">
+                    @if (isLoading)
+                    {
+                        <div class="text-center">
+                            <div class="spinner-border" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    }
+                    else if (recentDevices?.Any() == true)
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Device Name</th>
+                                        <th>Status</th>
+                                        <th>Last Seen</th>
+                                        <th>Tenant</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var device in recentDevices.Take(5))
+                                    {
+                                        <tr>
+                                            <td>@device.Name</td>
+                                            <td>
+                                                <span class="badge @(device.IsOnline ? "bg-success" : "bg-danger")">
+                                                    @(device.IsOnline ? "Online" : "Offline")
+                                                </span>
+                                            </td>
+                                            <td>@device.LastSeen?.ToString("MM/dd/yyyy HH:mm")</td>
+                                            <td>@device.TenantId</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="text-muted">No devices found.</p>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5>System Status</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between">
+                            <span>Hub Service</span>
+                            <span class="badge bg-success">Running</span>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between">
+                            <span>Database</span>
+                            <span class="badge bg-success">Connected</span>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between">
+                            <span>Functions</span>
+                            <span class="badge bg-success">Running</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool isLoading = true;
+    private int deviceCount = 0;
+    private int onlineCount = 0;
+    private int alertCount = 0;
+    private int tenantCount = 0;
+    private List<AgentDto>? recentDevices;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // TODO: Load dashboard data
+            //var devices = await DashboardService.GetDevicesAsync();
+            //var tenants = await DashboardService.GetTenantsAsync();
+
+            //recentDevices = devices?.ToList();
+            //deviceCount = recentDevices?.Count ?? 0;
+            //onlineCount = recentDevices?.Count(d => d.IsOnline) ?? 0;
+            //alertCount = 3; // Placeholder for alerts
+            //tenantCount = tenants?.Count() ?? 0;
+            
+            // Placeholder data for now
+            deviceCount = 5;
+            onlineCount = 3;
+            alertCount = 2;
+            tenantCount = 2;
+            recentDevices = new List<AgentDto>();
+        }
+        catch (Exception ex)
+        {
+            // Log error and show empty state
+            Console.WriteLine($"Error loading dashboard: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}

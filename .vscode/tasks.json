@@ -221,6 +221,76 @@
 			"group": "build",
 			"problemMatcher": [],
 			"isBackground": false
+		},
+		{
+			"label": "build: Signal9.Web.Functions",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"--configuration",
+				"Debug"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}/src/Signal9.Web.Functions"
+			},
+			"group": "build",
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "build: Signal9.Agent.Functions",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"--configuration",
+				"Debug"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}/src/Signal9.Agent.Functions"
+			},
+			"group": "build",
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "build: Signal9.Agent",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"--configuration",
+				"Debug"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}/src/Signal9.Agent"
+			},
+			"group": "build",
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Start Signal9 Platform",
+			"dependsOrder": "sequence",
+			"dependsOn": [
+				"build-debug",
+				"run-web-functions",
+				"run-rmm-functions",
+				"run-webportal"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": [],
+			"isBackground": true
 		}
 	]
 }

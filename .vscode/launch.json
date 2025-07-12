@@ -1,0 +1,100 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch Signal9 Web",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-debug",
+            "program": "${workspaceFolder}/src/Signal9.Web/bin/Debug/net9.0/Signal9.Web.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/src/Signal9.Web",
+            "stopAtEntry": false,
+            "serverReadyAction": {
+                "action": "openExternally",
+                "pattern": "\\bNow listening on:\\s+(https?://\\S+)"
+            },
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_URLS": "https://localhost:7001;http://localhost:5001",
+                "FunctionsBaseUrl": "http://localhost:7072/api"
+            },
+            "sourceFileMap": {
+                "/Views": "${workspaceFolder}/Views"
+            }
+        },
+        {
+            "name": "Launch Web Functions",
+            "type": "node",
+            "request": "launch",
+            "program": "${env:ProgramFiles}/Microsoft/Azure Functions Core Tools/func.exe",
+            "args": ["start", "--port", "7072"],
+            "cwd": "${workspaceFolder}/src/Signal9.Web.Functions",
+            "env": {
+                "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+                "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated"
+            },
+            "console": "integratedTerminal",
+            "preLaunchTask": "build: Signal9.Web.Functions"
+        },
+        {
+            "name": "Launch Agent Functions", 
+            "type": "node",
+            "request": "launch",
+            "program": "${env:ProgramFiles}/Microsoft/Azure Functions Core Tools/func.exe",
+            "args": ["start", "--port", "7071"],
+            "cwd": "${workspaceFolder}/src/Signal9.Agent.Functions",
+            "env": {
+                "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+                "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated"
+            },
+            "console": "integratedTerminal",
+            "preLaunchTask": "build: Signal9.Agent.Functions"
+        },
+        {
+            "name": "Launch Agent (Separate)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build: Signal9.Agent",
+            "program": "${workspaceFolder}/src/Signal9.Agent/bin/Debug/net9.0/Signal9.Agent.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/src/Signal9.Agent",
+            "stopAtEntry": false,
+            "env": {
+                "DOTNET_ENVIRONMENT": "Development",
+                "HubUrl": "http://localhost:7071/api/hubs/agent"
+            }
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Launch Signal9 Platform",
+            "configurations": [
+                "Launch Signal9 Web",
+                "Launch Web Functions", 
+                "Launch Agent Functions"
+            ],
+            "stopAll": true,
+            "presentation": {
+                "hidden": false,
+                "group": "Signal9",
+                "order": 1
+            }
+        },
+        {
+            "name": "Launch Full Signal9 (with Agent)",
+            "configurations": [
+                "Launch Signal9 Web",
+                "Launch Web Functions",
+                "Launch Agent Functions",
+                "Launch Agent (Separate)"
+            ],
+            "stopAll": true,
+            "presentation": {
+                "hidden": false,
+                "group": "Signal9",
+                "order": 2
+            }
+        }
+    ]
+}

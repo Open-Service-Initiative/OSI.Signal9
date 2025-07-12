@@ -1,103 +1,160 @@
-# Signal9 RMM Agent System
+# Signal9 - Remote Monitoring and Management Platform
 
-A comprehensive Remote Monitoring and Management (RMM) system built on .NET 9 with SignalR for real-time communication between agents and the central hub.
+A modern RMM (Remote Monitoring and Management) platform built with .NET 9, Blazor Server, and Azure Functions.
 
-## Architecture Overview
+## Architecture
 
-Signal9 is designed as a modern, cloud-native RMM solution with the following components:
-
-### Core Components
-
-- **Signal9.Agent** - Console application that runs on client machines to collect telemetry and execute commands
-- **Signal9.Hub** - SignalR hub service for real-time communication with agents
-- **Signal9.WebPortal** - Web-based management interface for monitoring and controlling agents
-- **Signal9.Functions** - Azure Functions for backend data processing and API operations
-- **Signal9.Shared** - Common models, interfaces, and utilities shared across components
-
-### Azure Services
-
-- **Azure Container Apps** - Hosting for Hub and Web Portal
-- **Azure Functions** - Serverless backend processing
-- **Azure SignalR Service** - Managed SignalR for scalable real-time communication
-- **Azure SQL Database** - Relational data (agents, users, configurations)
-- **Azure Cosmos DB** - Non-relational data (telemetry, logs, events)
-- **Azure Service Bus** - Message queuing for commands and events
-- **Azure Key Vault** - Secrets and configuration management
-- **Azure Application Insights** - Monitoring and diagnostics
-- **Azure Container Registry** - Container image storage
-
-## Features
-
-### Agent Capabilities
-- Real-time system monitoring (CPU, memory, disk, network)
-- Remote command execution
-- Event log collection
-- System information reporting
-- Automatic reconnection with exponential backoff
-- Configurable telemetry collection intervals
-
-### Hub & Management
-- Real-time agent status monitoring
-- Command dispatching to agents
-- Telemetry data aggregation
-- Multi-tenant support
-- Role-based access control
-- Scalable architecture with Azure SignalR
-
-### Security
-- Managed Identity authentication
-- Encrypted communication
-- Secure secret storage in Key Vault
-- Network-level security with Virtual Networks
+- **Signal9.Agent**: Windows service that runs on client machines to collect telemetry and execute commands
+- **Signal9.Agent.Functions**: Azure Functions app for agent communication and management  
+- **Signal9.Web**: Blazor Server web portal for system management and monitoring
+- **Signal9.Web.Functions**: Azure Functions app providing CRUD APIs for the web portal
+- **Signal9.Shared**: Common models, DTOs, and interfaces shared across all projects
 
 ## Getting Started
 
 ### Prerequisites
-
 - .NET 9 SDK
-- Azure CLI
-- Azure Developer CLI (azd)
-- Docker (for containerization)
-- Visual Studio 2022 or VS Code
+- Azure Functions Core Tools v4
+- Azure Storage Emulator or Azure Storage Account
 
-### Local Development
+### Running the Platform
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd Signal9
-   ```
+#### Option 1: PowerShell Script (Recommended)
+```powershell
+# Starts all platform services with coordinated startup
+.\start-platform.ps1
+```
 
-2. **Restore dependencies**
-   ```bash
-   dotnet restore
-   ```
+#### Option 2: VS Code Compound Launch
+Use the "Launch Signal9 Platform" configuration which starts:
+- Signal9.Web (Blazor Server) on https://localhost:7001
+- Signal9.Web.Functions (CRUD API) on http://localhost:7072  
+- Signal9.Agent.Functions (Agent API) on http://localhost:7071
 
-3. **Build the solution**
-   ```bash
-   dotnet build
-   ```
+#### Option 3: Visual Studio Multiple Startup Projects
+The solution is configured for multiple startup projects. In Visual Studio:
+1. Right-click the solution → "Configure Startup Projects"
+2. Select "Multiple startup projects" 
+3. Set Signal9.Web, Signal9.Web.Functions, and Signal9.Agent.Functions to "Start"
 
-4. **Run the Hub locally**
-   ```bash
-   cd src/Signal9.Hub
-   dotnet run
-   ```
+#### Option 4: Individual Services
+```bash
+# Web Functions (port 7072)
+cd src/Signal9.Web.Functions
+func start --port 7072
 
-5. **Run the Agent locally**
-   ```bash
-   cd src/Signal9.Agent
-   dotnet run
-   ```
+# Agent Functions (port 7071)  
+cd src/Signal9.Agent.Functions
+func start --port 7071
 
-### Azure Deployment
+# Web Portal (port 7001)
+cd src/Signal9.Web
+dotnet run
+```
 
-1. **Initialize Azure Developer CLI**
-   ```bash
-   azd init
-   ```
+### Agent Deployment (Separate)
+The Signal9.Agent is designed to be deployed separately on client machines:
+```bash
+dotnet run --project src/Signal9.Agent
+```
 
-2. **Deploy to Azure**
+## Platform Services
+
+### Web Portal (https://localhost:7001)
+- Blazor Server application with Bootstrap 5 UI
+- Real-time dashboard with SignalR integration
+- Tenant and device management interface
+
+### Web Functions API (http://localhost:7072/api)
+- **GET /tenants** - List all tenants
+- **POST /tenants** - Create new tenant
+- **PUT /tenants/{id}** - Update tenant
+- **DELETE /tenants/{id}** - Delete tenant
+- **GET /agents** - List all agents/devices
+- **POST /agents** - Register new agent
+- **PUT /agents/{id}** - Update agent
+- **DELETE /agents/{id}** - Delete agent
+
+### Agent Functions API (http://localhost:7071/api)
+- Agent communication endpoints
+- Command execution API
+- Telemetry collection endpoints
+
+## Development
+
+### Building
+```bash
+# Build entire solution
+dotnet build --configuration Release
+
+# Or use VS Code task
+Ctrl+Shift+P → "Tasks: Run Task" → "build-solution"
+```
+
+### Testing
+```bash
+dotnet test --configuration Release --logger trx --collect:"XPlat Code Coverage"
+```
+
+### Debugging
+- Use compound launch "Launch Signal9 Platform" for full debugging
+- Individual service debugging available for each project
+- Agent runs separately for real-world testing scenarios
+
+## Docker Support
+
+```bash
+# Build web portal container
+docker build -f src/Signal9.Web/Dockerfile -t signal9-web .
+
+# Or use VS Code task
+Ctrl+Shift+P → "Tasks: Run Task" → "docker-build-webportal"
+```
+
+## Azure Deployment
+
+### Full Platform Deployment
+```bash
+azd up
+```
+
+### Infrastructure Only
+```bash
+azd provision
+```
+
+### Code Deployment Only
+```bash
+azd deploy
+```
+
+The platform includes full Bicep infrastructure templates for production Azure deployment with:
+- Azure Container Apps for web services
+- Azure Functions for serverless APIs
+- Azure Storage for telemetry data
+- Application Insights for monitoring
+
+## Platform Architecture
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Blazor Web    │    │  Web Functions   │    │ Agent Functions │
+│   Port: 7001    │◄──►│   Port: 7072     │    │   Port: 7071    │
+│                 │    │                  │    │                 │
+│ - Dashboard     │    │ - Tenant CRUD    │    │ - Agent Comms   │
+│ - Real-time UI  │    │ - Device CRUD    │    │ - Commands      │
+│ - SignalR       │    │ - Bootstrap API  │    │ - Telemetry     │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+                                                        ▲
+                                                        │
+                                              ┌─────────────────┐
+                                              │  Remote Agents  │
+                                              │                 │
+                                              │ - System Info   │
+                                              │ - Monitoring    │
+                                              │ - Commands      │
+                                              └─────────────────┘
+```
    ```bash
    azd up
    ```

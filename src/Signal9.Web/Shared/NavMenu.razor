@@ -1,0 +1,99 @@
+<div class="nav-scrollable">
+    <nav class="flex-column">
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="oi oi-home" aria-hidden="true"></span> Dashboard
+            </NavLink>
+        </div>
+        
+        <div class="nav-item px-3">
+            <h6 class="sidebar-heading text-light mt-4 mb-1">Devices</h6>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/devices">
+                <span class="oi oi-monitor" aria-hidden="true"></span> All Devices
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/devices/add">
+                <span class="oi oi-plus" aria-hidden="true"></span> Add Device
+            </NavLink>
+        </div>
+        
+        <div class="nav-item px-3">
+            <h6 class="sidebar-heading text-light mt-4 mb-1">Tenants</h6>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/tenants">
+                <span class="oi oi-people" aria-hidden="true"></span> All Tenants
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/tenants/add">
+                <span class="oi oi-person" aria-hidden="true"></span> Add Tenant
+            </NavLink>
+        </div>
+        
+        <div class="nav-item px-3">
+            <h6 class="sidebar-heading text-light mt-4 mb-1">Monitoring</h6>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/alerts">
+                <span class="oi oi-warning" aria-hidden="true"></span> Alerts
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="/reports">
+                <span class="oi oi-bar-chart" aria-hidden="true"></span> Reports
+            </NavLink>
+        </div>
+    </nav>
+</div>
+
+<style>
+    .nav-scrollable {
+        display: block;
+        width: 100%;
+        overflow-y: auto;
+        flex-basis: auto;
+    }
+
+    .nav-link {
+        color: rgba(255,255,255,.8);
+        border-radius: 0.25rem;
+        height: 3rem;
+        display: flex;
+        align-items: center;
+        line-height: 3rem;
+        text-decoration: none;
+        padding: 0 0.75rem;
+        margin: 0.25rem 0;
+    }
+
+    .nav-link:hover {
+        background-color: rgba(255,255,255,.1);
+        color: white;
+        text-decoration: none;
+    }
+
+    .nav-link.active {
+        background-color: rgba(255,255,255,.25);
+        color: white;
+    }
+
+    .nav-link .oi {
+        width: 2rem;
+        font-size: 1.1rem;
+        vertical-align: text-top;
+        top: -2px;
+        margin-right: 0.5rem;
+    }
+
+    .sidebar-heading {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #adb5bd;
+        padding: 0 0.75rem;
+    }
+</style>

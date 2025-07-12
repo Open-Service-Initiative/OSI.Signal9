@@ -1,0 +1,24 @@
+{
+  "profiles": {
+    "Signal9 Platform": {
+      "commandName": "Executable",
+      "executablePath": "powershell.exe",
+      "commandLineArgs": "-Command \"& { Write-Host 'Starting Signal9 Platform...' -ForegroundColor Green; Start-Process 'dotnet' -ArgumentList 'run --project src/Signal9.Web' -NoNewWindow; Start-Sleep 2; Set-Location 'src/Signal9.Web.Functions'; Start-Process 'func' -ArgumentList 'start --port 7072' -NoNewWindow; Start-Sleep 2; Set-Location '../Signal9.Agent.Functions'; Start-Process 'func' -ArgumentList 'start --port 7071' -NoNewWindow; Write-Host 'All services starting...' -ForegroundColor Green; }\"",
+      "workingDirectory": ".",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "DOTNET_ENVIRONMENT": "Development"
+      }
+    },
+    "Signal9 Web Only": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "applicationUrl": "https://localhost:7001;http://localhost:5001",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "FunctionsBaseUrl": "http://localhost:7072/api"
+      }
+    }
+  }
+}

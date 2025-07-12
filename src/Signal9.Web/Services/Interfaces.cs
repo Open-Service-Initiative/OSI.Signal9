@@ -1,5 +1,5 @@
 using Signal9.Shared.Models;
-using Signal9.Web.Models;
+using Signal9.Shared.DTOs;
 
 namespace Signal9.Web.Services;
 
@@ -8,34 +8,14 @@ namespace Signal9.Web.Services;
 /// </summary>
 public interface IDashboardService
 {
-    Task<DashboardViewModel> GetDashboardDataAsync(Guid? tenantId = null, bool useExampleData = true);
-    Task<List<TenantNodeViewModel>> GetTenantHierarchyAsync();
-    Task<List<AgentSummaryViewModel>> GetAgentsAsync(Guid? tenantId = null);
-    Task<DashboardStatsViewModel> GetDashboardStatsAsync(Guid? tenantId = null);
-    Task<List<RecentActivityViewModel>> GetRecentActivitiesAsync(Guid? tenantId = null, int count = 10);
-}
-
-/// <summary>
-/// Service interface for tenant operations
-/// </summary>
-public interface ITenantService
-{
-    Task<List<Tenant>> GetTenantsAsync();
-    Task<List<Tenant>> GetTenantHierarchyAsync(Guid? parentId = null);
-    Task<Tenant?> GetTenantAsync(Guid tenantId);
-    Task<Tenant> CreateTenantAsync(Tenant tenant);
-    Task<Tenant> UpdateTenantAsync(Tenant tenant);
+    Task<IEnumerable<TenantDto>> GetTenantsAsync();
+    Task<IEnumerable<AgentDto>> GetDevicesAsync();
+    Task<TenantDto?> GetTenantAsync(Guid tenantId);
+    Task<AgentDto?> GetDeviceAsync(string agentId);
+    Task<TenantDto> CreateTenantAsync(CreateTenantRequest request);
+    Task<TenantDto> UpdateTenantAsync(Guid tenantId, UpdateTenantRequest request);
     Task DeleteTenantAsync(Guid tenantId);
-}
-
-/// <summary>
-/// Service interface for agent operations
-/// </summary>
-public interface IAgentService
-{
-    Task<List<Agent>> GetAgentsAsync(Guid? tenantId = null);
-    Task<Agent?> GetAgentAsync(string agentId);
-    Task<Agent> UpdateAgentAsync(Agent agent);
-    Task DeleteAgentAsync(string agentId);
-    Task<bool> SendCommandAsync(string agentId, AgentCommand command);
+    Task<AgentDto> CreateDeviceAsync(CreateAgentRequest request);
+    Task<AgentDto> UpdateDeviceAsync(string agentId, UpdateAgentRequest request);
+    Task DeleteDeviceAsync(string agentId);
 }
