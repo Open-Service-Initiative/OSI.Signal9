@@ -1,0 +1,52 @@
+@inherits LayoutComponentBase
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            <div class="top-row-left">
+                <div class="navbar-brand">
+                    <i class="bi bi-lightning-charge-fill text-primary"></i>
+                    Signal9 RMM Portal
+                </div>
+                <div class="breadcrumb-nav">
+                    <!-- Breadcrumb will be added later -->
+                </div>
+            </div>
+            <div class="top-row-right">
+                <div class="status-indicators">
+                    <span class="badge bg-success me-2">
+                        <i class="bi bi-wifi"></i> Online
+                    </span>
+                    <span class="badge bg-info me-2">
+                        <i class="bi bi-hdd-stack"></i> 127 Devices
+                    </span>
+                    <span class="badge bg-warning">
+                        <i class="bi bi-exclamation-triangle"></i> 2 Alerts
+                    </span>
+                </div>
+                <div class="user-menu">
+                    <div class="dropdown">
+                        <button class="btn btn-link dropdown-toggle text-decoration-none" type="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-person-circle fs-5"></i>
+                            <span class="ms-1">Admin</span>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item" href="#"><i class="bi bi-person me-2"></i>Profile</a></li>
+                            <li><a class="dropdown-item" href="#"><i class="bi bi-gear me-2"></i>Settings</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="#"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>

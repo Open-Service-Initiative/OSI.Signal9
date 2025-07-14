@@ -1,0 +1,510 @@
+@page "/reports"
+@using Signal9.Web.Services
+@using Signal9.Shared.DTOs.Common
+@using Microsoft.AspNetCore.Components.Web
+@inject IDashboardService DashboardService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Reports - Signal9 RMM</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1>Reports & Analytics</h1>
+                    <p class="text-muted">Generate and view comprehensive system reports</p>
+                </div>
+                <div>
+                    <button class="btn btn-primary" @onclick="GenerateReport">
+                        <i class="bi bi-file-earmark-text"></i> Generate Report
+                    </button>
+                    <button class="btn btn-outline-secondary ms-2" @onclick="RefreshData">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Report Categories -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card h-100 @(selectedCategory == "performance" ? "border-primary" : "")" style="cursor: pointer;" @onclick='() => SelectCategory("performance")'>
+                <div class="card-body text-center">
+                    <i class="bi bi-speedometer2 display-4 text-primary"></i>
+                    <h5 class="mt-2">Performance</h5>
+                    <p class="text-muted small">CPU, Memory, Disk Usage</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100 @(selectedCategory == "security" ? "border-primary" : "")" style="cursor: pointer;" @onclick='() => SelectCategory("security")'>
+                <div class="card-body text-center">
+                    <i class="bi bi-shield-check display-4 text-success"></i>
+                    <h5 class="mt-2">Security</h5>
+                    <p class="text-muted small">Threats, Vulnerabilities</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100 @(selectedCategory == "inventory" ? "border-primary" : "")" style="cursor: pointer;" @onclick='() => SelectCategory("inventory")'>
+                <div class="card-body text-center">
+                    <i class="bi bi-pc-display display-4 text-info"></i>
+                    <h5 class="mt-2">Inventory</h5>
+                    <p class="text-muted small">Hardware, Software Assets</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100 @(selectedCategory == "compliance" ? "border-primary" : "")" style="cursor: pointer;" @onclick='() => SelectCategory("compliance")'>
+                <div class="card-body text-center">
+                    <i class="bi bi-check2-square display-4 text-warning"></i>
+                    <h5 class="mt-2">Compliance</h5>
+                    <p class="text-muted small">Standards, Policies</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Report Filters -->
+    <div class="row mb-3">
+        <div class="col">
+            <div class="card">
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label class="form-label">Date Range</label>
+                            <select class="form-select" @bind="dateRange">
+                                <option value="today">Today</option>
+                                <option value="week">Last 7 Days</option>
+                                <option value="month">Last 30 Days</option>
+                                <option value="quarter">Last 3 Months</option>
+                                <option value="year">Last Year</option>
+                                <option value="custom">Custom Range</option>
+                            </select>
+                        </div>
+                        @if (dateRange == "custom")
+                        {
+                            <div class="col-md-2">
+                                <label class="form-label">Start Date</label>
+                                <input type="date" class="form-control" @bind="startDate" />
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">End Date</label>
+                                <input type="date" class="form-control" @bind="endDate" />
+                            </div>
+                        }
+                        <div class="col-md-2">
+                            <label class="form-label">Report Type</label>
+                            <select class="form-select" @bind="reportType">
+                                <option value="summary">Summary</option>
+                                <option value="detailed">Detailed</option>
+                                <option value="trend">Trend Analysis</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Format</label>
+                            <select class="form-select" @bind="reportFormat">
+                                <option value="html">HTML View</option>
+                                <option value="pdf">PDF Export</option>
+                                <option value="excel">Excel Export</option>
+                                <option value="csv">CSV Export</option>
+                            </select>
+                        </div>
+                        <div class="col-md-1">
+                            <label class="form-label">&nbsp;</label>
+                            <button class="btn btn-outline-primary w-100" @onclick="ApplyFilters">Apply</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Report Content -->
+    <div class="row">
+        <div class="col">
+            <div class="card">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5>@GetReportTitle()</h5>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary" @onclick="ExportReport">
+                                <i class="bi bi-download"></i> Export
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="ScheduleReport">
+                                <i class="bi bi-calendar3"></i> Schedule
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    @if (isLoading)
+                    {
+                        <div class="text-center py-5">
+                            <div class="spinner-border" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Generating report...</p>
+                        </div>
+                    }
+                    else
+                    {
+                        @if (selectedCategory == "performance")
+                        {
+                            @RenderPerformanceReport()
+                        }
+                        else if (selectedCategory == "security")
+                        {
+                            @RenderSecurityReport()
+                        }
+                        else if (selectedCategory == "inventory")
+                        {
+                            @RenderInventoryReport()
+                        }
+                        else if (selectedCategory == "compliance")
+                        {
+                            @RenderComplianceReport()
+                        }
+                        else
+                        {
+                            <div class="text-center py-5">
+                                <i class="bi bi-file-earmark-text display-1 text-muted"></i>
+                                <h5 class="mt-3">Select a Report Category</h5>
+                                <p class="text-muted">Choose a category above to view reports and analytics.</p>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Reports -->
+    <div class="row mt-4">
+        <div class="col">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Recent Reports</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Report Name</th>
+                                    <th>Category</th>
+                                    <th>Generated</th>
+                                    <th>Size</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var report in recentReports)
+                                {
+                                    <tr>
+                                        <td>@report.Name</td>
+                                        <td><span class="badge bg-secondary">@report.Category</span></td>
+                                        <td>@report.GeneratedAt.ToString("MMM dd, yyyy HH:mm")</td>
+                                        <td>@report.Size</td>
+                                        <td>
+                                            <div class="btn-group btn-group-sm">
+                                                <button class="btn btn-outline-primary" @onclick="() => ViewReport(report)">
+                                                    <i class="bi bi-eye"></i>
+                                                </button>
+                                                <button class="btn btn-outline-success" @onclick="() => DownloadReport(report)">
+                                                    <i class="bi bi-download"></i>
+                                                </button>
+                                                <button class="btn btn-outline-danger" @onclick="() => DeleteReport(report)">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool isLoading = false;
+    private string selectedCategory = string.Empty;
+    private string dateRange = "week";
+    private string reportType = "summary";
+    private string reportFormat = "html";
+    private DateTime startDate = DateTime.Today.AddDays(-7);
+    private DateTime endDate = DateTime.Today;
+
+    private List<ReportModel> recentReports = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.Run(() => LoadRecentReports());
+    }
+
+    private void LoadRecentReports()
+    {
+        recentReports = new List<ReportModel>
+        {
+            new() { Name = "Weekly Performance Summary", Category = "Performance", GeneratedAt = DateTime.Now.AddHours(-2), Size = "2.3 MB" },
+            new() { Name = "Security Compliance Report", Category = "Security", GeneratedAt = DateTime.Now.AddDays(-1), Size = "1.8 MB" },
+            new() { Name = "Hardware Inventory", Category = "Inventory", GeneratedAt = DateTime.Now.AddDays(-2), Size = "3.1 MB" },
+            new() { Name = "Monthly Trend Analysis", Category = "Performance", GeneratedAt = DateTime.Now.AddDays(-5), Size = "4.2 MB" },
+            new() { Name = "Vulnerability Assessment", Category = "Security", GeneratedAt = DateTime.Now.AddDays(-7), Size = "1.5 MB" }
+        };
+    }
+
+    private async Task SelectCategory(string category)
+    {
+        selectedCategory = category;
+        await ApplyFilters();
+    }
+
+    private async Task ApplyFilters()
+    {
+        if (!string.IsNullOrEmpty(selectedCategory))
+        {
+            isLoading = true;
+            await Task.Delay(1000); // Simulate loading
+            isLoading = false;
+        }
+    }
+
+    private async Task RefreshData()
+    {
+        if (!string.IsNullOrEmpty(selectedCategory))
+        {
+            await ApplyFilters();
+        }
+    }
+
+    private async Task GenerateReport()
+    {
+        if (string.IsNullOrEmpty(selectedCategory))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Please select a report category first.");
+            return;
+        }
+
+        isLoading = true;
+        await Task.Delay(2000); // Simulate report generation
+        isLoading = false;
+        
+        await JSRuntime.InvokeVoidAsync("alert", $"{GetReportTitle()} generated successfully!");
+    }
+
+    private async Task ExportReport()
+    {
+        await JSRuntime.InvokeVoidAsync("alert", $"Exporting report as {reportFormat.ToUpper()} - Feature coming soon!");
+    }
+
+    private async Task ScheduleReport()
+    {
+        await JSRuntime.InvokeVoidAsync("alert", "Schedule recurring reports - Feature coming soon!");
+    }
+
+    private async Task ViewReport(ReportModel report)
+    {
+        await JSRuntime.InvokeVoidAsync("alert", $"Opening report: {report.Name}");
+    }
+
+    private async Task DownloadReport(ReportModel report)
+    {
+        await JSRuntime.InvokeVoidAsync("alert", $"Downloading: {report.Name}");
+    }
+
+    private async Task DeleteReport(ReportModel report)
+    {
+        if (await JSRuntime.InvokeAsync<bool>("confirm", $"Delete report '{report.Name}'?"))
+        {
+            recentReports.Remove(report);
+            await JSRuntime.InvokeVoidAsync("alert", "Report deleted successfully!");
+        }
+    }
+
+    private string GetReportTitle() => selectedCategory switch
+    {
+        "performance" => $"Performance Report - {GetDateRangeText()}",
+        "security" => $"Security Report - {GetDateRangeText()}",
+        "inventory" => $"Inventory Report - {GetDateRangeText()}",
+        "compliance" => $"Compliance Report - {GetDateRangeText()}",
+        _ => "Select a Report Category"
+    };
+
+    private string GetDateRangeText() => dateRange switch
+    {
+        "today" => "Today",
+        "week" => "Last 7 Days",
+        "month" => "Last 30 Days",
+        "quarter" => "Last 3 Months",
+        "year" => "Last Year",
+        "custom" => $"{startDate:MMM dd} - {endDate:MMM dd}",
+        _ => "Date Range"
+    };
+
+    private RenderFragment RenderPerformanceReport() => @<div>
+        <div class="row mb-3">
+            <div class="col-md-3">
+                <div class="card border-primary">
+                    <div class="card-body text-center">
+                        <h3 class="text-primary">78%</h3>
+                        <p class="mb-0">Avg CPU Usage</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-warning">
+                    <div class="card-body text-center">
+                        <h3 class="text-warning">65%</h3>
+                        <p class="mb-0">Avg Memory Usage</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-success">
+                    <div class="card-body text-center">
+                        <h3 class="text-success">45%</h3>
+                        <p class="mb-0">Avg Disk Usage</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-info">
+                    <div class="card-body text-center">
+                        <h3 class="text-info">12ms</h3>
+                        <p class="mb-0">Avg Response Time</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <p>Detailed performance metrics and trends would be displayed here with charts and graphs.</p>
+    </div>;
+
+    private RenderFragment RenderSecurityReport() => @<div>
+        <div class="row mb-3">
+            <div class="col-md-3">
+                <div class="card border-danger">
+                    <div class="card-body text-center">
+                        <h3 class="text-danger">3</h3>
+                        <p class="mb-0">Critical Threats</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-warning">
+                    <div class="card-body text-center">
+                        <h3 class="text-warning">15</h3>
+                        <p class="mb-0">Security Warnings</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-success">
+                    <div class="card-body text-center">
+                        <h3 class="text-success">92%</h3>
+                        <p class="mb-0">Compliance Score</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-info">
+                    <div class="card-body text-center">
+                        <h3 class="text-info">247</h3>
+                        <p class="mb-0">Security Events</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <p>Security analysis, threat detection results, and vulnerability assessments would be displayed here.</p>
+    </div>;
+
+    private RenderFragment RenderInventoryReport() => @<div>
+        <div class="row mb-3">
+            <div class="col-md-3">
+                <div class="card border-primary">
+                    <div class="card-body text-center">
+                        <h3 class="text-primary">156</h3>
+                        <p class="mb-0">Total Devices</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-success">
+                    <div class="card-body text-center">
+                        <h3 class="text-success">142</h3>
+                        <p class="mb-0">Online Devices</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-warning">
+                    <div class="card-body text-center">
+                        <h3 class="text-warning">8</h3>
+                        <p class="mb-0">Outdated Software</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-info">
+                    <div class="card-body text-center">
+                        <h3 class="text-info">$2.3M</h3>
+                        <p class="mb-0">Asset Value</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <p>Hardware and software inventory details, asset tracking, and lifecycle management information would be displayed here.</p>
+    </div>;
+
+    private RenderFragment RenderComplianceReport() => @<div>
+        <div class="row mb-3">
+            <div class="col-md-3">
+                <div class="card border-success">
+                    <div class="card-body text-center">
+                        <h3 class="text-success">94%</h3>
+                        <p class="mb-0">Overall Compliance</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-primary">
+                    <div class="card-body text-center">
+                        <h3 class="text-primary">12</h3>
+                        <p class="mb-0">Policy Violations</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-warning">
+                    <div class="card-body text-center">
+                        <h3 class="text-warning">5</h3>
+                        <p class="mb-0">Non-Compliant</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-info">
+                    <div class="card-body text-center">
+                        <h3 class="text-info">23</h3>
+                        <p class="mb-0">Standards Checked</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <p>Compliance status, policy adherence, and regulatory requirement tracking would be displayed here.</p>
+    </div>;
+
+    public class ReportModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Category { get; set; } = string.Empty;
+        public DateTime GeneratedAt { get; set; }
+        public string Size { get; set; } = string.Empty;
+    }
+}

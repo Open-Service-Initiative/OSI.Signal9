@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Sdk Name="Aspire.AppHost.Sdk" Version="9.3.1" />
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UserSecretsId>213594bb-40f9-47f1-a217-28d3f24c3c0e</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.AppHost" Version="9.3.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Signal9.Agent.Functions\Signal9.Agent.Functions.csproj" />
+    <ProjectReference Include="..\Signal9.Web.Functions\Signal9.Web.Functions.csproj" />
+    <ProjectReference Include="..\Signal9.Web\Signal9.Web.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,285 @@
+<div class="nav-scrollable">
+    <div class="nav-header">
+        <div class="nav-brand">
+            <i class="bi bi-lightning-charge-fill"></i>
+            <span>Signal9</span>
+        </div>
+        <div class="nav-subtitle">RMM Platform</div>
+    </div>
+    
+    <nav class="flex-column">
+        <!-- Main Dashboard -->
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <i class="bi bi-speedometer2"></i>
+                <span>Dashboard</span>
+            </NavLink>
+        </div>
+        
+        <!-- Device Management -->
+        <div class="nav-section">
+            <div class="nav-item px-3">
+                <h6 class="sidebar-heading">
+                    <i class="bi bi-hdd-stack"></i> Device Management
+                </h6>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="/devices">
+                    <i class="bi bi-laptop"></i>
+                    <span>All Devices</span>
+                    <span class="nav-badge">0</span>
+                </NavLink>
+            </div>
+        </div>
+        
+        <!-- Tenant Management -->
+        <div class="nav-section">
+            <div class="nav-item px-3">
+                <h6 class="sidebar-heading">
+                    <i class="bi bi-building"></i> Organization
+                </h6>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="/tenants">
+                    <i class="bi bi-people"></i>
+                    <span>Tenants</span>
+                    <span class="nav-badge">3</span>
+                </NavLink>
+            </div>
+        </div>
+        
+        <!-- Monitoring & Alerts -->
+        <div class="nav-section">
+            <div class="nav-item px-3">
+                <h6 class="sidebar-heading">
+                    <i class="bi bi-shield-check"></i> Monitoring
+                </h6>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="/alerts">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <span>Alerts</span>
+                    <span class="nav-badge alert">2</span>
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="/reports">
+                    <i class="bi bi-graph-up"></i>
+                    <span>Reports</span>
+                </NavLink>
+            </div>
+        </div>
+        
+        <!-- Administration -->
+        <div class="nav-section">
+            <div class="nav-item px-3">
+                <h6 class="sidebar-heading">
+                    <i class="bi bi-gear"></i> Administration
+                </h6>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="/settings">
+                    <i class="bi bi-sliders"></i>
+                    <span>Settings</span>
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="/users">
+                    <i class="bi bi-person-gear"></i>
+                    <span>User Management</span>
+                </NavLink>
+            </div>
+        </div>
+    </nav>
+    
+    <!-- Bottom section -->
+    <div class="nav-footer">
+        <div class="nav-item px-3">
+            <div class="nav-status">
+                <div class="status-indicator online"></div>
+                <span>System Online</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .nav-scrollable {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: 100vh;
+        overflow-y: auto;
+    }
+
+    .nav-header {
+        padding: 1.5rem 1rem 1rem 1rem;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+        margin-bottom: 1rem;
+    }
+
+    .nav-brand {
+        display: flex;
+        align-items: center;
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #fff;
+        margin-bottom: 0.25rem;
+    }
+
+    .nav-brand i {
+        margin-right: 0.5rem;
+        color: #00d4ff;
+        font-size: 1.75rem;
+    }
+
+    .nav-subtitle {
+        font-size: 0.875rem;
+        color: #adb5bd;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-left: 2.25rem;
+    }
+
+    .nav-section {
+        margin-bottom: 1.5rem;
+    }
+
+    .nav-link {
+        color: rgba(255,255,255,.85);
+        border-radius: 0.5rem;
+        height: 2.75rem;
+        display: flex;
+        align-items: center;
+        text-decoration: none;
+        padding: 0 1rem;
+        margin: 0.125rem 0;
+        transition: all 0.2s ease;
+        position: relative;
+        gap: 0.75rem;
+    }
+
+    .nav-link:hover {
+        background-color: rgba(255,255,255,.08);
+        color: white;
+        text-decoration: none;
+        transform: translateX(2px);
+    }
+
+    .nav-link.active {
+        background: linear-gradient(90deg, rgba(0,212,255,0.2), rgba(58,6,71,0.2));
+        color: #00d4ff;
+        border-left: 3px solid #00d4ff;
+        padding-left: calc(1rem - 3px);
+    }
+
+    .nav-link i {
+        width: 1.25rem;
+        font-size: 1rem;
+        text-align: center;
+        flex-shrink: 0;
+    }
+
+    .nav-link span:first-of-type {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .nav-badge {
+        background-color: rgba(255,255,255,0.2);
+        color: white;
+        font-size: 0.7rem;
+        padding: 0.15rem 0.4rem;
+        border-radius: 0.75rem;
+        min-width: auto;
+        text-align: center;
+        line-height: 1;
+        font-weight: 500;
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        height: 1.25rem;
+    }
+
+    .nav-badge.alert {
+        background-color: #dc3545;
+        color: white;
+        animation: pulse 2s infinite;
+        box-shadow: 0 0 0 1px rgba(220, 53, 69, 0.3);
+    }
+
+    @@keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.7; }
+        100% { opacity: 1; }
+    }
+
+    .sidebar-heading {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #6c757d;
+        padding: 0.5rem 1rem 0.25rem 1rem;
+        margin: 0;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+    }
+
+    .sidebar-heading i {
+        margin-right: 0.5rem;
+        font-size: 0.875rem;
+        color: #00d4ff;
+    }
+
+    .nav-footer {
+        margin-top: auto;
+        padding: 1rem;
+        border-top: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .nav-status {
+        display: flex;
+        align-items: center;
+        color: #adb5bd;
+        font-size: 0.875rem;
+    }
+
+    .status-indicator {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 0.5rem;
+    }
+
+    .status-indicator.online {
+        background-color: #28a745;
+        box-shadow: 0 0 0 2px rgba(40, 167, 69, 0.3);
+        animation: pulse-green 2s infinite;
+    }
+
+    @@keyframes pulse-green {
+        0% { box-shadow: 0 0 0 2px rgba(40, 167, 69, 0.3); }
+        50% { box-shadow: 0 0 0 6px rgba(40, 167, 69, 0.1); }
+        100% { box-shadow: 0 0 0 2px rgba(40, 167, 69, 0.3); }
+    }
+
+    /* Custom scrollbar */
+    .nav-scrollable::-webkit-scrollbar {
+        width: 4px;
+    }
+
+    .nav-scrollable::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .nav-scrollable::-webkit-scrollbar-thumb {
+        background: rgba(255,255,255,0.2);
+        border-radius: 2px;
+    }
+
+    .nav-scrollable::-webkit-scrollbar-thumb:hover {
+        background: rgba(255,255,255,0.3);
+    }
+</style>

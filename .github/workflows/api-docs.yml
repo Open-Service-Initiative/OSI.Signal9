@@ -1,0 +1,266 @@
+name: Generate and Deploy OpenAPI Documentation
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'src/Signal9.Web.Functions/**'
+      - 'src/Signal9.Shared/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/Signal9.Web.Functions/**'
+      - 'src/Signal9.Shared/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  generate-docs:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+        
+    - name: Restore dependencies
+      run: dotnet restore
+      
+    - name: Build Functions project
+      run: dotnet build src/Signal9.Web.Functions/Signal9.Web.Functions.csproj --no-restore
+      
+    - name: Generate OpenAPI specs
+      run: |
+        cd src/Signal9.Web.Functions
+        # Create a simple console app to generate the specs
+        cat > GenerateSpecs.cs << 'EOF'
+        using Signal9.Web.Functions;
+        using System.IO;
+        
+        // Generate OpenAPI specifications
+        var jsonSpec = OpenApiDocumentGenerator.GenerateJson();
+        var yamlSpec = OpenApiDocumentGenerator.GenerateYaml();
+        
+        // Create docs directory
+        var docsDir = Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "docs");
+        Directory.CreateDirectory(docsDir);
+        
+        // Write files
+        await File.WriteAllTextAsync(Path.Combine(docsDir, "openapi.json"), jsonSpec);
+        await File.WriteAllTextAsync(Path.Combine(docsDir, "openapi.yaml"), yamlSpec);
+        
+        Console.WriteLine("OpenAPI specifications generated successfully!");
+        Console.WriteLine($"Generated files in: {docsDir}");
+        EOF
+        
+        # Create temporary project file
+        cat > TempGen.csproj << 'EOF'
+        <Project Sdk="Microsoft.NET.Sdk">
+          <PropertyGroup>
+            <OutputType>Exe</OutputType>
+            <TargetFramework>net9.0</TargetFramework>
+            <ImplicitUsings>enable</ImplicitUsings>
+            <Nullable>enable</Nullable>
+          </PropertyGroup>
+          <ItemGroup>
+            <ProjectReference Include="Signal9.Web.Functions.csproj" />
+          </ItemGroup>
+        </Project>
+        EOF
+        
+        # Rename the generator file to Program.cs for the console app
+        mv GenerateSpecs.cs Program.cs
+        
+        # Run the generator
+        dotnet run --project TempGen.csproj
+        
+        # Clean up
+        rm Program.cs TempGen.csproj
+        
+    - name: Generate Swagger UI
+      run: |
+        mkdir -p docs/swagger-ui
+        cat > docs/swagger-ui/index.html << 'EOF'
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Signal9 API Documentation</title>
+            <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css" />
+            <style>
+                html {
+                    box-sizing: border-box;
+                    overflow: -moz-scrollbars-vertical;
+                    overflow-y: scroll;
+                }
+                *, *:before, *:after {
+                    box-sizing: inherit;
+                }
+                body {
+                    margin:0;
+                    background: #fafafa;
+                }
+                .swagger-ui .topbar {
+                    background-color: #2563eb;
+                }
+                .swagger-ui .topbar .download-url-wrapper {
+                    display: none;
+                }
+            </style>
+        </head>
+        <body>
+            <div id="swagger-ui"></div>
+            <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-bundle.js"></script>
+            <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-standalone-preset.js"></script>
+            <script>
+            window.onload = function() {
+                const ui = SwaggerUIBundle({
+                    url: '../openapi.json',
+                    dom_id: '#swagger-ui',
+                    deepLinking: true,
+                    presets: [
+                        SwaggerUIBundle.presets.apis,
+                        SwaggerUIStandalonePreset
+                    ],
+                    plugins: [
+                        SwaggerUIBundle.plugins.DownloadUrl
+                    ],
+                    layout: "StandaloneLayout",
+                    customLabels: {
+                        'api_docs': 'Signal9 RMM API'
+                    }
+                });
+            };
+            </script>
+        </body>
+        </html>
+        EOF
+        
+    - name: Create API docs index
+      run: |
+        cat > docs/index.html << 'EOF'
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Signal9 RMM API Documentation</title>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    line-height: 1.6;
+                    max-width: 800px;
+                    margin: 0 auto;
+                    padding: 2rem;
+                    background: #f8fafc;
+                }
+                .header {
+                    text-align: center;
+                    margin-bottom: 3rem;
+                }
+                .header h1 {
+                    color: #1e293b;
+                    margin-bottom: 0.5rem;
+                }
+                .header p {
+                    color: #64748b;
+                    font-size: 1.1rem;
+                }
+                .card {
+                    background: white;
+                    border-radius: 8px;
+                    padding: 1.5rem;
+                    margin-bottom: 1.5rem;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                }
+                .btn {
+                    display: inline-block;
+                    padding: 0.75rem 1.5rem;
+                    background: #2563eb;
+                    color: white;
+                    text-decoration: none;
+                    border-radius: 6px;
+                    margin-right: 1rem;
+                    margin-bottom: 0.5rem;
+                    transition: background 0.2s;
+                }
+                .btn:hover {
+                    background: #1d4ed8;
+                }
+                .btn-secondary {
+                    background: #64748b;
+                }
+                .btn-secondary:hover {
+                    background: #475569;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>Signal9 RMM API Documentation</h1>
+                <p>REST API for Signal9 Remote Monitoring and Management platform</p>
+            </div>
+            
+            <div class="card">
+                <h2>Interactive API Explorer</h2>
+                <p>Explore the API endpoints with our interactive Swagger UI documentation.</p>
+                <a href="swagger-ui/" class="btn">Open Swagger UI</a>
+            </div>
+            
+            <div class="card">
+                <h2>OpenAPI Specifications</h2>
+                <p>Download the complete API specification in JSON or YAML format.</p>
+                <a href="openapi.json" class="btn btn-secondary">Download JSON</a>
+                <a href="openapi.yaml" class="btn btn-secondary">Download YAML</a>
+            </div>
+            
+            <div class="card">
+                <h2>API Endpoints</h2>
+                <p>The Signal9 Web Functions API provides the following main endpoints:</p>
+                <ul>
+                    <li><strong>Tenants Management</strong> - CRUD operations for tenant/organization management</li>
+                    <li><strong>Agents Management</strong> - CRUD operations for device/agent management</li>
+                    <li><strong>Real-time Updates</strong> - SignalR integration for live status updates</li>
+                </ul>
+            </div>
+            
+            <div class="card">
+                <h2>Development</h2>
+                <p>Local development endpoints:</p>
+                <ul>
+                    <li><strong>Functions API:</strong> <code>http://localhost:7072/api</code></li>
+                    <li><strong>Web Portal:</strong> <code>https://localhost:7001</code></li>
+                    <li><strong>Swagger UI:</strong> <code>http://localhost:7072/api/swagger</code></li>
+                </ul>
+            </div>
+        </body>
+        </html>
+        EOF
+        
+    - name: Upload artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: './docs'
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: generate-docs
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

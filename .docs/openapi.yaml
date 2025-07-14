@@ -1,0 +1,265 @@
+openapi: 3.0.1
+info:
+  title: Signal9 Web Functions API
+  description: REST API for Signal9 Remote Monitoring and Management platform
+  contact:
+    name: Signal9 Support
+    email: support@signal9.com
+  version: 1.0.0
+servers:
+  - url: http://localhost:7072/api
+    description: Local development server
+  - url: 'https://{function-app-name}.azurewebsites.net/api'
+    description: Production server
+paths:
+  /tenants:
+    get:
+      tags:
+        - Tenants
+      summary: Get all tenants
+      description: Retrieve all tenants with optional filtering and pagination
+      parameters:
+        - name: parentTenantId
+          in: query
+          description: Filter by parent tenant ID
+          schema:
+            type: string
+            format: uuid
+        - name: tenantType
+          in: query
+          description: Filter by tenant type
+          schema:
+            type: string
+        - name: isActive
+          in: query
+          description: Filter by active status
+          schema:
+            type: boolean
+        - name: page
+          in: query
+          description: Page number
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          description: Items per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTenantResponse'
+    post:
+      tags:
+        - Tenants
+      summary: Create a new tenant
+      description: Create a new tenant in the system
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTenantRequest'
+        required: true
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantDto'
+  '/tenants/{tenantId}':
+    get:
+      tags:
+        - Tenants
+      summary: Get tenant by ID
+      description: Retrieve a specific tenant by its ID
+      parameters:
+        - name: tenantId
+          in: path
+          description: The tenant ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantDto'
+        '404':
+          description: Tenant not found
+  /agents:
+    get:
+      tags:
+        - Agents
+      summary: Get all agents
+      description: Retrieve all agents with optional filtering and pagination
+      parameters:
+        - name: tenantId
+          in: query
+          description: Filter by tenant ID
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          description: Filter by agent status
+          schema:
+            type: string
+        - name: groupName
+          in: query
+          description: Filter by group name
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          description: Items per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAgentResponse'
+components:
+  schemas:
+    TenantDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        code:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        parentTenantId:
+          type: string
+          format: uuid
+          nullable: true
+        tenantType:
+          type: string
+          nullable: true
+        contactEmail:
+          type: string
+          nullable: true
+        contactPhone:
+          type: string
+          nullable: true
+        plan:
+          type: string
+        maxAgents:
+          type: integer
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        agentCount:
+          type: integer
+    AgentDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        machineName:
+          type: string
+        operatingSystem:
+          type: string
+        status:
+          type: string
+        isOnline:
+          type: boolean
+        lastSeen:
+          type: string
+          format: date-time
+          nullable: true
+        tenantId:
+          type: string
+          format: uuid
+          nullable: true
+        tenantName:
+          type: string
+          nullable: true
+    CreateTenantRequest:
+      required:
+        - name
+      type: object
+      properties:
+        name:
+          type: string
+        code:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        parentTenantId:
+          type: string
+          format: uuid
+          nullable: true
+        tenantType:
+          type: string
+          nullable: true
+        contactEmail:
+          type: string
+          nullable: true
+        contactPhone:
+          type: string
+          nullable: true
+    PaginatedTenantResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TenantDto'
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalCount:
+          type: integer
+        totalPages:
+          type: integer
+    PaginatedAgentResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentDto'
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalCount:
+          type: integer
+        totalPages:
+          type: integer

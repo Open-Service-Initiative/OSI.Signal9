@@ -1,0 +1,545 @@
+@page "/alerts"
+@using Signal9.Web.Services
+@using Signal9.Shared.DTOs.Common
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Web
+@inject IDashboardService DashboardService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Alerts - Signal9 RMM</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1>Alert Management</h1>
+                    <p class="text-muted">Monitor and manage system alerts and notifications</p>
+                </div>
+                <div>
+                    <button class="btn btn-primary" @onclick="ShowCreateModal">
+                        <span class="material-icons me-2" style="font-size: 18px;">add</span> Create Alert
+                    </button>
+                    <button class="btn btn-outline-secondary ms-2" @onclick="RefreshData">
+                        <span class="material-icons me-2" style="font-size: 18px;">refresh</span> Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card border-danger">
+                <div class="card-body text-center">
+                    <i class="bi bi-exclamation-triangle display-4 text-danger"></i>
+                    <h3 class="mt-2">@criticalAlerts</h3>
+                    <p class="text-muted mb-0">Critical Alerts</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-warning">
+                <div class="card-body text-center">
+                    <i class="bi bi-exclamation-circle display-4 text-warning"></i>
+                    <h3 class="mt-2">@warningAlerts</h3>
+                    <p class="text-muted mb-0">Warning Alerts</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-info">
+                <div class="card-body text-center">
+                    <i class="bi bi-info-circle display-4 text-info"></i>
+                    <h3 class="mt-2">@infoAlerts</h3>
+                    <p class="text-muted mb-0">Info Alerts</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-success">
+                <div class="card-body text-center">
+                    <i class="bi bi-check-circle display-4 text-success"></i>
+                    <h3 class="mt-2">@resolvedAlerts</h3>
+                    <p class="text-muted mb-0">Resolved Today</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="row mb-3">
+        <div class="col">
+            <div class="card">
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label class="form-label">Search</label>
+                            <input type="text" class="form-control" placeholder="Search alerts..." @bind="searchTerm" @oninput="OnSearchChanged" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Severity</label>
+                            <select class="form-select" @bind="filterSeverity">
+                                <option value="">All Severities</option>
+                                <option value="Critical">Critical</option>
+                                <option value="Warning">Warning</option>
+                                <option value="Info">Info</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Status</label>
+                            <select class="form-select" @bind="filterStatus">
+                                <option value="">All Status</option>
+                                <option value="Active">Active</option>
+                                <option value="Acknowledged">Acknowledged</option>
+                                <option value="Resolved">Resolved</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Category</label>
+                            <select class="form-select" @bind="filterCategory">
+                                <option value="">All Categories</option>
+                                <option value="Performance">Performance</option>
+                                <option value="Security">Security</option>
+                                <option value="System">System</option>
+                                <option value="Network">Network</option>
+                                <option value="Storage">Storage</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">&nbsp;</label>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-outline-primary" @onclick="ApplyFilters">Apply Filters</button>
+                                <button class="btn btn-outline-secondary" @onclick="ClearFilters">Clear</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alerts Table -->
+    <div class="row">
+        <div class="col">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Active Alerts (@filteredAlerts.Count)</h5>
+                </div>
+                <div class="card-body">
+                    @if (isLoading)
+                    {
+                        <div class="text-center py-5">
+                            <div class="spinner-border" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Loading alerts...</p>
+                        </div>
+                    }
+                    else if (filteredAlerts.Any())
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Severity</th>
+                                        <th>Title</th>
+                                        <th>Device</th>
+                                        <th>Category</th>
+                                        <th>Status</th>
+                                        <th>Created</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var alert in filteredAlerts)
+                                    {
+                                        <tr class="@GetRowClass(alert.Severity)">
+                                            <td>
+                                                <span class="badge bg-@GetSeverityBadgeColor(alert.Severity)">
+                                                    <i class="bi bi-@GetSeverityIcon(alert.Severity)"></i>
+                                                    @alert.Severity
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <div>
+                                                    <strong>@alert.Title</strong>
+                                                    @if (!string.IsNullOrEmpty(alert.Description))
+                                                    {
+                                                        <div class="text-muted small">@alert.Description</div>
+                                                    }
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <span class="text-primary">@alert.DeviceName</span>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-secondary">@alert.Category</span>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-@GetStatusBadgeColor(alert.Status)">@alert.Status</span>
+                                            </td>
+                                            <td>@alert.CreatedAt.ToString("MMM dd, yyyy HH:mm")</td>
+                                            <td>
+                                                <div class="btn-group btn-group-sm">
+                                                    @if (alert.Status == "Active")
+                                                    {
+                                                        <button class="btn btn-warning btn-sm" @onclick="() => AcknowledgeAlert(alert)" title="Acknowledge Alert">
+                                                            <span class="material-icons" style="font-size: 16px;">check</span>
+                                                        </button>
+                                                    }
+                                                    @if (alert.Status != "Resolved")
+                                                    {
+                                                        <button class="btn btn-success btn-sm" @onclick="() => ResolveAlert(alert)" title="Resolve Alert">
+                                                            <span class="material-icons" style="font-size: 16px;">check_circle</span>
+                                                        </button>
+                                                    }
+                                                    <button class="btn btn-info btn-sm" @onclick="() => ViewAlertDetails(alert)" title="View Details">
+                                                        <span class="material-icons" style="font-size: 16px;">visibility</span>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center py-5">
+                            <i class="bi bi-bell display-1 text-muted"></i>
+                            <h5 class="mt-3">No alerts found</h5>
+                            <p class="text-muted">No alerts match your current filter criteria.</p>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Alert Modal -->
+@if (showModal)
+{
+    <div class="modal show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create Alert</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <EditForm Model="alertForm" OnValidSubmit="SaveAlert">
+                    <DataAnnotationsValidator />
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Title *</label>
+                                <InputText class="form-control" @bind-Value="alertForm.Title" placeholder="Enter alert title" />
+                                <ValidationMessage For="() => alertForm.Title" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Severity *</label>
+                                <InputSelect class="form-select" @bind-Value="alertForm.Severity">
+                                    <option value="">Select severity...</option>
+                                    <option value="Critical">Critical</option>
+                                    <option value="Warning">Warning</option>
+                                    <option value="Info">Info</option>
+                                </InputSelect>
+                                <ValidationMessage For="() => alertForm.Severity" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Description</label>
+                                <InputTextArea class="form-control" @bind-Value="alertForm.Description" rows="3" placeholder="Describe the alert condition" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Category *</label>
+                                <InputSelect class="form-select" @bind-Value="alertForm.Category">
+                                    <option value="">Select category...</option>
+                                    <option value="Performance">Performance</option>
+                                    <option value="Security">Security</option>
+                                    <option value="System">System</option>
+                                    <option value="Network">Network</option>
+                                    <option value="Storage">Storage</option>
+                                </InputSelect>
+                                <ValidationMessage For="() => alertForm.Category" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Device</label>
+                                <InputText class="form-control" @bind-Value="alertForm.DeviceName" placeholder="Device name" />
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
+                        <button type="submit" class="btn btn-primary" disabled="@isSubmitting">
+                            @if (isSubmitting)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2"></span>
+                            }
+                            Create Alert
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isLoading = true;
+    private bool showModal = false;
+    private bool isSubmitting = false;
+
+    // Summary stats
+    private int criticalAlerts = 0;
+    private int warningAlerts = 0;
+    private int infoAlerts = 0;
+    private int resolvedAlerts = 0;
+
+    private List<AlertModel> alerts = new();
+    private List<AlertModel> filteredAlerts = new();
+
+    // Filters
+    private string searchTerm = string.Empty;
+    private string filterSeverity = string.Empty;
+    private string filterStatus = string.Empty;
+    private string filterCategory = string.Empty;
+
+    // Form model
+    private AlertFormModel alertForm = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAlerts();
+    }
+
+    private async Task LoadAlerts()
+    {
+        try
+        {
+            isLoading = true;
+            // Generate sample data for now
+            await Task.Run(() => GenerateSampleAlerts());
+            CalculateStats();
+            ApplyFilters();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading alerts: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void GenerateSampleAlerts()
+    {
+        var random = new Random();
+        var severities = new[] { "Critical", "Warning", "Info" };
+        var categories = new[] { "Performance", "Security", "System", "Network", "Storage" };
+        var statuses = new[] { "Active", "Acknowledged", "Resolved" };
+        var devices = new[] { "WEB-SRV-01", "DB-SRV-02", "FILE-SRV-03", "MAIL-SRV-04", "BACKUP-SRV-05" };
+
+        alerts = Enumerable.Range(1, 25).Select(i => new AlertModel
+        {
+            Id = Guid.NewGuid(),
+            Title = $"Alert {i}: {GetSampleAlertTitle(random, categories)}",
+            Description = $"Sample alert description for alert {i}",
+            Severity = severities[random.Next(severities.Length)],
+            Category = categories[random.Next(categories.Length)],
+            Status = statuses[random.Next(statuses.Length)],
+            DeviceName = devices[random.Next(devices.Length)],
+            CreatedAt = DateTime.Now.AddHours(-random.Next(1, 72))
+        }).ToList();
+    }
+
+    private string GetSampleAlertTitle(Random random, string[] categories)
+    {
+        var titles = new Dictionary<string, string[]>
+        {
+            { "Performance", new[] { "High CPU Usage", "Memory Usage Critical", "Disk I/O Bottleneck", "Network Latency High" } },
+            { "Security", new[] { "Failed Login Attempts", "Suspicious File Activity", "Port Scan Detected", "Antivirus Alert" } },
+            { "System", new[] { "Service Stopped", "System Restart Required", "Event Log Full", "Registry Changes" } },
+            { "Network", new[] { "Connection Timeout", "Bandwidth Threshold", "Switch Port Down", "DNS Resolution Failed" } },
+            { "Storage", new[] { "Low Disk Space", "RAID Array Degraded", "Backup Failed", "File Corruption Detected" } }
+        };
+
+        var category = categories[random.Next(categories.Length)];
+        var categoryTitles = titles[category];
+        return categoryTitles[random.Next(categoryTitles.Length)];
+    }
+
+    private void CalculateStats()
+    {
+        criticalAlerts = alerts.Count(a => a.Severity == "Critical" && a.Status != "Resolved");
+        warningAlerts = alerts.Count(a => a.Severity == "Warning" && a.Status != "Resolved");
+        infoAlerts = alerts.Count(a => a.Severity == "Info" && a.Status != "Resolved");
+        resolvedAlerts = alerts.Count(a => a.Status == "Resolved" && a.CreatedAt.Date == DateTime.Today);
+    }
+
+    private void ApplyFilters()
+    {
+        filteredAlerts = alerts.Where(a =>
+            (string.IsNullOrEmpty(searchTerm) || 
+             a.Title.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+             a.Description?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) == true ||
+             a.DeviceName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)) &&
+            (string.IsNullOrEmpty(filterSeverity) || a.Severity == filterSeverity) &&
+            (string.IsNullOrEmpty(filterStatus) || a.Status == filterStatus) &&
+            (string.IsNullOrEmpty(filterCategory) || a.Category == filterCategory)
+        ).OrderByDescending(a => a.CreatedAt).ToList();
+    }
+
+    private async Task OnSearchChanged(ChangeEventArgs e)
+    {
+        searchTerm = e.Value?.ToString() ?? string.Empty;
+        ApplyFilters();
+        await Task.Delay(1);
+    }
+
+    private void ClearFilters()
+    {
+        searchTerm = string.Empty;
+        filterSeverity = string.Empty;
+        filterStatus = string.Empty;
+        filterCategory = string.Empty;
+        ApplyFilters();
+    }
+
+    private async Task RefreshData()
+    {
+        await LoadAlerts();
+    }
+
+    private void ShowCreateModal()
+    {
+        alertForm = new AlertFormModel();
+        showModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+        alertForm = new AlertFormModel();
+    }
+
+    private async Task SaveAlert()
+    {
+        try
+        {
+            isSubmitting = true;
+            
+            // Create new alert
+            var newAlert = new AlertModel
+            {
+                Id = Guid.NewGuid(),
+                Title = alertForm.Title!,
+                Description = alertForm.Description,
+                Severity = alertForm.Severity!,
+                Category = alertForm.Category!,
+                Status = "Active",
+                DeviceName = alertForm.DeviceName ?? "Unknown",
+                CreatedAt = DateTime.Now
+            };
+
+            alerts.Insert(0, newAlert);
+            CalculateStats();
+            ApplyFilters();
+            CloseModal();
+            await JSRuntime.InvokeVoidAsync("alert", "Alert created successfully!");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error creating alert: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private async Task AcknowledgeAlert(AlertModel alert)
+    {
+        alert.Status = "Acknowledged";
+        CalculateStats();
+        ApplyFilters();
+        await JSRuntime.InvokeVoidAsync("alert", $"Alert '{alert.Title}' acknowledged.");
+    }
+
+    private async Task ResolveAlert(AlertModel alert)
+    {
+        alert.Status = "Resolved";
+        CalculateStats();
+        ApplyFilters();
+        await JSRuntime.InvokeVoidAsync("alert", $"Alert '{alert.Title}' resolved.");
+    }
+
+    private void ViewAlertDetails(AlertModel alert)
+    {
+        JSRuntime.InvokeVoidAsync("alert", $"View details for '{alert.Title}' - Feature coming soon!");
+    }
+
+    private string GetSeverityBadgeColor(string severity) => severity switch
+    {
+        "Critical" => "danger",
+        "Warning" => "warning",
+        "Info" => "info",
+        _ => "secondary"
+    };
+
+    private string GetSeverityIcon(string severity) => severity switch
+    {
+        "Critical" => "exclamation-triangle",
+        "Warning" => "exclamation-circle",
+        "Info" => "info-circle",
+        _ => "question-circle"
+    };
+
+    private string GetStatusBadgeColor(string status) => status switch
+    {
+        "Active" => "danger",
+        "Acknowledged" => "warning",
+        "Resolved" => "success",
+        _ => "secondary"
+    };
+
+    private string GetRowClass(string severity) => severity switch
+    {
+        "Critical" => "table-danger",
+        "Warning" => "table-warning",
+        _ => ""
+    };
+
+    public class AlertModel
+    {
+        public Guid Id { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public string Severity { get; set; } = string.Empty;
+        public string Category { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string DeviceName { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; }
+    }
+
+    public class AlertFormModel
+    {
+        [Required]
+        public string? Title { get; set; }
+
+        public string? Description { get; set; }
+
+        [Required]
+        public string? Severity { get; set; }
+
+        [Required]
+        public string? Category { get; set; }
+
+        public string? DeviceName { get; set; }
+    }
+}

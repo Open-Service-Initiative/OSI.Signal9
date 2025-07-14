@@ -13,6 +13,7 @@ A modern RMM (Remote Monitoring and Management) platform built with .NET 9, Blaz
 ## Getting Started
 
 ### Prerequisites
+
 - .NET 9 SDK
 - Azure Functions Core Tools v4
 - Azure Storage Emulator or Azure Storage Account
@@ -20,24 +21,30 @@ A modern RMM (Remote Monitoring and Management) platform built with .NET 9, Blaz
 ### Running the Platform
 
 #### Option 1: PowerShell Script (Recommended)
+
 ```powershell
 # Starts all platform services with coordinated startup
 .\start-platform.ps1
 ```
 
 #### Option 2: VS Code Compound Launch
+
 Use the "Launch Signal9 Platform" configuration which starts:
-- Signal9.Web (Blazor Server) on https://localhost:7001
-- Signal9.Web.Functions (CRUD API) on http://localhost:7072  
-- Signal9.Agent.Functions (Agent API) on http://localhost:7071
+
+- Signal9.Web (Blazor Server) on `https://localhost:7001`
+- Signal9.Web.Functions (CRUD API) on `http://localhost:7072`
+- Signal9.Agent.Functions (Agent API) on `http://localhost:7071`
 
 #### Option 3: Visual Studio Multiple Startup Projects
+
 The solution is configured for multiple startup projects. In Visual Studio:
+
 1. Right-click the solution → "Configure Startup Projects"
-2. Select "Multiple startup projects" 
+2. Select "Multiple startup projects"
 3. Set Signal9.Web, Signal9.Web.Functions, and Signal9.Agent.Functions to "Start"
 
 #### Option 4: Individual Services
+
 ```bash
 # Web Functions (port 7072)
 cd src/Signal9.Web.Functions
@@ -53,19 +60,23 @@ dotnet run
 ```
 
 ### Agent Deployment (Separate)
+
 The Signal9.Agent is designed to be deployed separately on client machines:
+
 ```bash
 dotnet run --project src/Signal9.Agent
 ```
 
 ## Platform Services
 
-### Web Portal (https://localhost:7001)
+### Web Portal (`https://localhost:7001`)
+
 - Blazor Server application with Bootstrap 5 UI
 - Real-time dashboard with SignalR integration
 - Tenant and device management interface
 
-### Web Functions API (http://localhost:7072/api)
+### Web Functions API (`http://localhost:7072/api`)
+
 - **GET /tenants** - List all tenants
 - **POST /tenants** - Create new tenant
 - **PUT /tenants/{id}** - Update tenant
@@ -75,7 +86,8 @@ dotnet run --project src/Signal9.Agent
 - **PUT /agents/{id}** - Update agent
 - **DELETE /agents/{id}** - Delete agent
 
-### Agent Functions API (http://localhost:7071/api)
+### Agent Functions API (`http://localhost:7071/api`)
+
 - Agent communication endpoints
 - Command execution API
 - Telemetry collection endpoints
@@ -83,6 +95,7 @@ dotnet run --project src/Signal9.Agent
 ## Development
 
 ### Building
+
 ```bash
 # Build entire solution
 dotnet build --configuration Release
@@ -92,14 +105,32 @@ Ctrl+Shift+P → "Tasks: Run Task" → "build-solution"
 ```
 
 ### Testing
+
 ```bash
 dotnet test --configuration Release --logger trx --collect:"XPlat Code Coverage"
 ```
 
 ### Debugging
+
 - Use compound launch "Launch Signal9 Platform" for full debugging
 - Individual service debugging available for each project
 - Agent runs separately for real-world testing scenarios
+
+### Adding New Telemetry Metrics
+
+1. Update `TelemetryDto` in `Signal9.Shared/DTOs/AgentDTOs.cs`
+2. Implement collection logic in `TelemetryCollector.cs`
+3. Update the hub to handle new metrics
+
+### Adding New Agent Commands
+
+1. Define command type in `AgentCommand.cs`
+2. Implement execution logic in `AgentService.ExecuteCommandAsync`
+3. Add command dispatching in the hub or web portal
+
+### Database Migrations
+
+Entity Framework migrations are handled automatically during deployment.
 
 ## Docker Support
 
@@ -114,21 +145,25 @@ Ctrl+Shift+P → "Tasks: Run Task" → "docker-build-webportal"
 ## Azure Deployment
 
 ### Full Platform Deployment
+
 ```bash
 azd up
 ```
 
 ### Infrastructure Only
+
 ```bash
 azd provision
 ```
 
 ### Code Deployment Only
+
 ```bash
 azd deploy
 ```
 
 The platform includes full Bicep infrastructure templates for production Azure deployment with:
+
 - Azure Container Apps for web services
 - Azure Functions for serverless APIs
 - Azure Storage for telemetry data
@@ -136,7 +171,7 @@ The platform includes full Bicep infrastructure templates for production Azure d
 
 ## Platform Architecture
 
-```
+```text
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │   Blazor Web    │    │  Web Functions   │    │ Agent Functions │
 │   Port: 7001    │◄──►│   Port: 7072     │    │   Port: 7071    │
@@ -155,11 +190,12 @@ The platform includes full Bicep infrastructure templates for production Azure d
                                               │ - Commands      │
                                               └─────────────────┘
 ```
+
    ```bash
    azd up
    ```
 
-3. **Configure SQL password when prompted**
+1. **Configure SQL password when prompted**
 
 ## Configuration
 
@@ -182,13 +218,14 @@ The platform includes full Bicep infrastructure templates for production Azure d
 ### Hub Configuration
 
 The hub automatically configures itself using Azure services when deployed to Azure:
+
 - SignalR connection from Azure SignalR Service
 - Key Vault for secrets
 - Application Insights for monitoring
 
 ## Project Structure
 
-```
+```text
 Signal9/
 ├── src/
 │   ├── Signal9.Agent/          # RMM Agent console application
@@ -202,24 +239,6 @@ Signal9/
 ├── azure.yaml                  # Azure Developer CLI configuration
 └── Signal9.sln                 # Solution file
 ```
-
-## Development
-
-### Adding New Telemetry Metrics
-
-1. Update `TelemetryDto` in `Signal9.Shared/DTOs/AgentDTOs.cs`
-2. Implement collection logic in `TelemetryCollector.cs`
-3. Update the hub to handle new metrics
-
-### Adding New Agent Commands
-
-1. Define command type in `AgentCommand.cs`
-2. Implement execution logic in `AgentService.ExecuteCommandAsync`
-3. Add command dispatching in the hub or web portal
-
-### Database Migrations
-
-Entity Framework migrations are handled automatically during deployment.
 
 ## Monitoring
 
@@ -251,6 +270,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Support
 
 For issues and questions:
+
 - Create an issue in the repository
 - Review the documentation in the `/docs` folder
 - Check Azure Monitor logs for runtime issues

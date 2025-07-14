@@ -28,7 +28,11 @@
             "type": "node",
             "request": "launch",
             "program": "${env:ProgramFiles}/Microsoft/Azure Functions Core Tools/func.exe",
-            "args": ["start", "--port", "7072"],
+            "args": [
+                "start",
+                "--port",
+                "7072"
+            ],
             "cwd": "${workspaceFolder}/src/Signal9.Web.Functions",
             "env": {
                 "AzureWebJobsStorage": "UseDevelopmentStorage=true",
@@ -38,11 +42,15 @@
             "preLaunchTask": "build: Signal9.Web.Functions"
         },
         {
-            "name": "Launch Agent Functions", 
+            "name": "Launch Agent Functions",
             "type": "node",
             "request": "launch",
             "program": "${env:ProgramFiles}/Microsoft/Azure Functions Core Tools/func.exe",
-            "args": ["start", "--port", "7071"],
+            "args": [
+                "start",
+                "--port",
+                "7071"
+            ],
             "cwd": "${workspaceFolder}/src/Signal9.Agent.Functions",
             "env": {
                 "AzureWebJobsStorage": "UseDevelopmentStorage=true",
@@ -64,6 +72,12 @@
                 "DOTNET_ENVIRONMENT": "Development",
                 "HubUrl": "http://localhost:7071/api/hubs/agent"
             }
+        },
+        {
+            "name": "Attach to .NET Functions",
+            "type": "coreclr",
+            "request": "attach",
+            "processId": "${command:azureFunctions.pickProcess}"
         }
     ],
     "compounds": [
