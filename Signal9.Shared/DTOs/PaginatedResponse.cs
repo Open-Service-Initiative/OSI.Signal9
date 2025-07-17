@@ -7,7 +7,7 @@ namespace Signal9.Shared.DTOs;
 /// Paginated response wrapper for MSP platform APIs
 /// Provides pagination metadata along with the requested data
 /// </summary>
-public record PaginatedResponse<T> : BaseDto
+public record PaginatedResponse<T> : BaseDto<Guid>
 {
     /// <summary>
     /// The data items for the current page
@@ -66,3 +66,6 @@ public record PaginatedResponse<T> : BaseDto
     /// </summary>
     public long EndIndex => Math.Min(StartIndex + PageSize - 1, TotalCount - 1);
 }
+
+
+

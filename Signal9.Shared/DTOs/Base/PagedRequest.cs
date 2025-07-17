@@ -7,7 +7,7 @@ namespace Signal9.Shared.DTOs.Base;
 /// Base record for paginated requests in the Signal9 RMM system.
 /// Provides common pagination parameters for list-based queries.
 /// </summary>
-public record PagedRequest : BaseDto
+public record PagedRequest : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the page number to retrieve (1-based).
@@ -37,3 +37,5 @@ public record PagedRequest : BaseDto
     /// </summary>
     public bool SortDescending { get; init; }
 }
+
+

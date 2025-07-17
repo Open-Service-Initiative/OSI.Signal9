@@ -6,7 +6,7 @@ namespace Signal9.Shared.DTOs.System;
 /// <summary>
 /// System user DTO for platform management
 /// </summary>
-public record SystemUser : BaseDto
+public record SystemUser : BaseDto<Guid>
 {
     [Required]
     public string Username { get; set; } = string.Empty;
@@ -18,7 +18,6 @@ public record SystemUser : BaseDto
     public string? FirstName { get; set; }
     public string? LastName { get; set; }
     public bool IsActive { get; set; } = true;
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastLoginAt { get; set; }
     public string[] Roles { get; set; } = Array.Empty<string>();
 }
@@ -26,7 +25,7 @@ public record SystemUser : BaseDto
 /// <summary>
 /// System alert DTO for platform notifications
 /// </summary>
-public record SystemAlert : BaseDto
+public record SystemAlert : BaseDto<Guid>
 {
     [Required]
     public string Title { get; set; } = string.Empty;
@@ -36,9 +35,11 @@ public record SystemAlert : BaseDto
     
     public string Level { get; set; } = "Info";
     public bool IsResolved { get; set; } = false;
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? ResolvedAt { get; set; }
     public string? ResolvedBy { get; set; }
     public string Source { get; set; } = "System";
     public Dictionary<string, object> Metadata { get; set; } = new();
 }
+
+
+

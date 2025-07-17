@@ -107,7 +107,7 @@
 				"start"
 			],
 			"options": {
-				"cwd": "${workspaceFolder}/src/Signal9.RMM.Functions"
+				"cwd": "${workspaceFolder}/Signal9.RMM.Functions"
 			},
 			"group": "build",
 			"problemMatcher": [],
@@ -127,7 +127,7 @@
 				"start"
 			],
 			"options": {
-				"cwd": "${workspaceFolder}/src/Signal9.Web.Functions"
+				"cwd": "${workspaceFolder}/Signal9.Web.Functions"
 			},
 			"group": "build",
 			"problemMatcher": [],
@@ -146,7 +146,7 @@
 			"args": [
 				"build",
 				"-f",
-				"src/Signal9.Hub/Dockerfile",
+				"./Signal9.Hub/Dockerfile",
 				"-t",
 				"signal9-hub",
 				"."
@@ -162,7 +162,7 @@
 			"args": [
 				"build",
 				"-f",
-				"src/Signal9.WebPortal/Dockerfile",
+				"./Signal9.WebPortal/Dockerfile",
 				"-t",
 				"signal9-webportal",
 				"."
@@ -232,7 +232,7 @@
 				"Debug"
 			],
 			"options": {
-				"cwd": "${workspaceFolder}/src/Signal9.Web.Functions"
+				"cwd": "${workspaceFolder}/Signal9.Web.Functions"
 			},
 			"group": "build",
 			"problemMatcher": [
@@ -250,7 +250,7 @@
 				"Debug"
 			],
 			"options": {
-				"cwd": "${workspaceFolder}/src/Signal9.Agent.Functions"
+				"cwd": "${workspaceFolder}/Signal9.Agent.Functions"
 			},
 			"group": "build",
 			"problemMatcher": [
@@ -268,7 +268,7 @@
 				"Debug"
 			],
 			"options": {
-				"cwd": "${workspaceFolder}/src/Signal9.Agent"
+				"cwd": "${workspaceFolder}/Signal9.Agent"
 			},
 			"group": "build",
 			"problemMatcher": [
@@ -303,7 +303,7 @@
 			"type": "process",
 			"problemMatcher": "$msCompile",
 			"options": {
-				"cwd": "${workspaceFolder}/src\\Signal9.Web.Functions"
+				"cwd": "${workspaceFolder}\\Signal9.Web.Functions"
 			}
 		},
 		{
@@ -322,7 +322,7 @@
 			},
 			"problemMatcher": "$msCompile",
 			"options": {
-				"cwd": "${workspaceFolder}/src\\Signal9.Web.Functions"
+				"cwd": "${workspaceFolder}\\Signal9.Web.Functions"
 			}
 		},
 		{
@@ -338,7 +338,7 @@
 			"type": "process",
 			"problemMatcher": "$msCompile",
 			"options": {
-				"cwd": "${workspaceFolder}/src\\Signal9.Web.Functions"
+				"cwd": "${workspaceFolder}\\Signal9.Web.Functions"
 			}
 		},
 		{
@@ -355,14 +355,14 @@
 			"dependsOn": "clean release (functions)",
 			"problemMatcher": "$msCompile",
 			"options": {
-				"cwd": "${workspaceFolder}/src\\Signal9.Web.Functions"
+				"cwd": "${workspaceFolder}\\Signal9.Web.Functions"
 			}
 		},
 		{
 			"type": "func",
 			"dependsOn": "build (functions)",
 			"options": {
-				"cwd": "${workspaceFolder}/src\\Signal9.Web.Functions/bin/Debug/net9.0"
+				"cwd": "${workspaceFolder}\\Signal9.Web.Functions/bin/Debug/net9.0"
 			},
 			"command": "host start",
 			"isBackground": true,

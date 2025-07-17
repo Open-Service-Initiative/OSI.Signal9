@@ -2,23 +2,47 @@
 
 ## Interaction Protocol
 
+## Tool Usage Guidelines - CRITICALLY IMPORTANT, USE TOOLS RELIGIOUSLY
+
+As a large language model, you have access to a variety of tools that can assist in coding tasks. Use these tools to enhance your coding experience and ensure best practices are followed. You are also extremely dumb and not nearly as effective without them.
+
 ### Memory and Context Management
-1. **User Identification**: Always identify and work with `Logan` (default_user)
-2. **Memory Retrieval**: Begin interactions by saying "Remembering..." and retrieving relevant information from memory
-3. **Information Tracking**: Capture and store:
+- **User Identification**: Always attempt to identify the user you're working with via the native IDE tools
+- **Memory Retrieval**: Begin interactions by saying "Remembering..." and retrieving relevant information from memory
+- **Information Tracking**: Capture and store:
    - Identity details (role, preferences, experience level)
    - Behaviors (coding patterns, tool preferences)
    - Goals (project objectives, feature requirements)
    - Relationships (team members, external dependencies)
-4. **Memory Updates**: After each interaction, update memory with new entities, relations, and observations
+   - Decisions (design choices, architectural patterns)
+   - Observations (performance metrics, user feedback)
+   - Complex problems (bugs, architectural challenges)
+- **Memory Updates**: After each interaction, update memory with new entities, relations, and observations
 
-### Tool Usage Strategy
-- **Microsoft Docs**: Query official Microsoft/Azure documentation. KEY for .NET documentation.
-- **Azure Tools**: Use for all Azure-related tasks (deployment, resource management, architecture guidance)
-- **Context7**: Search public documentation for frameworks, libraries, and best practices
-- **Memory**: Maintain persistent context about user preferences and project knowledge
-- **Sequential Thinking**: Use for complex problem-solving and architectural decisions
-- **Playwright**: For web testing and browser automation tasks
+### Azure Development Workflow
+- **Always call `azure_development-get_code_gen_best_practices`** before generating Azure-related code
+- **Use `azure_development-get_deployment_best_practices`** when preparing deployments
+- **Call `azure_development-get_azure_function_code_gen_best_practices`** for Function Apps
+- **Leverage `azure_check_predeploy`** before infrastructure deployment
+
+### Research and Documentation
+- **Context7**: Query for library documentation with `mcp_context7_resolve-library-id` then `mcp_context7_get-library-docs`
+- **Microsoft Docs**: Use `mcp_microsoft-doc_microsoft_docs_search` for official Azure/Microsoft guidance (especially .NET)
+- **Web Search**: Use `vscode-websearchforcopilot_webSearch` for wider web searches when needed
+
+### Problem Solving
+- **Sequential Thinking**: Use `mcp_sequentialthi_sequentialthinking` for complex architectural decisions
+- **Memory Management**: Store insights with `mcp_memory_add_observation` and retrieve with `mcp_memory_search_entities`
+
+### Testing and Validation
+- **Playwright**: Use browser automation tools for UI testing
+- **Error Checking**: Always run `get_errors` after code changes
+- **Task Execution**: Use `run_vs_code_task` for build and test operations
+
+### File Operations
+- **Read First**: Use `read_file` or `semantic_search` before editing
+- **Targeted Edits**: Use `replace_string_in_file` for precise changes
+- **Bulk Changes**: Use `insert_edit_into_file` for larger modifications
 
 ## Architecture Overview
 
@@ -42,13 +66,8 @@ Signal9 is a **serverless-first RMM (Remote Monitoring and Management)** platfor
 ## Development Workflow
 
 ### Build & Test Commands
-- Solution build: `dotnet build --configuration Release` or VS Code task `build-solution`
-- Testing: `dotnet test --configuration Release --logger trx --collect:"XPlat Code Coverage"`
-
-### Azure Deployment
-- Full deployment: `azd up` (uses `azure.yaml` configuration)
-- Infrastructure only: `azd provision`
-- Code deployment: `azd deploy`
+- Solution build: `dotnet build` or VS Code task `build-solution`
+- Testing: `dotnet test --logger trx --collect:"XPlat Code Coverage"`
 
 ## Critical Development Patterns
 
@@ -109,32 +128,5 @@ Signal9.Shared/DTOs/
 1. Define command type in shared models
 2. Implement execution in `AgentService.ExecuteCommandAsync`
 3. Add SignalR hub method for command dispatch
-
-## Tool Usage Guidelines
-
-### Azure Development Workflow
-- **Always call `azure_development-get_code_gen_best_practices`** before generating Azure-related code
-- **Use `azure_development-get_deployment_best_practices`** when preparing deployments
-- **Call `azure_development-get_azure_function_code_gen_best_practices`** for Function Apps
-- **Leverage `azure_check_predeploy`** before infrastructure deployment
-
-### Research and Documentation
-- **Context7**: Query for library documentation with `mcp_context7_resolve-library-id` then `mcp_context7_get-library-docs`
-- **Microsoft Docs**: Use `mcp_microsoft-doc_microsoft_docs_search` for official Azure/Microsoft guidance
-- **Web Search**: Use `vscode-websearchforcopilot_webSearch` for current information
-
-### Problem Solving
-- **Sequential Thinking**: Use `mcp_sequentialthi_sequentialthinking` for complex architectural decisions
-- **Memory Management**: Store insights with `mcp_memory_add_observations` and retrieve with `mcp_memory_search_nodes`
-
-### Testing and Validation
-- **Playwright**: Use browser automation tools for UI testing
-- **Error Checking**: Always run `get_errors` after code changes
-- **Task Execution**: Use `run_vs_code_task` for build and test operations
-
-### File Operations
-- **Read First**: Use `read_file` or `semantic_search` before editing
-- **Targeted Edits**: Use `replace_string_in_file` for precise changes
-- **Bulk Changes**: Use `insert_edit_into_file` for larger modifications
 
 Remember: This platform emphasizes **serverless scalability** and **strict multi-tenancy** - always consider these factors in any code changes.

@@ -52,11 +52,11 @@ public class AgentHub
             var configuration = await _agentService.GenerateAgentConfigurationAsync(Guid.Parse(registeredAgent.Id));
 
             // Add agent to SignalR group for tenant isolation
-            var tenantGroup = $"tenant-{request.TenantId}";
+            var tenantGroup = $"tenant-{request.ParentId}";
             var agentGroup = $"agent-{registeredAgent.Id}";
 
             _logger.LogInformation("Agent {AgentId} registered successfully for tenant {TenantId}", 
-                registeredAgent.Id, request.TenantId);
+                registeredAgent.Id, request.ParentId);
 
             return new SignalRMessageAction("registrationResponse")
             {

@@ -6,7 +6,7 @@ namespace Signal9.Shared.DTOs.RemoteManagement;
 /// <summary>
 /// Request to initiate a remote session with an agent.
 /// </summary>
-public record RemoteSessionRequest : TenantScopedDto
+public record RemoteSessionRequest : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the agent ID to connect to.
@@ -53,12 +53,12 @@ public record RemoteSessionRequest : TenantScopedDto
 /// <summary>
 /// Response containing remote session information and connection details.
 /// </summary>
-public record RemoteSessionResponse : TenantScopedDto
+public record RemoteSessionResponse : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the remote session.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the agent ID for the session.
@@ -89,16 +89,6 @@ public record RemoteSessionResponse : TenantScopedDto
     /// Gets the connection details for establishing the session.
     /// </summary>
     public ConnectionDetails? ConnectionDetails { get; init; }
-    
-    /// <summary>
-    /// Gets when the session was created.
-    /// </summary>
-    public DateTime CreatedAt { get; init; }
-    
-    /// <summary>
-    /// Gets when the session was started.
-    /// </summary>
-    public DateTime? StartedAt { get; init; }
     
     /// <summary>
     /// Gets when the session ended.
@@ -134,7 +124,7 @@ public record RemoteSessionResponse : TenantScopedDto
 /// <summary>
 /// Request to capture a screenshot from an agent.
 /// </summary>
-public record ScreenshotRequest : TenantScopedDto
+public record ScreenshotRequest : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the agent ID to capture screenshot from.
@@ -186,12 +176,12 @@ public record ScreenshotRequest : TenantScopedDto
 /// <summary>
 /// Response containing screenshot data and metadata.
 /// </summary>
-public record ScreenshotResponse : TenantScopedDto
+public record ScreenshotResponse : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the screenshot.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the agent ID the screenshot was taken from.
@@ -253,7 +243,7 @@ public record ScreenshotResponse : TenantScopedDto
 /// <summary>
 /// Request to transfer files to or from an agent.
 /// </summary>
-public record FileTransferRequest : TenantScopedDto
+public record FileTransferRequest : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the agent ID for the file transfer.
@@ -322,12 +312,12 @@ public record FileTransferRequest : TenantScopedDto
 /// <summary>
 /// Response containing file transfer status and progress information.
 /// </summary>
-public record FileTransferResponse : TenantScopedDto
+public record FileTransferResponse : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the file transfer.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the agent ID for the file transfer.
@@ -424,7 +414,7 @@ public record FileTransferResponse : TenantScopedDto
 /// <summary>
 /// Request to execute a script on an agent.
 /// </summary>
-public record ScriptExecutionRequest : TenantScopedDto
+public record ScriptExecutionRequest : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the agent ID to execute the script on.
@@ -489,12 +479,12 @@ public record ScriptExecutionRequest : TenantScopedDto
 /// <summary>
 /// Response containing script execution results and output.
 /// </summary>
-public record ScriptExecutionResponse : TenantScopedDto
+public record ScriptExecutionResponse : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the script execution.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the agent ID where the script was executed.
@@ -567,7 +557,7 @@ public record ScriptExecutionResponse : TenantScopedDto
 /// <summary>
 /// Request to perform a registry operation on an agent.
 /// </summary>
-public record RegistryOperationRequest : TenantScopedDto
+public record RegistryOperationRequest : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the agent ID to perform the registry operation on.
@@ -631,12 +621,12 @@ public record RegistryOperationRequest : TenantScopedDto
 /// <summary>
 /// Response containing registry operation results.
 /// </summary>
-public record RegistryOperationResponse : TenantScopedDto
+public record RegistryOperationResponse : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the registry operation.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the agent ID where the operation was performed.
@@ -702,7 +692,7 @@ public record RegistryOperationResponse : TenantScopedDto
 /// <summary>
 /// Request to manage a service on an agent.
 /// </summary>
-public record ServiceManagementRequest : TenantScopedDto
+public record ServiceManagementRequest : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the agent ID to manage the service on.
@@ -752,12 +742,12 @@ public record ServiceManagementRequest : TenantScopedDto
 /// <summary>
 /// Response containing service management operation results.
 /// </summary>
-public record ServiceManagementResponse : TenantScopedDto
+public record ServiceManagementResponse : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the service operation.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the agent ID where the operation was performed.
@@ -1177,3 +1167,5 @@ public enum ServiceState
 }
 
 #endregion
+
+

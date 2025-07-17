@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
@@ -9,6 +9,7 @@
     <AssemblyName>Signal9.Web.Functions</AssemblyName>
     <RootNamespace>Signal9.Web.Functions</RootNamespace>
     <LangVersion>default</LangVersion>
+    <UserSecretsId>163fb3df-2a91-45dc-a1d0-d28c65d84017</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
@@ -34,7 +35,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../Signal9.Shared/Signal9.Shared.csproj" />
-    <ProjectReference Include="..\..\ServiceDefaults\ServiceDefaults.csproj" />
+    <ProjectReference Include="../ServiceDefaults/ServiceDefaults.csproj" />
   </ItemGroup>
 
   <ItemGroup>

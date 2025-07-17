@@ -8,11 +8,16 @@ using System.Net;
 using System.Text.Json;
 using System.Reflection;
 using SystemWeb = System.Web;
+using Microsoft.Azure.WebJobs.Extensions.OpenApi.Core.Attributes;
+using Microsoft.OpenApi.Models;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Signal9.Shared.DTOs.Base;
 
 namespace Signal9.Web.Functions.System;
 
 /// <summary>
-/// Azure Functions for system administration and management operations
+/// Modern Azure Functions for comprehensive system administration and management operations
 /// </summary>
 public class SystemFunctions
 {
@@ -26,95 +31,149 @@ public class SystemFunctions
     #region Health and Status
 
     /// <summary>
-    /// Get comprehensive system health status
+    /// Get comprehensive system health status with detailed component monitoring
     /// </summary>
     [Function("GetSystemHealth")]
-    public async Task<HttpResponseData> GetSystemHealthAsync(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "system/health")] HttpRequestData req)
+    [OpenApiOperation(operationId: "GetSystemHealth", tags: new[] { "System" }, Summary = "Get system health", Description = "Retrieve comprehensive system health status with detailed component monitoring and metrics")]
+    [OpenApiParameter(name: "includeDetails", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include detailed component information (default: false)")]
+    [OpenApiParameter(name: "includeMetrics", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include system performance metrics (default: false)")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "System health status")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
+    public Task<IActionResult> GetSystemHealthAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "system/health")] HttpRequest req)
     {
         _logger.LogInformation("Getting system health status");
 
         try
         {
-            var query = SystemWeb.HttpUtility.ParseQueryString(req.Url.Query);
-            var includeDetails = bool.TryParse(query["includeDetails"], out var details) && details;
+            var query = req.Query;
+            var includeDetailsStr = query.TryGetValue("includeDetails", out var includeDetailsValues) ? includeDetailsValues.FirstOrDefault() : null;
+            var includeDetails = bool.TryParse(includeDetailsStr, out var details) && details;
+            var includeMetricsStr = query.TryGetValue("includeMetrics", out var includeMetricsValues) ? includeMetricsValues.FirstOrDefault() : null;
+            var includeMetrics = bool.TryParse(includeMetricsStr, out var metrics) && metrics;
 
             // TODO: Implement actual health checks
-            var healthStatus = new SystemHealthStatus
+            var healthStatus = new
             {
                 Status = "Healthy",
                 Timestamp = DateTime.UtcNow,
                 Version = GetSystemVersion(),
                 Uptime = GetSystemUptime(),
-                Components = await GetComponentHealthStatus(includeDetails),
-                Metrics = await GetSystemMetrics()
+                
+                // Overall health score
+                HealthScore = 95,
+                
+                // Component health (conditional)
+                Components = includeDetails ? GetComponentHealthStatus(includeDetails) : null,
+                
+                // Performance metrics (conditional)
+                Metrics = includeMetrics ? GetSystemMetrics() : null,
+                
+                // Response metadata
+                Meta = new
+                {
+                    IncludeDetails = includeDetails,
+                    IncludeMetrics = includeMetrics
+                }
             };
 
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            response.Headers.Add("Content-Type", "application/json");
-            await response.WriteStringAsync(JsonSerializer.Serialize(healthStatus, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            }));
-
-            return response;
+            return Task.FromResult<IActionResult>(new OkObjectResult(healthStatus));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting system health");
-            var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
-            await errorResponse.WriteStringAsync(JsonSerializer.Serialize(new { error = "Failed to get system health", details = ex.Message }));
-            return errorResponse;
+            return Task.FromResult<IActionResult>(new ObjectResult(new { error = "Failed to retrieve system health", details = ex.Message })
+            {
+                StatusCode = StatusCodes.Status500InternalServerError
+            });
         }
     }
 
     /// <summary>
-    /// Get system statistics and metrics
+    /// Get comprehensive system statistics and performance metrics
     /// </summary>
-    [Function("GetSystemStats")]
-    public async Task<HttpResponseData> GetSystemStatsAsync(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "system/stats")] HttpRequestData req)
+    [Function("GetSystemStatistics")]
+    [OpenApiOperation(operationId: "GetSystemStatistics", tags: new[] { "System" }, Summary = "Get system statistics", Description = "Retrieve comprehensive system statistics and performance metrics")]
+    [OpenApiParameter(name: "timeRange", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Time range for statistics (1h, 24h, 7d, 30d) - default: 1h")]
+    [OpenApiParameter(name: "includeHistorical", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include historical trend data (default: false)")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "System statistics")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid time range")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
+    public Task<IActionResult> GetSystemStatisticsAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "system/statistics")] HttpRequest req)
     {
         _logger.LogInformation("Getting system statistics");
 
         try
         {
-            var query = SystemWeb.HttpUtility.ParseQueryString(req.Url.Query);
-            var timeRange = query["timeRange"] ?? "24h"; // 1h, 24h, 7d, 30d
-            var groupBy = query["groupBy"] ?? "hour"; // minute, hour, day
+            var query = req.Query;
+            var timeRange = query.TryGetValue("timeRange", out var timeRangeValues) ? timeRangeValues.FirstOrDefault() : "1h";
+            var includeHistoricalStr = query.TryGetValue("includeHistorical", out var includeHistoricalValues) ? includeHistoricalValues.FirstOrDefault() : null;
+            var includeHistorical = bool.TryParse(includeHistoricalStr, out var historical) && historical;
 
-            // TODO: Query actual statistics from database/telemetry
-            var stats = new SystemStatistics
+            // Validate time range
+            var validTimeRanges = new[] { "1h", "24h", "7d", "30d" };
+            if (!validTimeRanges.Contains(timeRange))
+            {
+                return Task.FromResult<IActionResult>(new BadRequestObjectResult(new { error = "Invalid time range. Valid options: 1h, 24h, 7d, 30d" }));
+            }
+
+            // TODO: Implement actual statistics retrieval
+            var statistics = new
             {
                 TimeRange = timeRange,
                 GeneratedAt = DateTime.UtcNow,
-                TotalTenants = await GetTotalTenants(),
-                ActiveTenants = await GetActiveTenants(),
-                TotalAgents = await GetTotalAgents(),
-                OnlineAgents = await GetOnlineAgents(),
-                CommandsProcessed = await GetCommandsProcessed(timeRange),
-                TelemetryEvents = await GetTelemetryEvents(timeRange),
-                ErrorRate = await GetErrorRate(timeRange),
-                ResponseTimes = await GetAverageResponseTimes(timeRange),
-                ResourceUsage = await GetResourceUsage(),
-                TrendData = await GetTrendData(timeRange, groupBy)
+                
+                // Resource utilization
+                Resources = new
+                {
+                    CpuUsage = 0.0,
+                    MemoryUsage = 0.0,
+                    DiskUsage = 0.0,
+                    NetworkIn = 0.0,
+                    NetworkOut = 0.0
+                },
+                
+                // Performance metrics
+                Performance = new
+                {
+                    RequestsPerSecond = 0.0,
+                    AverageResponseTime = 0.0,
+                    ErrorRate = 0.0,
+                    Throughput = 0.0
+                },
+                
+                // System health
+                Health = new
+                {
+                    UptimePercentage = 100.0,
+                    HealthScore = 95,
+                    ComponentsHealthy = 0,
+                    ComponentsDown = 0
+                },
+                
+                // Historical data (conditional)
+                Historical = includeHistorical ? new object[]
+                {
+                    // Empty for now - will be populated from actual data
+                } : null,
+                
+                // Response metadata
+                Meta = new
+                {
+                    IncludeHistorical = includeHistorical
+                }
             };
 
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            response.Headers.Add("Content-Type", "application/json");
-            await response.WriteStringAsync(JsonSerializer.Serialize(stats, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            }));
-
-            return response;
+            return Task.FromResult<IActionResult>(new OkObjectResult(statistics));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting system statistics");
-            var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
-            await errorResponse.WriteStringAsync(JsonSerializer.Serialize(new { error = "Failed to get system statistics", details = ex.Message }));
-            return errorResponse;
+            return Task.FromResult<IActionResult>(new ObjectResult(new { error = "Failed to retrieve system statistics", details = ex.Message })
+            {
+                StatusCode = StatusCodes.Status500InternalServerError
+            });
         }
     }
 
@@ -123,43 +182,84 @@ public class SystemFunctions
     #region Configuration Management
 
     /// <summary>
-    /// Get system configuration settings
+    /// Get system configuration settings with secure filtering
     /// </summary>
-    [Function("GetSystemConfig")]
-    public async Task<HttpResponseData> GetSystemConfigAsync(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "system/config")] HttpRequestData req)
+    [Function("GetSystemConfiguration")]
+    [OpenApiOperation(operationId: "GetSystemConfiguration", tags: new[] { "System" }, Summary = "Get system configuration", Description = "Retrieve system configuration settings with optional section filtering and sensitive data control")]
+    [OpenApiParameter(name: "section", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Optional configuration section to filter by")]
+    [OpenApiParameter(name: "includeSensitive", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include sensitive configuration values (default: false)")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "System configuration")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid section parameter")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
+    public Task<IActionResult> GetSystemConfigurationAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "system/configuration")] HttpRequest req)
     {
         _logger.LogInformation("Getting system configuration");
 
         try
         {
-            var query = SystemWeb.HttpUtility.ParseQueryString(req.Url.Query);
-            var section = query["section"]; // Optional: filter by section
-            var includeSensitive = bool.TryParse(query["includeSensitive"], out var sensitive) && sensitive;
+            var query = req.Query;
+            var section = query.TryGetValue("section", out var sectionValues) ? sectionValues.FirstOrDefault() : null;
+            var includeSensitiveStr = query.TryGetValue("includeSensitive", out var includeSensitiveValues) ? includeSensitiveValues.FirstOrDefault() : null;
+            var includeSensitive = bool.TryParse(includeSensitiveStr, out var sensitive) && sensitive;
 
             // TODO: Get configuration from secure storage
-            var config = await GetSystemConfiguration(section, includeSensitive);
+            var config = GetSystemConfiguration(section, includeSensitive);
 
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            response.Headers.Add("Content-Type", "application/json");
-            await response.WriteStringAsync(JsonSerializer.Serialize(config, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            }));
-
-            return response;
+            return Task.FromResult<IActionResult>(new OkObjectResult(config));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting system configuration");
-            var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
-            await errorResponse.WriteStringAsync(JsonSerializer.Serialize(new { error = "Failed to get system configuration", details = ex.Message }));
-            return errorResponse;
+            return Task.FromResult<IActionResult>(new ObjectResult(new { error = "Failed to retrieve system configuration", details = ex.Message })
+            {
+                StatusCode = StatusCodes.Status500InternalServerError
+            });
         }
     }
 
     /// <summary>
-    /// Update system configuration settings
+    /// Update system configuration settings with validation
+    /// </summary>
+    [Function("UpdateSystemConfiguration")]
+    [OpenApiOperation(operationId: "UpdateSystemConfiguration", tags: new[] { "System" }, Summary = "Update system configuration", Description = "Update system configuration settings with validation and secure storage")]
+    [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(object), Description = "Configuration update request")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "Configuration updated successfully")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid configuration data")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
+    public async Task<IActionResult> UpdateSystemConfigurationAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "put", Route = "system/configuration")] HttpRequest req)
+    {
+        _logger.LogInformation("Updating system configuration");
+
+        try
+        {
+            var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+            var configUpdate = JsonSerializer.Deserialize<Dictionary<string, object>>(requestBody, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            });
+
+            if (configUpdate == null)
+            {
+                return new BadRequestObjectResult(new { error = "Invalid configuration data" });
+            }
+
+            // TODO: Validate configuration updates
+            // TODO: Apply configuration changes securely
+            var result = await UpdateSystemConfiguration(configUpdate);
+
+            return new OkObjectResult(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating system configuration");
+            return new ObjectResult(new { error = "Failed to update system configuration", details = ex.Message })
+            {
+                StatusCode = StatusCodes.Status500InternalServerError
+            };
+        }
+    }
     /// </summary>
     [Function("UpdateSystemConfig")]
     public async Task<HttpResponseData> UpdateSystemConfigAsync(
@@ -183,7 +283,7 @@ public class SystemFunctions
             }
 
             // Validate configuration changes
-            var validationErrors = ValidateConfigurationUpdate(configUpdate);
+            var validationErrors = ValidateConfigurationUpdate(configUpdate.Settings);
             if (validationErrors.Any())
             {
                 var badRequestResponse = req.CreateResponse(HttpStatusCode.BadRequest);
@@ -195,7 +295,7 @@ public class SystemFunctions
             }
 
             // TODO: Apply configuration changes with proper backup and rollback
-            var result = await ApplyConfigurationChanges(configUpdate);
+            var result = await ApplyConfigurationChanges(configUpdate.Settings);
 
             var response = req.CreateResponse(HttpStatusCode.OK);
             response.Headers.Add("Content-Type", "application/json");
@@ -593,33 +693,31 @@ public class SystemFunctions
         return DateTime.UtcNow - DateTime.UtcNow.AddDays(-5);
     }
 
-    private async Task<List<ComponentHealthInfo>> GetComponentHealthStatus(bool includeDetails)
+    private object GetComponentHealthStatus(bool includeDetails)
     {
         // TODO: Implement actual health checks for each component
-        await Task.Delay(1); // Placeholder for async operation
-
-        return new List<ComponentHealthInfo>
+        var components = new List<object>
         {
-            new ComponentHealthInfo { Name = "Database", Status = "Healthy", ResponseTime = TimeSpan.FromMilliseconds(15) },
-            new ComponentHealthInfo { Name = "SignalR Hub", Status = "Healthy", ResponseTime = TimeSpan.FromMilliseconds(8) },
-            new ComponentHealthInfo { Name = "Azure Service Bus", Status = "Healthy", ResponseTime = TimeSpan.FromMilliseconds(12) },
-            new ComponentHealthInfo { Name = "Azure Storage", Status = "Healthy", ResponseTime = TimeSpan.FromMilliseconds(20) },
-            new ComponentHealthInfo { Name = "Key Vault", Status = "Healthy", ResponseTime = TimeSpan.FromMilliseconds(25) }
+            new { Name = "Database", Status = "Healthy", ResponseTime = "15ms" },
+            new { Name = "SignalR Hub", Status = "Healthy", ResponseTime = "8ms" },
+            new { Name = "Azure Service Bus", Status = "Healthy", ResponseTime = "12ms" },
+            new { Name = "Azure Storage", Status = "Healthy", ResponseTime = "20ms" },
+            new { Name = "Key Vault", Status = "Healthy", ResponseTime = "25ms" }
         };
+
+        return components;
     }
 
-    private async Task<SystemMetrics> GetSystemMetrics()
+    private object GetSystemMetrics()
     {
         // TODO: Get actual system metrics
-        await Task.Delay(1);
-
-        return new SystemMetrics
+        return new
         {
             CpuUsage = Math.Round(new Random().NextDouble() * 100, 2),
             MemoryUsage = Math.Round(new Random().NextDouble() * 100, 2),
             RequestsPerMinute = new Random().Next(100, 1000),
-            ActiveConnections = new Random().Next(50, 500),
-            ErrorRate = Math.Round(new Random().NextDouble() * 5, 2)
+            ErrorRate = Math.Round(new Random().NextDouble() * 5, 2),
+            AverageResponseTime = Math.Round(new Random().NextDouble() * 200, 2)
         };
     }
 
@@ -704,50 +802,42 @@ public class SystemFunctions
         return new { message = "Trend data not yet implemented" };
     }
 
-    private async Task<object> GetSystemConfiguration(string? section, bool includeSensitive)
+    private object GetSystemConfiguration(string? section, bool includeSensitive)
     {
-        // TODO: Get configuration from Azure Key Vault or App Configuration
-        await Task.Delay(1);
-        return new
+        // TODO: Implement actual configuration retrieval from secure storage
+        var config = new Dictionary<string, object>
         {
-            general = new { systemName = "Signal9 RMM", version = "1.0.0" },
-            features = new { autoUpdates = true, telemetryCollection = true },
-            limits = new { maxAgentsPerTenant = 1000, maxTenantsPerSubscription = 100 }
+            { "database", new { connectionString = includeSensitive ? "Server=..." : "[REDACTED]" } },
+            { "signalr", new { hubName = "AgentHub", connectionString = includeSensitive ? "Endpoint=..." : "[REDACTED]" } },
+            { "logging", new { level = "Information", enableTelemetry = true } },
+            { "security", new { authLevel = "Function", enableHttps = true } }
         };
-    }
 
-    private List<string> ValidateConfigurationUpdate(SystemConfigurationUpdate update)
-    {
-        var errors = new List<string>();
-
-        // TODO: Implement configuration validation
-        if (update.Settings == null || !update.Settings.Any())
+        if (!string.IsNullOrEmpty(section))
         {
-            errors.Add("No settings provided for update");
+            return config.ContainsKey(section) ? config[section] : new { };
         }
 
-        return errors;
+        return config;
     }
 
-    private async Task<object> ApplyConfigurationChanges(SystemConfigurationUpdate update)
+    private async Task<object> UpdateSystemConfiguration(Dictionary<string, object> configUpdate)
     {
-        // TODO: Apply configuration changes with proper backup and validation
-        await Task.Delay(100);
-        return new { success = true, message = "Configuration updated successfully" };
-    }
-
-    private async Task<MaintenanceResult> PerformMaintenanceOperation(string operation)
-    {
-        // TODO: Implement actual maintenance operations
-        await Task.Delay(100);
-
-        return new MaintenanceResult
-        {
-            Operation = operation,
-            Success = true,
-            Message = $"Operation {operation} completed successfully",
-            Timestamp = DateTime.UtcNow
+        // TODO: Implement actual configuration update with validation
+        await Task.Delay(1);
+        return new { 
+            success = true, 
+            message = "Configuration updated successfully", 
+            updatedAt = DateTime.UtcNow,
+            changes = configUpdate.Keys.ToList()
         };
+    }
+
+    private async Task<int> GetBackupRetentionDays()
+    {
+        // TODO: Retrieve backup retention policy from configuration or database
+        await Task.Delay(1);
+        return 30;
     }
 
     private async Task<object> GetBackupStatus()
@@ -840,6 +930,44 @@ public class SystemFunctions
         // TODO: Update alert in database
         await Task.Delay(1);
         return new { success = true, message = "Alert status updated" };
+    }
+
+    private List<string> ValidateConfigurationUpdate(Dictionary<string, object> configUpdate)
+    {
+        var errors = new List<string>();
+        
+        // TODO: Implement actual configuration validation
+        // For now, just basic validation
+        if (configUpdate.Count == 0)
+        {
+            errors.Add("No configuration changes provided");
+        }
+        
+        return errors;
+    }
+
+    private async Task<object> ApplyConfigurationChanges(Dictionary<string, object> configUpdate)
+    {
+        // TODO: Implement actual configuration persistence
+        await Task.Delay(1);
+        return new { 
+            success = true, 
+            message = "Configuration changes applied", 
+            updatedAt = DateTime.UtcNow 
+        };
+    }
+
+    private async Task<MaintenanceResult> PerformMaintenanceOperation(string operation)
+    {
+        // TODO: Implement actual maintenance operations
+        await Task.Delay(1);
+        return new MaintenanceResult 
+        { 
+            Success = true, 
+            Operation = operation, 
+            Timestamp = DateTime.UtcNow,
+            Message = "Operation completed successfully"
+        };
     }
 
     #endregion

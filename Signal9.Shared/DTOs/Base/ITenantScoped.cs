@@ -13,3 +13,4 @@ public interface ITenantScoped
     /// </summary>
     Guid TenantId { get; }
 }
+

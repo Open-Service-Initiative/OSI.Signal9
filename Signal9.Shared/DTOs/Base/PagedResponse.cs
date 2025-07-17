@@ -9,7 +9,7 @@ namespace Signal9.Shared.DTOs.Base;
 /// Provides a standardized way to return paginated data with metadata.
 /// </summary>
 /// <typeparam name="T">The type of items in the paginated collection.</typeparam>
-public record PagedResponse<T> : BaseDto
+public record PagedResponse<T> : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the collection of items for the current page.
@@ -57,3 +57,5 @@ public record PagedResponse<T> : BaseDto
     /// </summary>
     public bool HasPreviousPage => Page > 1;
 }
+
+

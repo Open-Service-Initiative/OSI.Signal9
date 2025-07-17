@@ -1,12 +1,13 @@
 using System.ComponentModel.DataAnnotations;
 using Signal9.Shared.DTOs.Base;
+using Signal9.Shared.DTOs.Monitoring;
 
 namespace Signal9.Shared.DTOs.Security;
 
 /// <summary>
 /// Request to create or update a user account.
 /// </summary>
-public record UserAccountRequest : TenantScopedDto
+public record UserAccountRequest : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the username for the account.
@@ -46,12 +47,12 @@ public record UserAccountRequest : TenantScopedDto
 /// <summary>
 /// Response containing user account information.
 /// </summary>
-public record UserAccountResponse : TenantScopedDto
+public record UserAccountResponse : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the user account.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the username for the account.
@@ -79,16 +80,6 @@ public record UserAccountResponse : TenantScopedDto
     public bool IsActive { get; init; }
     
     /// <summary>
-    /// Gets the account creation timestamp.
-    /// </summary>
-    public DateTime CreatedAt { get; init; }
-    
-    /// <summary>
-    /// Gets the last login timestamp.
-    /// </summary>
-    public DateTime? LastLoginAt { get; init; }
-    
-    /// <summary>
     /// Gets additional user metadata.
     /// </summary>
     public Dictionary<string, object>? Metadata { get; init; }
@@ -97,7 +88,7 @@ public record UserAccountResponse : TenantScopedDto
 /// <summary>
 /// Request to create or update a role.
 /// </summary>
-public record RoleRequest : TenantScopedDto
+public record RoleRequest : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the name of the role.
@@ -125,12 +116,12 @@ public record RoleRequest : TenantScopedDto
 /// <summary>
 /// Response containing role information.
 /// </summary>
-public record RoleResponse : TenantScopedDto
+public record RoleResponse : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the role.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the name of the role.
@@ -155,18 +146,17 @@ public record RoleResponse : TenantScopedDto
     /// <summary>
     /// Gets the role creation timestamp.
     /// </summary>
-    public DateTime CreatedAt { get; init; }
-}
+    }
 
 /// <summary>
 /// Permission information.
 /// </summary>
-public record PermissionDto : BaseDto
+public record PermissionDto : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the permission.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the name of the permission.
@@ -192,12 +182,12 @@ public record PermissionDto : BaseDto
 /// <summary>
 /// Audit log entry for security tracking.
 /// </summary>
-public record AuditLogEntry : TenantScopedDto
+public record AuditLogEntry : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the audit log entry.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the user ID who performed the action.
@@ -253,12 +243,12 @@ public record AuditLogEntry : TenantScopedDto
 /// <summary>
 /// Compliance report for security and regulatory requirements.
 /// </summary>
-public record ComplianceReport : TenantScopedDto
+public record ComplianceReport : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the compliance report.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the name of the compliance framework.
@@ -299,12 +289,12 @@ public record ComplianceReport : TenantScopedDto
 /// <summary>
 /// Threat detection alert for security monitoring.
 /// </summary>
-public record ThreatDetectionAlert : TenantScopedDto
+public record ThreatDetectionAlert : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the alert.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the agent ID where the threat was detected.
@@ -360,7 +350,7 @@ public record ThreatDetectionAlert : TenantScopedDto
 /// <summary>
 /// Antivirus status information for an agent.
 /// </summary>
-public record AntivirusStatus : TenantScopedDto
+public record AntivirusStatus : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the agent ID this status applies to.
@@ -461,7 +451,7 @@ public record ComplianceFinding
     /// <summary>
     /// Gets the unique identifier for the finding.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the category of the finding.
@@ -515,18 +505,6 @@ public enum ThreatSeverity
 }
 
 /// <summary>
-/// Alert status enumeration.
-/// </summary>
-public enum AlertStatus
-{
-    Open,
-    InProgress,
-    Resolved,
-    Dismissed,
-    Escalated
-}
-
-/// <summary>
 /// Scan type enumeration.
 /// </summary>
 public enum ScanType
@@ -550,3 +528,5 @@ public enum AntivirusHealthStatus
 }
 
 #endregion
+
+

@@ -6,9 +6,9 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build-debug",
-            "program": "${workspaceFolder}/src/Signal9.Web/bin/Debug/net9.0/Signal9.Web.dll",
+            "program": "${workspaceFolder}/Signal9.Web/bin/Debug/net9.0/Signal9.Web.dll",
             "args": [],
-            "cwd": "${workspaceFolder}/src/Signal9.Web",
+            "cwd": "${workspaceFolder}/Signal9.Web",
             "stopAtEntry": false,
             "serverReadyAction": {
                 "action": "openExternally",
@@ -31,9 +31,9 @@
             "args": [
                 "start",
                 "--port",
-                "7072"
+                "7071"
             ],
-            "cwd": "${workspaceFolder}/src/Signal9.Web.Functions",
+            "cwd": "${workspaceFolder}/Signal9.Web.Functions",
             "env": {
                 "AzureWebJobsStorage": "UseDevelopmentStorage=true",
                 "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated"
@@ -49,9 +49,9 @@
             "args": [
                 "start",
                 "--port",
-                "7071"
+                "7072"
             ],
-            "cwd": "${workspaceFolder}/src/Signal9.Agent.Functions",
+            "cwd": "${workspaceFolder}/Signal9.Agent.Functions",
             "env": {
                 "AzureWebJobsStorage": "UseDevelopmentStorage=true",
                 "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated"
@@ -64,9 +64,9 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build: Signal9.Agent",
-            "program": "${workspaceFolder}/src/Signal9.Agent/bin/Debug/net9.0/Signal9.Agent.dll",
+            "program": "${workspaceFolder}/Signal9.Agent/bin/Debug/net9.0/Signal9.Agent.dll",
             "args": [],
-            "cwd": "${workspaceFolder}/src/Signal9.Agent",
+            "cwd": "${workspaceFolder}/Signal9.Agent",
             "stopAtEntry": false,
             "env": {
                 "DOTNET_ENVIRONMENT": "Development",

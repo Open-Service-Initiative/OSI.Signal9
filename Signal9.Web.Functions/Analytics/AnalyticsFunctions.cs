@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
@@ -7,6 +9,9 @@ using Signal9.Shared.DTOs.Base;
 using System.Net;
 using System.Text.Json;
 using SystemWeb = System.Web;
+using Microsoft.Azure.WebJobs.Extensions.OpenApi.Core.Attributes;
+using Microsoft.OpenApi.Models;
+using System.ComponentModel.DataAnnotations;
 
 namespace Signal9.Web.Functions.Analytics;
 
@@ -28,17 +33,25 @@ public class AnalyticsFunctions
     /// Get comprehensive dashboard analytics data
     /// </summary>
     [Function("GetDashboardAnalytics")]
-    public async Task<HttpResponseData> GetDashboardAnalyticsAsync(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/dashboard")] HttpRequestData req)
+    [OpenApiOperation(operationId: "GetDashboardAnalytics", tags: new[] { "Analytics" }, Summary = "Get dashboard analytics", Description = "Retrieve comprehensive dashboard analytics data with time range filtering and tenant scope")]
+    [OpenApiParameter(name: "timeRange", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Time range filter (1h, 24h, 7d, 30d, 90d) - default: 7d")]
+    [OpenApiParameter(name: "tenantId", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Filter by specific tenant ID")]
+    [OpenApiParameter(name: "includeDetails", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include detailed breakdown data")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(DashboardAnalyticsResponse), Description = "Dashboard analytics data")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid parameters")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
+    public async Task<IActionResult> GetDashboardAnalyticsAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/dashboard")] HttpRequest req,
+        CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Getting dashboard analytics");
 
         try
         {
-            var query = SystemWeb.HttpUtility.ParseQueryString(req.Url.Query);
-            var timeRange = query["timeRange"] ?? "7d"; // 1h, 24h, 7d, 30d, 90d
-            var tenantId = query["tenantId"]; // Optional: filter by tenant
-            var includeComparisons = bool.TryParse(query["includeComparisons"], out var comparisons) && comparisons;
+            var query = req.Query;
+            var timeRange = query["timeRange"].FirstOrDefault() ?? "7d"; // 1h, 24h, 7d, 30d, 90d
+            var tenantId = query["tenantId"].FirstOrDefault(); // Optional: filter by tenant
+            var includeComparisons = bool.TryParse(query["includeComparisons"].FirstOrDefault(), out var comparisons) && comparisons;
 
             var analytics = new DashboardAnalyticsResponse
             {
@@ -68,21 +81,15 @@ public class AnalyticsFunctions
                 Comparisons = includeComparisons ? await GetComparisonData(timeRange, tenantId) : null
             };
 
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            response.Headers.Add("Content-Type", "application/json");
-            await response.WriteStringAsync(JsonSerializer.Serialize(analytics, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            }));
-
-            return response;
+            return new OkObjectResult(analytics);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting dashboard analytics");
-            var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
-            await errorResponse.WriteStringAsync(JsonSerializer.Serialize(new { error = "Failed to retrieve analytics", details = ex.Message }));
-            return errorResponse;
+            return new ObjectResult(new { error = "Failed to retrieve analytics", details = ex.Message })
+            {
+                StatusCode = StatusCodes.Status500InternalServerError
+            };
         }
     }
 
@@ -90,9 +97,18 @@ public class AnalyticsFunctions
     /// Get detailed tenant analytics
     /// </summary>
     [Function("GetTenantAnalytics")]
-    public async Task<HttpResponseData> GetTenantAnalyticsAsync(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/tenants/{tenantId}")] HttpRequestData req,
-        string tenantId)
+    [OpenApiOperation(operationId: "GetTenantAnalytics", tags: new[] { "Analytics" }, Summary = "Get tenant analytics", Description = "Retrieve comprehensive analytics data for a specific tenant with time range filtering and hierarchical options")]
+    [OpenApiParameter(name: "tenantId", In = ParameterLocation.Path, Required = true, Type = typeof(string), Description = "The unique identifier of the tenant")]
+    [OpenApiParameter(name: "timeRange", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Time range filter (1h, 24h, 7d, 30d, 90d) - default: 30d")]
+    [OpenApiParameter(name: "includeChildren", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include child tenant data in analytics")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(TenantAnalyticsResponse), Description = "Tenant analytics data")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid tenant ID format")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotFound, contentType: "application/json", bodyType: typeof(object), Description = "Tenant not found")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
+    public async Task<IActionResult> GetTenantAnalyticsAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/tenants/{tenantId}")] HttpRequest req,
+        string tenantId,
+        CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Getting tenant analytics for {TenantId}", tenantId);
 
@@ -100,14 +116,12 @@ public class AnalyticsFunctions
         {
             if (!Guid.TryParse(tenantId, out var id))
             {
-                var badRequestResponse = req.CreateResponse(HttpStatusCode.BadRequest);
-                await badRequestResponse.WriteStringAsync(JsonSerializer.Serialize(new { error = "Invalid tenant ID format" }));
-                return badRequestResponse;
+                return new BadRequestObjectResult(new { error = "Invalid tenant ID format" });
             }
 
-            var query = SystemWeb.HttpUtility.ParseQueryString(req.Url.Query);
-            var timeRange = query["timeRange"] ?? "30d";
-            var includeChildren = bool.TryParse(query["includeChildren"], out var children) && children;
+            var query = req.Query;
+            var timeRange = query["timeRange"].FirstOrDefault() ?? "30d";
+            var includeChildren = bool.TryParse(query["includeChildren"].FirstOrDefault(), out var children) && children;
 
             var analytics = new TenantAnalyticsResponse
             {
@@ -138,21 +152,15 @@ public class AnalyticsFunctions
                 Trends = await GetTenantTrends(id, timeRange, includeChildren)
             };
 
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            response.Headers.Add("Content-Type", "application/json");
-            await response.WriteStringAsync(JsonSerializer.Serialize(analytics, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            }));
-
-            return response;
+            return new OkObjectResult(analytics);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting tenant analytics for {TenantId}", tenantId);
-            var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
-            await errorResponse.WriteStringAsync(JsonSerializer.Serialize(new { error = "Failed to retrieve tenant analytics", details = ex.Message }));
-            return errorResponse;
+            return new ObjectResult(new { error = "Failed to retrieve tenant analytics", details = ex.Message })
+            {
+                StatusCode = StatusCodes.Status500InternalServerError
+            };
         }
     }
 
@@ -160,65 +168,61 @@ public class AnalyticsFunctions
     /// Get detailed agent analytics
     /// </summary>
     [Function("GetAgentAnalytics")]
-    public async Task<HttpResponseData> GetAgentAnalyticsAsync(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/agents/{agentId}")] HttpRequestData req,
-        string agentId)
+    [OpenApiOperation(operationId: "GetAgentAnalytics", tags: new[] { "Analytics" }, Summary = "Get agent analytics", Description = "Retrieve comprehensive analytics data for a specific agent including performance, availability, and trends")]
+    [OpenApiParameter(name: "agentId", In = ParameterLocation.Path, Required = true, Type = typeof(Guid), Description = "The unique identifier of the agent")]
+    [OpenApiParameter(name: "timeRange", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Time range filter (1h, 24h, 7d, 30d, 90d) - default: 7d")]
+    [OpenApiParameter(name: "includeDetailedMetrics", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include detailed performance metrics")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(AgentAnalyticsResponse), Description = "Agent analytics data")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid agent ID format")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotFound, contentType: "application/json", bodyType: typeof(object), Description = "Agent not found")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
+    public async Task<IActionResult> GetAgentAnalyticsAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/agents/{agentId:guid}")] HttpRequest req,
+        Guid agentId,
+        CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Getting agent analytics for {AgentId}", agentId);
 
         try
         {
-            if (!Guid.TryParse(agentId, out var id))
-            {
-                var badRequestResponse = req.CreateResponse(HttpStatusCode.BadRequest);
-                await badRequestResponse.WriteStringAsync(JsonSerializer.Serialize(new { error = "Invalid agent ID format" }));
-                return badRequestResponse;
-            }
-
-            var query = SystemWeb.HttpUtility.ParseQueryString(req.Url.Query);
-            var timeRange = query["timeRange"] ?? "7d";
-            var includeDetailedMetrics = bool.TryParse(query["includeDetailedMetrics"], out var detailed) && detailed;
+            var query = req.Query;
+            var timeRange = query["timeRange"].FirstOrDefault() ?? "7d";
+            var includeDetailedMetrics = bool.TryParse(query["includeDetailedMetrics"].FirstOrDefault(), out var detailed) && detailed;
 
             var analytics = new AgentAnalyticsResponse
             {
-                AgentId = id,
+                AgentId = agentId,
                 TimeRange = timeRange,
                 GeneratedAt = DateTime.UtcNow,
 
                 // Performance Metrics
-                PerformanceMetrics = await GetAgentPerformanceMetrics(id, timeRange, includeDetailedMetrics),
+                PerformanceMetrics = await GetAgentPerformanceMetrics(agentId, timeRange, includeDetailedMetrics),
 
                 // Availability Metrics
-                AvailabilityMetrics = await GetAgentAvailabilityMetrics(id, timeRange),
+                AvailabilityMetrics = await GetAgentAvailabilityMetrics(agentId, timeRange),
 
                 // Command History Analytics
-                CommandAnalytics = await GetAgentCommandAnalytics(id, timeRange),
+                CommandAnalytics = await GetAgentCommandAnalytics(agentId, timeRange),
 
                 // Resource Usage Analytics
-                ResourceAnalytics = await GetAgentResourceAnalytics(id, timeRange, includeDetailedMetrics),
+                ResourceAnalytics = await GetAgentResourceAnalytics(agentId, timeRange, includeDetailedMetrics),
 
                 // Error and Issue Analytics
-                ErrorAnalytics = await GetAgentErrorAnalytics(id, timeRange),
+                ErrorAnalytics = await GetAgentErrorAnalytics(agentId, timeRange),
 
                 // Trend Analysis
-                Trends = await GetAgentTrends(id, timeRange)
+                Trends = await GetAgentTrends(agentId, timeRange)
             };
 
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            response.Headers.Add("Content-Type", "application/json");
-            await response.WriteStringAsync(JsonSerializer.Serialize(analytics, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            }));
-
-            return response;
+            return new OkObjectResult(analytics);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting agent analytics for {AgentId}", agentId);
-            var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
-            await errorResponse.WriteStringAsync(JsonSerializer.Serialize(new { error = "Failed to retrieve agent analytics", details = ex.Message }));
-            return errorResponse;
+            return new ObjectResult(new { error = "Failed to retrieve agent analytics", details = ex.Message })
+            {
+                StatusCode = StatusCodes.Status500InternalServerError
+            };
         }
     }
 
@@ -230,56 +234,48 @@ public class AnalyticsFunctions
     /// Generate comprehensive system reports
     /// </summary>
     [Function("GenerateReport")]
-    public async Task<HttpResponseData> GenerateReportAsync(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "analytics/reports")] HttpRequestData req)
+    [OpenApiOperation(operationId: "GenerateReport", tags: new[] { "Analytics" }, Summary = "Generate report", Description = "Generate comprehensive analytics reports with customizable parameters and output formats")]
+    [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(ReportGenerationRequest), Description = "Report generation parameters")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(ReportGenerationResponse), Description = "Generated report data")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid report request")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
+    public async Task<IActionResult> GenerateReportAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "analytics/reports")] HttpRequest req,
+        CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Generating analytics report");
 
         try
         {
-            var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-            var reportRequest = JsonSerializer.Deserialize<ReportGenerationRequest>(requestBody, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            });
+            var reportRequest = await req.ReadFromJsonAsync<ReportGenerationRequest>(cancellationToken);
 
             if (reportRequest == null)
             {
-                var badRequestResponse = req.CreateResponse(HttpStatusCode.BadRequest);
-                await badRequestResponse.WriteStringAsync(JsonSerializer.Serialize(new { error = "Invalid report request" }));
-                return badRequestResponse;
+                return new BadRequestObjectResult(new { error = "Invalid report request" });
             }
 
             // Validate report parameters
             var validationErrors = ValidateReportRequest(reportRequest);
             if (validationErrors.Any())
             {
-                var badRequestResponse = req.CreateResponse(HttpStatusCode.BadRequest);
-                await badRequestResponse.WriteStringAsync(JsonSerializer.Serialize(new { 
+                return new BadRequestObjectResult(new { 
                     error = "Report validation failed", 
                     errors = validationErrors 
-                }));
-                return badRequestResponse;
+                });
             }
 
             // Generate report
             var report = await GenerateReport(reportRequest);
 
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            response.Headers.Add("Content-Type", "application/json");
-            await response.WriteStringAsync(JsonSerializer.Serialize(report, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            }));
-
-            return response;
+            return new OkObjectResult(report);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error generating report");
-            var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
-            await errorResponse.WriteStringAsync(JsonSerializer.Serialize(new { error = "Failed to generate report", details = ex.Message }));
-            return errorResponse;
+            return new ObjectResult(new { error = "Failed to generate report", details = ex.Message })
+            {
+                StatusCode = StatusCodes.Status500InternalServerError
+            };
         }
     }
 
@@ -287,33 +283,33 @@ public class AnalyticsFunctions
     /// Get available report templates
     /// </summary>
     [Function("GetReportTemplates")]
-    public async Task<HttpResponseData> GetReportTemplatesAsync(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/report-templates")] HttpRequestData req)
+    [OpenApiOperation(operationId: "GetReportTemplates", tags: new[] { "Analytics" }, Summary = "Get report templates", Description = "Retrieve available report templates with optional category filtering")]
+    [OpenApiParameter(name: "category", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Filter by category (performance, security, usage, compliance)")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(List<ReportTemplateResponse>), Description = "List of available report templates")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid category parameter")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
+    public async Task<IActionResult> GetReportTemplatesAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/report-templates")] HttpRequest req,
+        CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Getting report templates");
 
         try
         {
-            var query = SystemWeb.HttpUtility.ParseQueryString(req.Url.Query);
-            var category = query["category"]; // "performance", "security", "usage", "compliance"
+            var query = req.Query;
+            var category = query["category"].FirstOrDefault(); // "performance", "security", "usage", "compliance"
 
             var templates = await GetAvailableReportTemplates(category);
 
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            response.Headers.Add("Content-Type", "application/json");
-            await response.WriteStringAsync(JsonSerializer.Serialize(templates, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            }));
-
-            return response;
+            return new OkObjectResult(templates);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting report templates");
-            var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
-            await errorResponse.WriteStringAsync(JsonSerializer.Serialize(new { error = "Failed to retrieve report templates", details = ex.Message }));
-            return errorResponse;
+            return new ObjectResult(new { error = "Failed to retrieve report templates", details = ex.Message })
+            {
+                StatusCode = StatusCodes.Status500InternalServerError
+            };
         }
     }
 
@@ -321,18 +317,27 @@ public class AnalyticsFunctions
     /// Get scheduled reports
     /// </summary>
     [Function("GetScheduledReports")]
-    public async Task<HttpResponseData> GetScheduledReportsAsync(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/scheduled-reports")] HttpRequestData req)
+    [OpenApiOperation(operationId: "GetScheduledReports", tags: new[] { "Analytics" }, Summary = "Get scheduled reports", Description = "Retrieve scheduled reports with optional filtering by tenant and status")]
+    [OpenApiParameter(name: "tenantId", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Filter by tenant ID")]
+    [OpenApiParameter(name: "isActive", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Filter by active status")]
+    [OpenApiParameter(name: "page", In = ParameterLocation.Query, Required = false, Type = typeof(int), Description = "Page number for pagination (default: 1)")]
+    [OpenApiParameter(name: "pageSize", In = ParameterLocation.Query, Required = false, Type = typeof(int), Description = "Page size for pagination (default: 20, max: 100)")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "Paginated list of scheduled reports")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid pagination parameters")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
+    public async Task<IActionResult> GetScheduledReportsAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/scheduled-reports")] HttpRequest req,
+        CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Getting scheduled reports");
 
         try
         {
-            var query = SystemWeb.HttpUtility.ParseQueryString(req.Url.Query);
-            var tenantId = query["tenantId"];
-            var isActive = bool.TryParse(query["isActive"], out var active) ? active : (bool?)null;
-            var page = int.TryParse(query["page"], out var p) ? Math.Max(1, p) : 1;
-            var pageSize = int.TryParse(query["pageSize"], out var ps) ? Math.Max(1, Math.Min(100, ps)) : 20;
+            var query = req.Query;
+            var tenantId = query["tenantId"].FirstOrDefault();
+            var isActive = bool.TryParse(query["isActive"].FirstOrDefault(), out var active) ? active : (bool?)null;
+            var page = int.TryParse(query["page"].FirstOrDefault(), out var p) ? Math.Max(1, p) : 1;
+            var pageSize = int.TryParse(query["pageSize"].FirstOrDefault(), out var ps) ? Math.Max(1, Math.Min(100, ps)) : 20;
 
             var scheduledReports = await GetScheduledReportsFromDatabase(tenantId, isActive);
             var totalCount = scheduledReports.Count();
@@ -343,29 +348,24 @@ public class AnalyticsFunctions
                 .Take(pageSize)
                 .ToList();
 
-            var result = new PagedResponse<ScheduledReportResponse>
+            var result = new
             {
                 Items = pagedReports,
                 Page = page,
                 PageSize = pageSize,
-                TotalCount = totalCount
+                TotalCount = totalCount,
+                TotalPages = totalPages
             };
 
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            response.Headers.Add("Content-Type", "application/json");
-            await response.WriteStringAsync(JsonSerializer.Serialize(result, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            }));
-
-            return response;
+            return new OkObjectResult(result);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting scheduled reports");
-            var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
-            await errorResponse.WriteStringAsync(JsonSerializer.Serialize(new { error = "Failed to retrieve scheduled reports", details = ex.Message }));
-            return errorResponse;
+            return new ObjectResult(new { error = "Failed to retrieve scheduled reports", details = ex.Message })
+            {
+                StatusCode = StatusCodes.Status500InternalServerError
+            };
         }
     }
 
@@ -377,56 +377,49 @@ public class AnalyticsFunctions
     /// Execute custom analytics queries
     /// </summary>
     [Function("ExecuteCustomQuery")]
-    public async Task<HttpResponseData> ExecuteCustomQueryAsync(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "analytics/custom-query")] HttpRequestData req)
+    [OpenApiOperation(operationId: "ExecuteCustomQuery", tags: new[] { "Analytics" }, Summary = "Execute custom analytics query", Description = "Execute custom analytics queries with validation and security checks")]
+    [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(CustomAnalyticsQueryRequest), Description = "Custom analytics query parameters")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "Query execution results")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid query parameters")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.Forbidden, contentType: "application/json", bodyType: typeof(object), Description = "Query not allowed for security reasons")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
+    public async Task<IActionResult> ExecuteCustomQueryAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "analytics/custom-query")] HttpRequest req,
+        CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Executing custom analytics query");
 
         try
         {
-            var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-            var queryRequest = JsonSerializer.Deserialize<CustomAnalyticsQueryRequest>(requestBody, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            });
+            var queryRequest = await req.ReadFromJsonAsync<CustomAnalyticsQueryRequest>(cancellationToken);
 
             if (queryRequest == null)
             {
-                var badRequestResponse = req.CreateResponse(HttpStatusCode.BadRequest);
-                await badRequestResponse.WriteStringAsync(JsonSerializer.Serialize(new { error = "Invalid query request" }));
-                return badRequestResponse;
+                return new BadRequestObjectResult(new { error = "Invalid query request" });
             }
 
             // Validate and sanitize query
             var validationErrors = ValidateCustomQuery(queryRequest);
             if (validationErrors.Any())
             {
-                var badRequestResponse = req.CreateResponse(HttpStatusCode.BadRequest);
-                await badRequestResponse.WriteStringAsync(JsonSerializer.Serialize(new { 
+                return new BadRequestObjectResult(new { 
                     error = "Query validation failed", 
                     errors = validationErrors 
-                }));
-                return badRequestResponse;
+                });
             }
 
             // Execute query with security checks
             var result = await ExecuteCustomAnalyticsQuery(queryRequest);
 
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            response.Headers.Add("Content-Type", "application/json");
-            await response.WriteStringAsync(JsonSerializer.Serialize(result, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            }));
-
-            return response;
+            return new OkObjectResult(result);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error executing custom query");
-            var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
-            await errorResponse.WriteStringAsync(JsonSerializer.Serialize(new { error = "Failed to execute custom query", details = ex.Message }));
-            return errorResponse;
+            return new ObjectResult(new { error = "Failed to execute custom query", details = ex.Message })
+            {
+                StatusCode = StatusCodes.Status500InternalServerError
+            };
         }
     }
 
@@ -434,56 +427,48 @@ public class AnalyticsFunctions
     /// Get data export for analytics
     /// </summary>
     [Function("ExportAnalyticsData")]
-    public async Task<HttpResponseData> ExportAnalyticsDataAsync(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "analytics/export")] HttpRequestData req)
+    [OpenApiOperation(operationId: "ExportAnalyticsData", tags: new[] { "Analytics" }, Summary = "Export analytics data", Description = "Export analytics data in various formats with optional filtering and date range")]
+    [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(AnalyticsExportRequest), Description = "Export request parameters")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.Accepted, contentType: "application/json", bodyType: typeof(AnalyticsExportResponse), Description = "Export initiated successfully")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid export parameters")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
+    public async Task<IActionResult> ExportAnalyticsDataAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "analytics/export")] HttpRequest req,
+        CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Exporting analytics data");
 
         try
         {
-            var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-            var exportRequest = JsonSerializer.Deserialize<AnalyticsExportRequest>(requestBody, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            });
+            var exportRequest = await req.ReadFromJsonAsync<AnalyticsExportRequest>(cancellationToken);
 
             if (exportRequest == null)
             {
-                var badRequestResponse = req.CreateResponse(HttpStatusCode.BadRequest);
-                await badRequestResponse.WriteStringAsync(JsonSerializer.Serialize(new { error = "Invalid export request" }));
-                return badRequestResponse;
+                return new BadRequestObjectResult(new { error = "Invalid export request" });
             }
 
             // Validate export parameters
             var validationErrors = ValidateExportRequest(exportRequest);
             if (validationErrors.Any())
             {
-                var badRequestResponse = req.CreateResponse(HttpStatusCode.BadRequest);
-                await badRequestResponse.WriteStringAsync(JsonSerializer.Serialize(new { 
+                return new BadRequestObjectResult(new { 
                     error = "Export validation failed", 
                     errors = validationErrors 
-                }));
-                return badRequestResponse;
+                });
             }
 
             // Generate export (async for large datasets)
             var exportResult = await InitiateDataExport(exportRequest);
 
-            var response = req.CreateResponse(HttpStatusCode.Accepted);
-            response.Headers.Add("Content-Type", "application/json");
-            await response.WriteStringAsync(JsonSerializer.Serialize(exportResult, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            }));
-
-            return response;
+            return new AcceptedResult(string.Empty, exportResult);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error exporting analytics data");
-            var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
-            await errorResponse.WriteStringAsync(JsonSerializer.Serialize(new { error = "Failed to export data", details = ex.Message }));
-            return errorResponse;
+            return new ObjectResult(new { error = "Failed to export data", details = ex.Message })
+            {
+                StatusCode = StatusCodes.Status500InternalServerError
+            };
         }
     }
 
@@ -495,36 +480,39 @@ public class AnalyticsFunctions
     /// Get performance benchmarks and comparisons
     /// </summary>
     [Function("GetPerformanceBenchmarks")]
-    public async Task<HttpResponseData> GetPerformanceBenchmarksAsync(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/performance/benchmarks")] HttpRequestData req)
+    [OpenApiOperation(operationId: "GetPerformanceBenchmarks", tags: new[] { "Analytics" }, Summary = "Get performance benchmarks", Description = "Retrieve performance benchmarks and comparisons with optional filtering by tenant, agent, and metric type")]
+    [OpenApiParameter(name: "tenantId", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Filter by tenant ID")]
+    [OpenApiParameter(name: "agentId", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Filter by agent ID")]
+    [OpenApiParameter(name: "metric", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Filter by metric type (cpu, memory, disk, network, response_time)")]
+    [OpenApiParameter(name: "timeRange", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Time range filter (default: 30d)")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "Performance benchmarks data")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid parameters")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
+    public async Task<IActionResult> GetPerformanceBenchmarksAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/performance/benchmarks")] HttpRequest req,
+        CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Getting performance benchmarks");
 
         try
         {
-            var query = SystemWeb.HttpUtility.ParseQueryString(req.Url.Query);
-            var tenantId = query["tenantId"];
-            var agentId = query["agentId"];
-            var metric = query["metric"]; // "cpu", "memory", "disk", "network", "response_time"
-            var timeRange = query["timeRange"] ?? "30d";
+            var query = req.Query;
+            var tenantId = query["tenantId"].FirstOrDefault();
+            var agentId = query["agentId"].FirstOrDefault();
+            var metric = query["metric"].FirstOrDefault(); // "cpu", "memory", "disk", "network", "response_time"
+            var timeRange = query["timeRange"].FirstOrDefault() ?? "30d";
 
             var benchmarks = await GetPerformanceBenchmarks(tenantId, agentId, metric, timeRange);
 
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            response.Headers.Add("Content-Type", "application/json");
-            await response.WriteStringAsync(JsonSerializer.Serialize(benchmarks, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            }));
-
-            return response;
+            return new OkObjectResult(benchmarks);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting performance benchmarks");
-            var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
-            await errorResponse.WriteStringAsync(JsonSerializer.Serialize(new { error = "Failed to retrieve benchmarks", details = ex.Message }));
-            return errorResponse;
+            return new ObjectResult(new { error = "Failed to retrieve benchmarks", details = ex.Message })
+            {
+                StatusCode = StatusCodes.Status500InternalServerError
+            };
         }
     }
 
@@ -921,16 +909,16 @@ public class AnalyticsFunctions
         return errors;
     }
 
-    private async Task<object> GenerateReport(ReportGenerationRequest request)
+    private async Task<ReportGenerationResponse> GenerateReport(ReportGenerationRequest request)
     {
         await Task.Delay(100);
-        return new
+        return new ReportGenerationResponse
         {
-            reportId = Guid.NewGuid(),
-            type = request.Type,
-            status = "completed",
-            generatedAt = DateTime.UtcNow,
-            downloadUrl = "/api/reports/download/12345"
+            ReportId = Guid.NewGuid(),
+            Type = request.Type,
+            Status = "completed",
+            GeneratedAt = DateTime.UtcNow,
+            DownloadUrl = "/api/reports/download/12345"
         };
     }
 

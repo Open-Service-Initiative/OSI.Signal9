@@ -6,7 +6,7 @@ namespace Signal9.Shared.DTOs.Monitoring;
 /// <summary>
 /// Request to create or update an alert.
 /// </summary>
-public record AlertRequest : TenantScopedDto
+public record AlertRequest : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the agent ID this alert is associated with.
@@ -70,12 +70,12 @@ public record AlertRequest : TenantScopedDto
 /// <summary>
 /// Response containing alert information.
 /// </summary>
-public record AlertResponse : TenantScopedDto
+public record AlertResponse : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the alert.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the agent ID this alert is associated with.
@@ -181,7 +181,7 @@ public record AlertResponse : TenantScopedDto
 /// <summary>
 /// Request to create or update an alert rule.
 /// </summary>
-public record AlertRuleRequest : TenantScopedDto
+public record AlertRuleRequest : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the name of the alert rule.
@@ -260,12 +260,12 @@ public record AlertRuleRequest : TenantScopedDto
 /// <summary>
 /// Response containing alert rule information.
 /// </summary>
-public record AlertRuleResponse : TenantScopedDto
+public record AlertRuleResponse : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the alert rule.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the name of the alert rule.
@@ -318,16 +318,6 @@ public record AlertRuleResponse : TenantScopedDto
     public bool IsEnabled { get; init; }
     
     /// <summary>
-    /// Gets when the rule was created.
-    /// </summary>
-    public DateTime CreatedAt { get; init; }
-    
-    /// <summary>
-    /// Gets when the rule was last modified.
-    /// </summary>
-    public DateTime LastModified { get; init; }
-    
-    /// <summary>
     /// Gets when the rule was last evaluated.
     /// </summary>
     public DateTime? LastEvaluated { get; init; }
@@ -361,7 +351,7 @@ public record AlertRuleResponse : TenantScopedDto
 /// <summary>
 /// Request to create or update a notification configuration.
 /// </summary>
-public record NotificationRequest : TenantScopedDto
+public record NotificationRequest : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the name of the notification configuration.
@@ -409,12 +399,12 @@ public record NotificationRequest : TenantScopedDto
 /// <summary>
 /// Response containing notification configuration information.
 /// </summary>
-public record NotificationResponse : TenantScopedDto
+public record NotificationResponse : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the notification configuration.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the name of the notification configuration.
@@ -457,15 +447,6 @@ public record NotificationResponse : TenantScopedDto
     public QuietHours? QuietHours { get; init; }
     
     /// <summary>
-    /// Gets when the notification was created.
-    /// </summary>
-    public DateTime CreatedAt { get; init; }
-    
-    /// <summary>
-    /// Gets when the notification was last modified.
-    /// </summary>
-    public DateTime LastModified { get; init; }
-    
     /// <summary>
     /// Gets the number of notifications sent.
     /// </summary>
@@ -480,12 +461,12 @@ public record NotificationResponse : TenantScopedDto
 /// <summary>
 /// System event for tracking significant system occurrences.
 /// </summary>
-public record SystemEvent : TenantScopedDto
+public record SystemEvent : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the system event.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the agent ID where the event occurred.
@@ -556,12 +537,12 @@ public record SystemEvent : TenantScopedDto
 /// <summary>
 /// Performance baseline for establishing expected system behavior.
 /// </summary>
-public record PerformanceBaseline : TenantScopedDto
+public record PerformanceBaseline : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the performance baseline.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the agent ID this baseline applies to.
@@ -628,12 +609,12 @@ public record PerformanceBaseline : TenantScopedDto
 /// <summary>
 /// Health status information for system components.
 /// </summary>
-public record HealthStatus : TenantScopedDto
+public record HealthStatus : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the health status.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the agent ID this health status applies to.
@@ -923,3 +904,5 @@ public enum TrendDirection
 }
 
 #endregion
+
+

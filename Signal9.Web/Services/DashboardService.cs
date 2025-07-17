@@ -8,35 +8,24 @@ namespace Signal9.Web.Services;
 /// <summary>
 /// Dashboard service implementation with Azure Functions integration
 /// </summary>
-public class DashboardService : IDashboardService
+public class DashboardService(
+  HttpClient httpClient,
+  ILogger<DashboardService> logger) : IDashboardService
 {
-    private readonly HttpClient _httpClient;
-    private readonly ILogger<DashboardService> _logger;
-    private readonly string _functionsBaseUrl;
-    private readonly JsonSerializerOptions _jsonOptions;
-
-    public DashboardService(
-        HttpClient httpClient,
-        ILogger<DashboardService> logger,
-        IConfiguration configuration)
+  private readonly string _functionsBaseUrl = "/api";
+    private readonly JsonSerializerOptions _jsonOptions = new()
     {
-        _httpClient = httpClient;
-        _logger = logger;
-        var baseUrl = configuration["WebFunctionsUrl"] ?? "http://localhost:7072";
-        _functionsBaseUrl = $"{baseUrl}/api";
-        
-        _jsonOptions = new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = true
-        };
-    }
+      PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+      WriteIndented = true
+    };
+
+    // For Static Web Apps, use relative API paths that will be proxied
 
     public async Task<IEnumerable<TenantResponse>> GetTenantsAsync()
     {
         try
         {
-            var response = await _httpClient.GetAsync($"{_functionsBaseUrl}/tenants");
+            var response = await httpClient.GetAsync($"{_functionsBaseUrl}/tenants");
             
             if (response.IsSuccessStatusCode)
             {
@@ -45,12 +34,12 @@ public class DashboardService : IDashboardService
                 return paginatedResponse?.Items ?? new List<TenantResponse>();
             }
             
-            _logger.LogWarning("Failed to get tenants. Status: {StatusCode}", response.StatusCode);
+            logger.LogWarning("Failed to get tenants. Status: {StatusCode}", response.StatusCode);
             return new List<TenantResponse>();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting tenants");
+            logger.LogError(ex, "Error getting tenants");
             return new List<TenantResponse>();
         }
     }
@@ -59,7 +48,7 @@ public class DashboardService : IDashboardService
     {
         try
         {
-            var response = await _httpClient.GetAsync($"{_functionsBaseUrl}/agents");
+            var response = await httpClient.GetAsync($"{_functionsBaseUrl}/agents");
             
             if (response.IsSuccessStatusCode)
             {
@@ -68,12 +57,12 @@ public class DashboardService : IDashboardService
                 return paginatedResponse?.Items ?? new List<AgentDto>();
             }
             
-            _logger.LogWarning("Failed to get devices. Status: {StatusCode}", response.StatusCode);
+            logger.LogWarning("Failed to get devices. Status: {StatusCode}", response.StatusCode);
             return new List<AgentDto>();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting devices");
+            logger.LogError(ex, "Error getting devices");
             return new List<AgentDto>();
         }
     }
@@ -82,7 +71,7 @@ public class DashboardService : IDashboardService
     {
         try
         {
-            var response = await _httpClient.GetAsync($"{_functionsBaseUrl}/tenants/{tenantId}");
+            var response = await httpClient.GetAsync($"{_functionsBaseUrl}/tenants/{tenantId}");
             
             if (response.IsSuccessStatusCode)
             {
@@ -94,7 +83,7 @@ public class DashboardService : IDashboardService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting tenant {TenantId}", tenantId);
+            logger.LogError(ex, "Error getting tenant {TenantId}", tenantId);
             return null;
         }
     }
@@ -103,7 +92,7 @@ public class DashboardService : IDashboardService
     {
         try
         {
-            var response = await _httpClient.GetAsync($"{_functionsBaseUrl}/agents/{agentId}");
+            var response = await httpClient.GetAsync($"{_functionsBaseUrl}/agents/{agentId}");
             
             if (response.IsSuccessStatusCode)
             {
@@ -115,7 +104,7 @@ public class DashboardService : IDashboardService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting device {AgentId}", agentId);
+            logger.LogError(ex, "Error getting device {AgentId}", agentId);
             return null;
         }
     }
@@ -127,7 +116,7 @@ public class DashboardService : IDashboardService
             var json = JsonSerializer.Serialize(request, _jsonOptions);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
             
-            var response = await _httpClient.PostAsync($"{_functionsBaseUrl}/tenants", content);
+            var response = await httpClient.PostAsync($"{_functionsBaseUrl}/tenants", content);
             response.EnsureSuccessStatusCode();
             
             var responseJson = await response.Content.ReadAsStringAsync();
@@ -140,7 +129,7 @@ public class DashboardService : IDashboardService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating tenant");
+            logger.LogError(ex, "Error creating tenant");
             throw;
         }
     }
@@ -152,7 +141,7 @@ public class DashboardService : IDashboardService
             var json = JsonSerializer.Serialize(request, _jsonOptions);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
             
-            var response = await _httpClient.PutAsync($"{_functionsBaseUrl}/tenants/{tenantId}", content);
+            var response = await httpClient.PutAsync($"{_functionsBaseUrl}/tenants/{tenantId}", content);
             response.EnsureSuccessStatusCode();
             
             var responseJson = await response.Content.ReadAsStringAsync();
@@ -165,7 +154,7 @@ public class DashboardService : IDashboardService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating tenant {TenantId}", tenantId);
+            logger.LogError(ex, "Error updating tenant {TenantId}", tenantId);
             throw;
         }
     }
@@ -174,12 +163,12 @@ public class DashboardService : IDashboardService
     {
         try
         {
-            var response = await _httpClient.DeleteAsync($"{_functionsBaseUrl}/tenants/{tenantId}");
+            var response = await httpClient.DeleteAsync($"{_functionsBaseUrl}/tenants/{tenantId}");
             response.EnsureSuccessStatusCode();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting tenant {TenantId}", tenantId);
+            logger.LogError(ex, "Error deleting tenant {TenantId}", tenantId);
             throw;
         }
     }
@@ -191,7 +180,7 @@ public class DashboardService : IDashboardService
             var json = JsonSerializer.Serialize(request, _jsonOptions);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
             
-            var response = await _httpClient.PostAsync($"{_functionsBaseUrl}/agents", content);
+            var response = await httpClient.PostAsync($"{_functionsBaseUrl}/agents", content);
             response.EnsureSuccessStatusCode();
             
             var responseJson = await response.Content.ReadAsStringAsync();
@@ -204,7 +193,7 @@ public class DashboardService : IDashboardService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating device");
+            logger.LogError(ex, "Error creating device");
             throw;
         }
     }
@@ -216,7 +205,7 @@ public class DashboardService : IDashboardService
             var json = JsonSerializer.Serialize(request, _jsonOptions);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
             
-            var response = await _httpClient.PutAsync($"{_functionsBaseUrl}/agents/{agentId}", content);
+            var response = await httpClient.PutAsync($"{_functionsBaseUrl}/agents/{agentId}", content);
             response.EnsureSuccessStatusCode();
             
             var responseJson = await response.Content.ReadAsStringAsync();
@@ -229,7 +218,7 @@ public class DashboardService : IDashboardService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating device {AgentId}", agentId);
+            logger.LogError(ex, "Error updating device {AgentId}", agentId);
             throw;
         }
     }
@@ -238,12 +227,12 @@ public class DashboardService : IDashboardService
     {
         try
         {
-            var response = await _httpClient.DeleteAsync($"{_functionsBaseUrl}/agents/{agentId}");
+            var response = await httpClient.DeleteAsync($"{_functionsBaseUrl}/agents/{agentId}");
             response.EnsureSuccessStatusCode();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting device {AgentId}", agentId);
+            logger.LogError(ex, "Error deleting device {AgentId}", agentId);
             throw;
         }
     }

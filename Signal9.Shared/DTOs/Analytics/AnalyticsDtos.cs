@@ -6,7 +6,7 @@ namespace Signal9.Shared.DTOs.Analytics;
 /// <summary>
 /// Dashboard analytics response containing comprehensive system metrics.
 /// </summary>
-public record DashboardAnalyticsResponse : BaseDto
+public record DashboardAnalyticsResponse : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the time range for the analytics data (e.g., "7d", "30d").
@@ -287,7 +287,7 @@ public record AlertInfo
     /// <summary>
     /// Gets the alert ID.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the alert title.
@@ -307,13 +307,13 @@ public record AlertInfo
     /// <summary>
     /// Gets when the alert was created.
     /// </summary>
-    public required DateTime CreatedAt { get; init; }
-}
+    }
 
 /// <summary>
 /// Tenant analytics response containing detailed metrics for a specific tenant.
+/// Uses unified hierarchy where ParentId represents the tenant this analytics data belongs to.
 /// </summary>
-public record TenantAnalyticsResponse : TenantScopedDto
+public record TenantAnalyticsResponse : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the time range for the analytics data.
@@ -526,7 +526,7 @@ public record TenantTrends
 /// <summary>
 /// Agent analytics response containing detailed metrics for a specific agent.
 /// </summary>
-public record AgentAnalyticsResponse : BaseDto
+public record AgentAnalyticsResponse : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the agent ID.
@@ -750,7 +750,7 @@ public record AgentTrends
 /// <summary>
 /// Request for generating reports.
 /// </summary>
-public record ReportGenerationRequest : BaseDto
+public record ReportGenerationRequest : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the report type.
@@ -789,15 +789,41 @@ public record ReportGenerationRequest : BaseDto
 }
 
 /// <summary>
-/// Report template information.
+/// Response for report generation.
 /// </summary>
-public record ReportTemplateResponse : BaseDto
+public record ReportGenerationResponse : BaseDto<Guid>
 {
     /// <summary>
-    /// Gets the template ID.
+    /// Gets the generated report ID.
     /// </summary>
-    public required Guid Id { get; init; }
+    public required Guid ReportId { get; init; }
     
+    /// <summary>
+    /// Gets the report type.
+    /// </summary>
+    public required string Type { get; init; }
+    
+    /// <summary>
+    /// Gets the report status.
+    /// </summary>
+    public required string Status { get; init; }
+    
+    /// <summary>
+    /// Gets when the report was generated.
+    /// </summary>
+    public DateTime GeneratedAt { get; init; } = DateTime.UtcNow;
+    
+    /// <summary>
+    /// Gets the download URL for the report.
+    /// </summary>
+    public string? DownloadUrl { get; init; }
+}
+
+/// <summary>
+/// Report template information.
+/// </summary>
+public record ReportTemplateResponse : BaseDto<Guid>
+{
     /// <summary>
     /// Gets the template name.
     /// </summary>
@@ -822,12 +848,12 @@ public record ReportTemplateResponse : BaseDto
 /// <summary>
 /// Scheduled report information.
 /// </summary>
-public record ScheduledReportResponse : BaseDto
+public record ScheduledReportResponse : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the scheduled report ID.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the report name.
@@ -868,7 +894,7 @@ public record ScheduledReportResponse : BaseDto
 /// <summary>
 /// Custom analytics query request.
 /// </summary>
-public record CustomAnalyticsQueryRequest : BaseDto
+public record CustomAnalyticsQueryRequest : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the query type.
@@ -909,7 +935,7 @@ public record CustomAnalyticsQueryRequest : BaseDto
 /// <summary>
 /// Analytics export request.
 /// </summary>
-public record AnalyticsExportRequest : BaseDto
+public record AnalyticsExportRequest : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the data type to export.
@@ -949,7 +975,7 @@ public record AnalyticsExportRequest : BaseDto
 /// <summary>
 /// Analytics export response.
 /// </summary>
-public record AnalyticsExportResponse : BaseDto
+public record AnalyticsExportResponse : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the export job ID.
@@ -971,3 +997,5 @@ public record AnalyticsExportResponse : BaseDto
     /// </summary>
     public DateTime? ExpiresAt { get; init; }
 }
+
+

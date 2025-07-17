@@ -1,10 +1,10 @@
 name: signal9
 metadata:
-  template: signal9-rmm-agent@0.0.1-beta
+  template: signal9@0.0.1-beta
 
 services:
   web-functions:
-    project: ./src/Signal9.Web.Functions
+    project: ./Signal9.Web.Functions
     language: csharp
     host: function
     hooks:
@@ -23,7 +23,7 @@ services:
             dotnet build --configuration Release
 
   agent-functions:
-    project: ./src/Signal9.Agent.Functions
+    project: ./Signal9.Agent.Functions
     language: csharp
     host: function
     hooks:
@@ -42,9 +42,9 @@ services:
             dotnet build --configuration Release
       
   web:
-    project: ./src/Signal9.Web
+    project: ./Signal9.Web
     language: csharp
-    host: appservice
+    host: staticwebapp
     hooks:
       prebuild:
         windows:
@@ -59,6 +59,17 @@ services:
             echo "Building Signal9 Web..."
             dotnet restore
             dotnet build --configuration Release
+
+resources:
+  cosmos:
+    type: db.cosmos
+    containers:
+      - name: signal9
+        partitionKeys: 
+          - /id
+
+  key-vault:
+    type: keyvault
 
 infra:
   provider: bicep

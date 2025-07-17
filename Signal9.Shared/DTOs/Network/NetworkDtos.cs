@@ -7,12 +7,12 @@ namespace Signal9.Shared.DTOs.Network;
 /// <summary>
 /// Network interface information for an agent.
 /// </summary>
-public record NetworkInterfaceInfo : TenantScopedDto
+public record NetworkInterfaceInfo : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the network interface record.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the agent ID this network interface belongs to.
@@ -111,12 +111,12 @@ public record NetworkInterfaceInfo : TenantScopedDto
 /// <summary>
 /// Network configuration settings for an agent.
 /// </summary>
-public record NetworkConfiguration : TenantScopedDto
+public record NetworkConfiguration : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the network configuration.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the agent ID this configuration applies to.
@@ -191,16 +191,6 @@ public record NetworkConfiguration : TenantScopedDto
     public QosConfiguration? QosConfig { get; init; }
     
     /// <summary>
-    /// Gets when this configuration was created.
-    /// </summary>
-    public DateTime CreatedAt { get; init; }
-    
-    /// <summary>
-    /// Gets when this configuration was last modified.
-    /// </summary>
-    public DateTime LastModified { get; init; }
-    
-    /// <summary>
     /// Gets who created this configuration.
     /// </summary>
     [MaxLength(100)]
@@ -221,12 +211,12 @@ public record NetworkConfiguration : TenantScopedDto
 /// <summary>
 /// Bandwidth usage metrics for network monitoring.
 /// </summary>
-public record BandwidthUsageMetrics : TenantScopedDto
+public record BandwidthUsageMetrics : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the bandwidth metrics record.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the agent ID these metrics belong to.
@@ -1228,3 +1218,5 @@ public record QosPriorityClass
 }
 
 #endregion
+
+

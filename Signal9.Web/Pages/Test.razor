@@ -1,0 +1,11 @@
+@page "/test"
+@using Signal9.Web.Services
+@inject IDashboardService DashboardService
+@inject SignalRService SignalRService
+
+<h1>Service Registration Test</h1>
+
+<p>DashboardService: @(DashboardService != null ? "✓ Registered" : "✗ Not registered")</p>
+<p>SignalRService: @(SignalRService != null ? "✓ Registered" : "✗ Not registered")</p>
+
+<p>If both services show as registered, the DI container is working correctly.</p>

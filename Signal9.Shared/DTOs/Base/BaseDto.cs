@@ -5,20 +5,27 @@ namespace Signal9.Shared.DTOs.Base;
 
 /// <summary>
 /// Abstract base record for all DTOs in the Signal9 RMM system.
-/// Provides common functionality and properties for all data transfer objects.
+/// Provides unified hierarchical structure where every DTO has an ID and optional parent.
 /// </summary>
-public abstract record BaseDto : IBaseDto
+public abstract record BaseDto<TId> : IBaseDto<TId> where TId : notnull
 {
     /// <summary>
     /// Gets the unique identifier for this DTO.
-    /// Can be overridden by derived classes if needed.
     /// </summary>
-    [StringLength(100, ErrorMessage = "Id cannot exceed 100 characters")]
-    public virtual string Id { get; init; } = Guid.NewGuid().ToString();
+    [Required(ErrorMessage = "Id is required")]
+    public TId Id { get; init; } = typeof(TId) == typeof(Guid) ? (TId)(object)Guid.NewGuid() : default(TId)!;
+
+    /// <summary>
+    /// Gets the parent DTO's ID for hierarchical relationships.
+    /// Null for root entities (top-level tenants).
+    /// For agents: ParentId = TenantId they belong to
+    /// For tenants: ParentId = Parent tenant ID (for MSP hierarchies)
+    /// </summary>
+    public TId? ParentId { get; init; }
 
     /// <summary>
     /// Gets the timestamp when the DTO was created.
-    /// Defaults to the current UTC time.
     /// </summary>
-    public DateTime Timestamp { get; init; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
 }
+

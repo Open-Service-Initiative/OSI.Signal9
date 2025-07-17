@@ -10,15 +10,15 @@ namespace Signal9.Shared.DTOs.Tenants;
 /// Request model for creating a new tenant in the Signal9 RMM system.
 /// Now uses enhanced TenantDto with shared contracts.
 /// </summary>
-public record CreateTenantRequest : BaseDto
+public record CreateTenantRequest : BaseDto<Guid>
 {
     /// <summary>
-    /// Gets the unique tenant code for registration.
+    /// Gets the unique tenant slug for registration.
     /// </summary>
-    [Required(ErrorMessage = "TenantCode is required")]
-    [StringLength(20, MinimumLength = 1, ErrorMessage = "TenantCode must be between 1 and 20 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9\-_]+$", ErrorMessage = "TenantCode can only contain alphanumeric characters, hyphens, and underscores")]
-    public required string TenantCode { get; init; }
+    [Required(ErrorMessage = "TenantSlug is required")]
+    [StringLength(20, MinimumLength = 1, ErrorMessage = "TenantSlug must be between 1 and 20 characters")]
+    [RegularExpression(@"^[a-zA-Z0-9\-_]+$", ErrorMessage = "TenantSlug can only contain alphanumeric characters, hyphens, and underscores")]
+    public required string TenantSlug { get; init; }
 
     /// <summary>
     /// Gets the name of the tenant.
@@ -64,20 +64,25 @@ public record CreateTenantRequest : BaseDto
     public string? Settings { get; init; }
 
     // Additional backward compatibility properties
-    public string? Code => TenantCode;
-    public string? Plan => SubscriptionTier.ToString();
+    public string? Slug { get; init; }
+    public string? Plan { get; init; }
     public string? TenantType { get; init; } = "Standard";
     public string? ParentTenantId { get; init; }
     public string? ContactPhone { get; init; }
+    
+    /// <summary>
+    /// Legacy TenantId property for backward compatibility
+    /// </summary>
+    public Guid TenantId { get; init; } = Guid.Empty;
 
     /// <summary>
     /// Converts this request to an enhanced TenantDto - SIMPLIFIED for Entity Framework approach
     /// </summary>
-    public TenantDto ToTenantDto()
+    public object ToTenantDto()
     {
-        return new TenantDto
+        return new
         {
-            TenantCode = TenantCode,
+            TenantCode = TenantSlug,
             Name = Name,
             Description = Description,
             ContactEmail = ContactEmail,
@@ -92,7 +97,7 @@ public record CreateTenantRequest : BaseDto
 /// <summary>
 /// Request model for updating an existing tenant.
 /// </summary>
-public record UpdateTenantRequest : BaseDto
+public record UpdateTenantRequest : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the tenant ID to update.
@@ -147,7 +152,7 @@ public record UpdateTenantRequest : BaseDto
     public TenantStatus? Status { get; init; }
 
     // Additional backward compatibility properties
-    public string? Code { get; init; }
+    public string? Slug { get; init; }
     public string? Plan { get; init; }
     public string? TenantType { get; init; }
     public string? ParentTenantId { get; init; }
@@ -158,12 +163,12 @@ public record UpdateTenantRequest : BaseDto
 /// <summary>
 /// Response model for tenant operations.
 /// </summary>
-public record TenantResponse : BaseDto
+public record TenantResponse : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the tenant information using enhanced TenantDto.
     /// </summary>
-    public TenantDto? Tenant { get; init; }
+    public object? Tenant { get; init; }
 
     /// <summary>
     /// Gets a value indicating whether the operation was successful.
@@ -184,14 +189,13 @@ public record TenantResponse : BaseDto
     /// Convenience properties that delegate to the inner Tenant for backward compatibility
     /// </summary>
     public string? Name { get; set; }
-    public string? Code { get; set; }
+    public string? Slug { get; set; }
     public string? Description { get; set; }
     public string? ContactEmail { get; set; }
     public string? ContactPhone { get; set; }
     public SubscriptionTier? Plan { get; set; }
     public int? MaxAgents { get; set; }
     public bool? IsActive { get; set; }
-    public DateTime? CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public int AgentCount { get; set; }
     public string? TenantId { get; set; } // String for backward compatibility 
@@ -202,14 +206,14 @@ public record TenantResponse : BaseDto
 /// <summary>
 /// Request model for tenant authentication/validation.
 /// </summary>
-public record TenantAuthenticationRequest : BaseDto
+public record TenantAuthenticationRequest : BaseDto<Guid>
 {
     /// <summary>
-    /// Gets the tenant code for authentication.
+    /// Gets the tenant slug for authentication.
     /// </summary>
-    [Required(ErrorMessage = "TenantCode is required")]
-    [StringLength(20, MinimumLength = 1, ErrorMessage = "TenantCode must be between 1 and 20 characters")]
-    public required string TenantCode { get; init; }
+    [Required(ErrorMessage = "TenantSlug is required")]
+    [StringLength(20, MinimumLength = 1, ErrorMessage = "TenantSlug must be between 1 and 20 characters")]
+    public required string TenantSlug { get; init; }
 
     /// <summary>
     /// Gets the API key for authentication (optional).
@@ -221,7 +225,7 @@ public record TenantAuthenticationRequest : BaseDto
 /// <summary>
 /// Response model for tenant authentication.
 /// </summary>
-public record TenantAuthenticationResponse : BaseDto
+public record TenantAuthenticationResponse : BaseDto<Guid>
 {
     /// <summary>
     /// Gets a value indicating whether authentication was successful.
@@ -231,7 +235,7 @@ public record TenantAuthenticationResponse : BaseDto
     /// <summary>
     /// Gets the tenant information if authentication was successful.
     /// </summary>
-    public TenantDto? Tenant { get; init; }
+    public object? Tenant { get; init; }
 
     /// <summary>
     /// Gets the authentication message or error details.
@@ -254,3 +258,5 @@ public enum TenantPlan
     Professional = 2,
     Enterprise = 3
 }
+
+

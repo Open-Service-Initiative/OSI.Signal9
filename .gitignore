@@ -301,3 +301,6 @@ obj/
 
 # End of https://www.toptal.com/developers/gitignore/api/aspnetcore,dotnetcore,azurefunctions,azurite
 Signal9.code-workspace
+AppHost/appsettings.json
+AppHost/appsettings.Development.json
+.vscode/mcp.json

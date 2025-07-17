@@ -40,7 +40,6 @@ public class TelemetryCollector : ITelemetryCollector
 
             return new TelemetryDataDto
             {
-                TenantId = Guid.Empty, // Will be set by calling service
                 AgentId = Environment.MachineName, // Will be set by calling service
                 TelemetryType = TelemetryType.SystemMetrics,
                 CpuUsagePercent = cpuUsage,
@@ -57,7 +56,6 @@ public class TelemetryCollector : ITelemetryCollector
             _logger.LogError(ex, "Error collecting telemetry data");
             return new TelemetryDataDto
             {
-                TenantId = Guid.Empty,
                 AgentId = Environment.MachineName,
                 TelemetryType = TelemetryType.SystemMetrics,
                 ErrorMessage = ex.Message
@@ -81,7 +79,6 @@ public class TelemetryCollector : ITelemetryCollector
                 _logger.LogError(ex, "Error collecting metric: {Metric}", metric);
                 results.Add(new TelemetryDataDto
                 {
-                    TenantId = Guid.Empty,
                     AgentId = Environment.MachineName,
                     TelemetryType = TelemetryType.SystemMetrics,
                     ErrorMessage = $"Error collecting {metric}: {ex.Message}"
@@ -106,7 +103,6 @@ public class TelemetryCollector : ITelemetryCollector
             // Aggregate the metrics into a single TelemetryDataDto
             var aggregated = new TelemetryDataDto
             {
-                TenantId = Guid.Empty,
                 AgentId = Environment.MachineName,
                 TelemetryType = TelemetryType.SystemMetrics,
                 CpuUsagePercent = allMetrics.FirstOrDefault()?.CpuUsagePercent,
@@ -125,7 +121,6 @@ public class TelemetryCollector : ITelemetryCollector
             _logger.LogError(ex, "Error collecting telemetry with specific metrics");
             return new TelemetryDataDto
             {
-                TenantId = Guid.Empty,
                 AgentId = Environment.MachineName,
                 TelemetryType = TelemetryType.SystemMetrics,
                 ErrorMessage = ex.Message
@@ -151,7 +146,6 @@ public class TelemetryCollector : ITelemetryCollector
         var cpuUsage = await GetCpuUsageAsync();
         return new TelemetryDataDto
         {
-            TenantId = Guid.Empty,
             AgentId = Environment.MachineName,
             TelemetryType = TelemetryType.SystemMetrics,
             CpuUsagePercent = cpuUsage,
@@ -164,7 +158,6 @@ public class TelemetryCollector : ITelemetryCollector
         var memoryInfo = await GetMemoryInfoAsync();
         return new TelemetryDataDto
         {
-            TenantId = Guid.Empty,
             AgentId = Environment.MachineName,
             TelemetryType = TelemetryType.SystemMetrics,
             MemoryUsageMB = memoryInfo.UsedMB,
@@ -177,7 +170,6 @@ public class TelemetryCollector : ITelemetryCollector
         var diskInfo = await GetDiskInfoAsync();
         return new TelemetryDataDto
         {
-            TenantId = Guid.Empty,
             AgentId = Environment.MachineName,
             TelemetryType = TelemetryType.SystemMetrics,
             DiskUsage = JsonSerializer.Serialize(diskInfo)
@@ -189,7 +181,6 @@ public class TelemetryCollector : ITelemetryCollector
         var processes = System.Diagnostics.Process.GetProcesses();
         return new TelemetryDataDto
         {
-            TenantId = Guid.Empty,
             AgentId = Environment.MachineName,
             TelemetryType = TelemetryType.SystemMetrics,
             ProcessCount = processes.Length,

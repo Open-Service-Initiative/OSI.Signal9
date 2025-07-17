@@ -1,0 +1,263 @@
+@page "/"
+@using Signal9.Web.Services
+@using Signal9.Shared.DTOs.Common
+@using Signal9.Shared.DTOs.Tenants
+@inject IDashboardService DashboardService
+@inject SignalRService SignalRService
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<PageTitle>Dashboard - Signal9 RMM</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h1>Dashboard</h1>
+            <p class="text-muted">Welcome to Signal9 Remote Monitoring and Management</p>
+            <div class="status-indicators">
+                <span class="badge bg-info me-2">
+                    <i class="bi bi-hdd-stack"></i> @deviceCount Devices
+                </span>
+                <span class="signalr-status badge bg-secondary me-2">
+                    <i class="fas fa-wifi"></i> @connectionStatus
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-3 mb-4">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h5 class="card-title">Total Devices</h5>
+                            <h2 class="card-text" data-stat="total-agents">@deviceCount</h2>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-pc-display fs-1"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-4">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h5 class="card-title">Online Devices</h5>
+                            <h2 class="card-text" data-stat="online-agents">@onlineCount</h2>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-check-circle fs-1"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-4">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h5 class="card-title">Alerts</h5>
+                            <h2 class="card-text">@alertCount</h2>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-exclamation-triangle fs-1"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-4">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h5 class="card-title">Tenants</h5>
+                            <h2 class="card-text">@tenantCount</h2>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-building fs-1"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Recent Devices</h5>
+                </div>
+                <div class="card-body">
+                    @if (isLoading)
+                    {
+                        <div class="text-center">
+                            <div class="spinner-border" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    }
+                    else if (recentDevices?.Any() == true)
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Device Name</th>
+                                        <th>Status</th>
+                                        <th>Last Seen</th>
+                                        <th>Tenant</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var device in recentDevices.Take(5))
+                                    {
+                                        <tr data-agent-id="@device.Id">
+                                            <td>@device.MachineName</td>
+                                            <td>
+                                                <span class="agent-status badge @(device.IsOnline ? "bg-success" : "bg-danger")">
+                                                    @(device.IsOnline ? "Online" : "Offline")
+                                                </span>
+                                            </td>
+                                            <td class="last-seen">@device.LastSeen.ToString("MM/dd/yyyy HH:mm")</td>
+                                            <td>@device.TenantId</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="text-muted">No devices found.</p>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5>System Status</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between">
+                            <span>Hub Service</span>
+                            <span class="badge bg-success">Running</span>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between">
+                            <span>Database</span>
+                            <span class="badge bg-success">Connected</span>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between">
+                            <span>Functions</span>
+                            <span class="badge bg-success">Running</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool isLoading = true;
+    private int deviceCount = 0;
+    private int onlineCount = 0;
+    private int alertCount = 0;
+    private int tenantCount = 0;
+    private List<AgentDto>? recentDevices;
+    private string connectionStatus = "Connecting...";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Initialize SignalR connection
+            await InitializeSignalRAsync();
+            
+            // Load dashboard data from APIs
+            var devices = await DashboardService.GetDevicesAsync();
+            var tenants = await DashboardService.GetTenantsAsync();
+
+            recentDevices = devices?.ToList();
+            deviceCount = recentDevices?.Count ?? 0;
+            onlineCount = recentDevices?.Count(d => d.IsOnline) ?? 0;
+            alertCount = 3; // Placeholder for alerts
+            tenantCount = tenants?.Count() ?? 0;
+        }
+        catch (Exception ex)
+        {
+            // Log error and show empty state
+            Console.WriteLine($"Error loading dashboard: {ex.Message}");
+            
+            // Fallback to placeholder data
+            deviceCount = 0;
+            onlineCount = 0;
+            alertCount = 0;
+            tenantCount = 0;
+            recentDevices = new List<AgentDto>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task InitializeSignalRAsync()
+    {
+        try
+        {
+            await SignalRService.InitializeAsync();
+            connectionStatus = "Connected";
+            
+            // Update the connection status in the JavaScript
+            await JS.InvokeVoidAsync("dashboard.showConnectionStatus", true);
+            
+            // Join the default tenant group if needed
+            // await SignalRService.JoinTenantAsync(Guid.Empty); // Use appropriate tenant ID
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to initialize SignalR: {ex.Message}");
+            connectionStatus = "Disconnected";
+            await JS.InvokeVoidAsync("dashboard.showConnectionStatus", false);
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Update the connection status indicator
+            await JS.InvokeVoidAsync("dashboard.showConnectionStatus", 
+                SignalRService.ConnectionState == Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Connected);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await SignalRService.DisposeAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error disposing SignalR service: {ex.Message}");
+        }
+    }
+}

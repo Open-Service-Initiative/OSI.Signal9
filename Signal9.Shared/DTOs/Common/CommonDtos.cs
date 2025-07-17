@@ -7,7 +7,7 @@ namespace Signal9.Shared.DTOs.Common;
 /// <summary>
 /// Modern Agent Response DTO - Clean Entity Framework integration
 /// </summary>
-public record AgentResponse : TenantScopedDto
+public record AgentResponse : BaseDto<Guid>
 {
     /// <summary>
     /// The agent data
@@ -41,7 +41,7 @@ public record AgentResponse : TenantScopedDto
     {
         return new AgentResponse
         {
-            TenantId = agent.TenantId,
+            Id = Guid.NewGuid(),
             Agent = agent,
             TenantName = tenantName,
             GroupName = groupName
@@ -52,7 +52,7 @@ public record AgentResponse : TenantScopedDto
 /// <summary>
 /// Modern Command Request DTO - Clean API contract
 /// </summary>
-public record CommandRequest : TenantScopedDto
+public record CommandRequest : BaseDto<Guid>
 {
     [Required(ErrorMessage = "AgentId is required")]
     [StringLength(50, MinimumLength = 1, ErrorMessage = "AgentId must be between 1 and 50 characters")]
@@ -71,13 +71,12 @@ public record CommandRequest : TenantScopedDto
     public string? InitiatedBy { get; init; }
 
     /// <summary>
-    /// Convert to Entity Framework AgentCommandDto
+    /// Convert to AgentCommandDto
     /// </summary>
     public AgentCommandDto ToAgentCommandDto()
     {
         return new AgentCommandDto
         {
-            TenantId = TenantId,
             AgentId = AgentId,
             CommandType = CommandType,
             Parameters = Parameters,
@@ -97,7 +96,7 @@ public record CommandRequest : TenantScopedDto
 /// <summary>
 /// Modern Command Response DTO - Clean API contract
 /// </summary>
-public record CommandResponse : TenantScopedDto
+public record CommandResponse : BaseDto<Guid>
 {
     public AgentCommandDto? Command { get; init; }
     public bool IsSuccess { get; init; } = true;
@@ -110,7 +109,7 @@ public record CommandResponse : TenantScopedDto
     {
         return new CommandResponse
         {
-            TenantId = command.TenantId,
+            Id = Guid.NewGuid(),
             Command = command,
             IsSuccess = isSuccess,
             Message = message
@@ -121,7 +120,7 @@ public record CommandResponse : TenantScopedDto
 /// <summary>
 /// Modern Telemetry Response DTO - Clean API contract
 /// </summary>
-public record TelemetryResponse : TenantScopedDto
+public record TelemetryResponse : BaseDto<Guid>
 {
     public TelemetryDataDto? Telemetry { get; init; }
     public Dictionary<string, double> ComputedMetrics { get; init; } = new();
@@ -134,10 +133,10 @@ public record TelemetryResponse : TenantScopedDto
     {
         return new TelemetryResponse
         {
-            TenantId = telemetry.TenantId,
+            Id = Guid.NewGuid(),
             Telemetry = telemetry,
             ComputedMetrics = computedMetrics ?? new(),
-            CollectedAt = telemetry.Timestamp
+            CollectedAt = DateTime.UtcNow
         };
     }
 }
@@ -167,3 +166,7 @@ public record SystemInfo
     public TimeSpan Uptime { get; init; }
     public Dictionary<string, object> Drives { get; init; } = new();
 }
+
+
+
+

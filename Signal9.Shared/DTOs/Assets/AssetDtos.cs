@@ -6,12 +6,12 @@ namespace Signal9.Shared.DTOs.Assets;
 /// <summary>
 /// Software inventory item representing installed software on an agent.
 /// </summary>
-public record SoftwareInventoryItem : TenantScopedDto
+public record SoftwareInventoryItem : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the software inventory item.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the agent ID where this software is installed.
@@ -87,12 +87,12 @@ public record SoftwareInventoryItem : TenantScopedDto
 /// <summary>
 /// Hardware inventory item representing physical hardware components.
 /// </summary>
-public record HardwareInventoryItem : TenantScopedDto
+public record HardwareInventoryItem : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the hardware inventory item.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the agent ID where this hardware is located.
@@ -185,12 +185,12 @@ public record HardwareInventoryItem : TenantScopedDto
 /// <summary>
 /// License information for software assets.
 /// </summary>
-public record LicenseInfo : TenantScopedDto
+public record LicenseInfo : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the license.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the name of the licensed software.
@@ -275,12 +275,12 @@ public record LicenseInfo : TenantScopedDto
 /// <summary>
 /// Asset change event for tracking modifications to assets.
 /// </summary>
-public record AssetChangeEvent : TenantScopedDto
+public record AssetChangeEvent : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the change event.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the agent ID where the change occurred.
@@ -350,12 +350,12 @@ public record AssetChangeEvent : TenantScopedDto
 /// <summary>
 /// Patch status information for software updates.
 /// </summary>
-public record PatchStatusInfo : TenantScopedDto
+public record PatchStatusInfo : BaseDto<Guid>
 {
     /// <summary>
     /// Gets the unique identifier for the patch status.
     /// </summary>
-    public required Guid Id { get; init; }
+    
     
     /// <summary>
     /// Gets the agent ID this patch status applies to.
@@ -633,3 +633,5 @@ public enum PatchStatus
 }
 
 #endregion
+
+

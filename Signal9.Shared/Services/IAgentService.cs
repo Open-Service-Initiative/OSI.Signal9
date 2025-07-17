@@ -10,57 +10,47 @@ namespace Signal9.Shared.Services;
 public interface IAgentService
 {
     /// <summary>
-    /// Get paginated agents with filtering
+    /// Get all agents with paging
     /// </summary>
-    Task<PagedResponse<AgentDto>> GetAgentsAsync(AgentQueryRequest request, CancellationToken cancellationToken = default);
+    Task<PagedResponse<object>> GetAgentsAsync(int page = 1, int pageSize = 50, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Get agent by ID with optional includes
     /// </summary>
-    Task<AgentDto?> GetAgentByIdAsync(Guid agentId, bool includeMetrics = false, bool includeTelemetry = false, CancellationToken cancellationToken = default);
+    Task<object?> GetAgentByIdAsync(Guid agentId, bool includeMetrics = false, bool includeTelemetry = false, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Register a new agent
     /// </summary>
-    Task<AgentDto> RegisterAgentAsync(AgentDto agentDto, CancellationToken cancellationToken = default);
+    Task<object> RegisterAgentAsync(object agentDto, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Update agent information
     /// </summary>
-    Task<AgentDto?> UpdateAgentAsync(Guid agentId, AgentUpdateRequest updateRequest, CancellationToken cancellationToken = default);
+    Task<object?> UpdateAgentAsync(Guid agentId, object updateRequest, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Delete agent with optional data preservation
     /// </summary>
-    Task DeleteAgentAsync(Guid agentId, bool preserveData = false, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAgentAsync(Guid agentId, bool preserveData = false, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Generate agent configuration for registration
+    /// Get agent telemetry data with filtering
     /// </summary>
-    Task<Dictionary<string, object>> GenerateAgentConfigurationAsync(Guid agentId, CancellationToken cancellationToken = default);
-}
+    Task<PagedResponse<object>> GetAgentTelemetryAsync(Guid agentId, DateTime? from = null, DateTime? to = null, int page = 1, int pageSize = 50, CancellationToken cancellationToken = default);
 
-/// <summary>
-/// Service interface for modern data mapping operations
-/// </summary>
-public interface IDataMappingService
-{
     /// <summary>
-    /// Process bulk operations with error handling
+    /// Get agent command history
     /// </summary>
-    Task<BulkOperationResponse<TResult>> ProcessBulkOperation<TSource, TResult>(
-        IEnumerable<TSource> items, 
-        Func<TSource, TResult> processor, 
-        string operationName,
-        CancellationToken cancellationToken = default);
+    Task<PagedResponse<object>> GetAgentCommandsAsync(Guid agentId, int page = 1, int pageSize = 50, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Convert entity to DTO with proper mapping
+    /// Bulk operations for efficiency
     /// </summary>
-    TDto MapToDto<TEntity, TDto>(TEntity entity) where TDto : class;
+    Task<BulkOperationResponse<object>> BulkUpdateAgentsAsync(IEnumerable<object> agents, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Convert DTO to entity with proper mapping
+    /// Universal mapping interface for flexibility
     /// </summary>
     TEntity MapToEntity<TDto, TEntity>(TDto dto) where TEntity : class;
 }
@@ -68,66 +58,51 @@ public interface IDataMappingService
 /// <summary>
 /// Bulk operation response for efficient batch processing
 /// </summary>
-public record BulkOperationResponse<T> : TenantScopedDto
+public record BulkOperationResponse<T> : BaseDto<Guid>
 {
     /// <summary>
     /// Successfully processed items
     /// </summary>
-    public required IEnumerable<T> SuccessfulItems { get; init; }
-
+    public List<T> SuccessfulItems { get; init; } = new();
+    
     /// <summary>
     /// Failed items with error details
     /// </summary>
-    public required IEnumerable<FailedItem<T>> FailedItems { get; init; }
-
+    public List<BulkOperationError<T>> FailedItems { get; init; } = new();
+    
     /// <summary>
-    /// Total count of processed items
+    /// Overall operation status
     /// </summary>
-    public int TotalCount => SuccessfulItems.Count() + FailedItems.Count();
-
+    public bool IsSuccess => FailedItems.Count == 0;
+    
     /// <summary>
-    /// Count of successful items
+    /// Performance metrics
     /// </summary>
-    public int SuccessCount => SuccessfulItems.Count();
-
-    /// <summary>
-    /// Count of failed items
-    /// </summary>
-    public int FailureCount => FailedItems.Count();
-
-    /// <summary>
-    /// Overall success indicator
-    /// </summary>
-    public bool IsSuccess => FailureCount == 0;
-
-    /// <summary>
-    /// Success percentage
-    /// </summary>
-    public double SuccessPercentage => TotalCount > 0 ? (double)SuccessCount / TotalCount * 100 : 0;
+    public TimeSpan ProcessingTime { get; init; }
+    public int TotalProcessed => SuccessfulItems.Count + FailedItems.Count;
 }
 
 /// <summary>
-/// Failed item container for bulk operations
+/// Error details for bulk operations
 /// </summary>
-public record FailedItem<T>
+public record BulkOperationError<T>
 {
-    /// <summary>
-    /// The item that failed processing
-    /// </summary>
     public required T Item { get; init; }
-
-    /// <summary>
-    /// Error message describing the failure
-    /// </summary>
     public required string ErrorMessage { get; init; }
+    public string? ErrorCode { get; init; }
+    public Exception? Exception { get; init; }
+}
 
-    /// <summary>
-    /// Exception details if available
-    /// </summary>
-    public string? ExceptionDetails { get; init; }
-
-    /// <summary>
-    /// Timestamp when the failure occurred
-    /// </summary>
-    public DateTime FailedAt { get; init; } = DateTime.UtcNow;
+/// <summary>
+/// Paged response wrapper for collections
+/// </summary>
+public record PagedResponse<T> : BaseDto<Guid>
+{
+    public required IEnumerable<T> Items { get; init; }
+    public required int TotalCount { get; init; }
+    public required int PageNumber { get; init; }
+    public required int PageSize { get; init; }
+    public int TotalPages => (int)Math.Ceiling((double)TotalCount / PageSize);
+    public bool HasNextPage => PageNumber < TotalPages;
+    public bool HasPreviousPage => PageNumber > 1;
 }
