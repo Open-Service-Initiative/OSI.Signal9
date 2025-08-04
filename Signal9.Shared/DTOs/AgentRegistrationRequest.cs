@@ -1,22 +1,15 @@
 using System.ComponentModel.DataAnnotations;
+using Signal9.Shared.Models;
+using Signal9.Shared.DTOs.Base;
 
 namespace Signal9.Shared.DTOs;
 
 /// <summary>
 /// Request DTO for agent registration - contains all information needed to register a new agent
+/// Uses unified hierarchy where ParentId represents the tenant
 /// </summary>
-public record AgentRegistrationRequest
+public record AgentRegistrationRequest : BaseDto<Guid>
 {
-    /// <summary>
-    /// Unique identifier for this request
-    /// </summary>
-    public Guid Id { get; init; } = Guid.NewGuid();
-    
-    /// <summary>
-    /// The tenant ID this agent belongs to (unified hierarchy)
-    /// </summary>
-    public Guid? ParentId { get; init; }
-    
     /// <summary>
     /// Agent identifier (machine-specific)
     /// </summary>
@@ -100,6 +93,4 @@ public record AgentRegistrationRequest
     /// Whether the agent is currently online
     /// </summary>
     public bool IsOnline { get; init; } = true;
-    
-    // ParentId inherited from BaseDto<Guid> represents the tenant this agent belongs to
 }

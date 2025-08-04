@@ -137,7 +137,7 @@
                                                     @((tenant.IsActive ?? false) ? "Active" : "Inactive")
                                                 </span>
                                             </td>
-                                            <td>@(tenant.CreatedAt.ToString("MMM dd, yyyy"))</td>  // Fixed: removed nullable check
+                                            <td>@tenant.CreatedAt.ToString("MMM dd, yyyy")</td>
                                             <td>
                                                 <div class="btn-group btn-group-sm">
                                                     <button class="btn btn-primary btn-sm" @onclick="() => EditTenant(tenant)" title="Edit Tenant">
@@ -379,7 +379,7 @@
                 // Update existing tenant
                 var updateRequest = new UpdateTenantRequest
                 {
-                    TenantId = editingTenant.Id.ToString(),  // Fixed: Convert Guid to string
+                    TenantId = editingTenant.Id.ToString(),
                     Name = tenantForm.Name,
                     Description = tenantForm.Description,
                     TenantType = tenantForm.TenantType,
@@ -389,7 +389,7 @@
                     IsActive = tenantForm.IsActive
                 };
 
-                await DashboardService.UpdateTenantAsync(editingTenant.Id, updateRequest);  // Fixed: removed Guid.Parse
+                await DashboardService.UpdateTenantAsync(editingTenant.Id, updateRequest);
             }
             else
             {
@@ -432,7 +432,7 @@
         {
             try
             {
-                await DashboardService.DeleteTenantAsync(tenant.Id);  // Fixed: removed Guid.Parse
+                await DashboardService.DeleteTenantAsync(tenant.Id);
                 await LoadTenants();
                 await JSRuntime.InvokeVoidAsync("alert", "Tenant deleted successfully!");
             }

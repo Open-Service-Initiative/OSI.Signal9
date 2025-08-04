@@ -26,11 +26,11 @@ var webFunctions = builder.AddAzureFunctionsProject<Projects.Signal9_Web_Functio
     .WaitFor(cosmos)
     .WithReference(keyVault);
 
-var web = builder.AddProject<Projects.Signal9_Web>("swa-signal9")
-    .WithReference(webFunctions)
-    .WithReference(agentFunctions)
-    .WithExternalHttpEndpoints()
-    .WaitFor(webFunctions)
-    .WaitFor(agentFunctions);
+// var web = builder.AddProject<Projects.Signal9_Web>("swa-signal9")
+//     .WithReference(webFunctions)
+//     .WithReference(agentFunctions)
+//     .WithExternalHttpEndpoints()
+//     .WaitFor(webFunctions)
+//     .WaitFor(agentFunctions);
 
 builder.Build().Run();

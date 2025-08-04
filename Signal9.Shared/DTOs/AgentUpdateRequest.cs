@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Signal9.Shared.Models;
 
 namespace Signal9.Shared.DTOs;
 
@@ -13,9 +14,10 @@ public record AgentUpdateRequest
     public Guid Id { get; init; } = Guid.NewGuid();
     
     /// <summary>
-    /// The tenant ID this agent belongs to (for reassignment)
+    /// The tenant ID this agent belongs to (for reassignment) - Using ParentId for unified hierarchy
     /// </summary>
     public Guid? ParentId { get; init; }
+    
     /// <summary>
     /// Updated machine name
     /// </summary>
@@ -72,6 +74,26 @@ public record AgentUpdateRequest
     /// Updated version
     /// </summary>
     public string? Version { get; init; }
+    
+    /// <summary>
+    /// Updated description
+    /// </summary>
+    public string? Description { get; init; }
+    
+    /// <summary>
+    /// Updated tags/group information
+    /// </summary>
+    public string? Tags { get; init; }
+    
+    /// <summary>
+    /// Updated group name for UI display
+    /// </summary>
+    public string? GroupName { get; init; }
+    
+    /// <summary>
+    /// Updated agent status
+    /// </summary>
+    public AgentStatus? Status { get; init; }
     
     /// <summary>
     /// Updated online status

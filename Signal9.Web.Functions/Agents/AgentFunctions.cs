@@ -3,7 +3,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using Signal9.Shared.DTOs;
+using Signal9.Shared.DTOs.Base;
 using Signal9.Shared.DTOs.Common;
+using Signal9.Shared.DTOs.Extensions;
 using Signal9.Shared.Models;
 using Signal9.Shared.Services;
 using System.ComponentModel.DataAnnotations;
@@ -34,6 +36,20 @@ public class AgentFunctions
     /// Get agents with advanced filtering, sorting, and pagination
     /// </summary>
     [Function("GetAgents")]
+    [OpenApiOperation(operationId: "GetAgents", tags: new[] { "Agents" }, Summary = "Get all agents", Description = "Retrieve a paginated list of agents with advanced filtering, sorting, and search capabilities")]
+    [OpenApiParameter(name: "parentId", In = ParameterLocation.Query, Required = false, Type = typeof(Guid), Description = "Filter by parent tenant ID")]
+    [OpenApiParameter(name: "status", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Filter by agent status (Online, Offline, Error)")]
+    [OpenApiParameter(name: "platform", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Filter by platform (Windows, Linux, macOS)")]
+    [OpenApiParameter(name: "search", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Search term for machine name, IP address, or description")]
+    [OpenApiParameter(name: "isOnline", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Filter by online status")]
+    [OpenApiParameter(name: "page", In = ParameterLocation.Query, Required = false, Type = typeof(int), Description = "Page number (default: 1)")]
+    [OpenApiParameter(name: "pageSize", In = ParameterLocation.Query, Required = false, Type = typeof(int), Description = "Page size (default: 20, max: 100)")]
+    [OpenApiParameter(name: "sortBy", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Sort field (default: MachineName)")]
+    [OpenApiParameter(name: "sortOrder", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Sort order: asc or desc (default: asc)")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(Signal9.Shared.DTOs.Base.PagedResponse<AgentResponse>), Description = "Paginated list of agents")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Validation failed")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.Unauthorized, contentType: "application/json", bodyType: typeof(object), Description = "Invalid tenant access")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
     public async Task<IActionResult> GetAgentsAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "agents")] HttpRequest req,
         CancellationToken cancellationToken = default)
@@ -42,24 +58,25 @@ public class AgentFunctions
 
         try
         {
-            // Extract and validate query parameters
+            // Extract and validate query parameters with proper typing
             var request = ExtractAgentQueryRequest(req);
-
-            // Validate parent access
-            if (!ValidateParentAccess(request.ParentId ?? Guid.Empty))
+            
+            // Validate parent tenant access if specified
+            if (!ValidateParentAccess(request.ParentId))
             {
-                return new UnauthorizedObjectResult(new { error = "Invalid parent access" });
+                return new UnauthorizedObjectResult(new { error = "Invalid parent tenant access" });
             }
 
             // Execute query with filtering and pagination
             var agents = await _agentService.GetAgentsAsync(request, cancellationToken);
-
+            
             // Transform to response DTOs
-            var agentResponses = agents.Items.Select(agent =>
+            var agentResponses = agents.Items.Select(agent => 
                 AgentResponse.FromAgentDto(agent)).ToList();
 
-            var pagedResponse = new Shared.DTOs.Base.PagedResponse<AgentResponse>
+            var pagedResponse = new Signal9.Shared.DTOs.Base.PagedResponse<AgentResponse>
             {
+                Id = Guid.NewGuid(),
                 Items = agentResponses,
                 Page = agents.Page,
                 PageSize = agents.PageSize,
@@ -164,19 +181,9 @@ public class AgentFunctions
 
             // Register agent through service layer
             var registeredAgent = await _agentService.RegisterAgentAsync(agentDto, cancellationToken);
-
-            // Generate agent configuration
-            var configuration = await _agentService.GenerateAgentConfigurationAsync(registeredAgent.Id, cancellationToken);
-
+            
             // Create comprehensive response
-            var response = new AgentRegistrationResponse
-            {
-                ParentId = registeredAgent.ParentId,  // Fixed: was TenantId
-                Agent = registeredAgent.CreateAgentResponse(),
-                Configuration = configuration,
-                RegistrationStatus = "Success",
-                Message = "Agent registered successfully"
-            };
+            var response = registeredAgent.CreateAgentResponse();
 
             return new CreatedResult($"/api/agents/{registeredAgent.Id}", response);
         }
@@ -313,7 +320,8 @@ public class AgentFunctions
 
         return new AgentQueryRequest
         {
-            ParentId = Guid.TryParse(query["parentId"], out var parentId) ? parentId : Guid.Empty,  // Fixed: was tenantId
+            Id = Guid.NewGuid(),
+            ParentId = Guid.TryParse(query["parentId"], out var parentId) ? parentId : Guid.Empty,
             Status = Enum.TryParse<AgentStatus>(query["status"], out var status) ? status : null,
             Platform = query["platform"].FirstOrDefault(),
             Search = query["search"].FirstOrDefault(),
@@ -325,9 +333,9 @@ public class AgentFunctions
         };
     }
 
-    private bool ValidateParentAccess(Guid parentId)  // Renamed from ValidateTenantAccess for unified hierarchy
+    private bool ValidateParentAccess(Guid parentId)
     {
-        // TODO: Implement actual parent validation
+        // TODO: Implement actual parent tenant validation
         return parentId != Guid.Empty;
     }
 

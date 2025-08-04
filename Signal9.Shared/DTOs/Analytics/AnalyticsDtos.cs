@@ -62,14 +62,7 @@ public record DashboardAnalyticsResponse : BaseDto<Guid>
     /// </summary>
     [Required(ErrorMessage = "UsageTrends are required")]
     public required UsageTrends UsageTrends { get; init; }
-    
-    /// <summary>
-    /// Gets the geographic distribution.
-    /// Must contain valid geographic distribution data.
-    /// </summary>
-    [Required(ErrorMessage = "Geographic distribution is required")]
-    public required GeographicDistribution Geographic { get; init; }
-    
+
     /// <summary>
     /// Gets the comparison data if requested.
     /// Optional comparison metrics for trend analysis.
@@ -287,7 +280,7 @@ public record AlertInfo
     /// <summary>
     /// Gets the alert ID.
     /// </summary>
-    public Guid Id { get; init; }
+    public Guid Id { get; init; } = Guid.NewGuid();
     
     /// <summary>
     /// Gets the alert title.
@@ -307,7 +300,7 @@ public record AlertInfo
     /// <summary>
     /// Gets when the alert was created.
     /// </summary>
-    public DateTime CreatedAt { get; init; }
+    public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
 }
 
 /// <summary>

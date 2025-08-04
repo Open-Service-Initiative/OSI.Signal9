@@ -1,19 +1,17 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
-using Signal9.Shared.Models;
 using Signal9.Shared.DTOs.Analytics;
-using Signal9.Shared.DTOs.Base;
 using System.Net;
-using System.Text.Json;
-using SystemWeb = System.Web;
+using Microsoft.Azure.WebJobs.Extensions.OpenApi.Core.Attributes;
+using Microsoft.OpenApi.Models;
 
 namespace Signal9.Web.Functions.Analytics;
 
 /// <summary>
 /// Azure Functions for analytics, reporting, and business intelligence operations
+/// Currently focused on API structure - analytics implementation is planned for future phases.
 /// </summary>
 public class AnalyticsFunctions
 {
@@ -30,198 +28,196 @@ public class AnalyticsFunctions
     /// Get comprehensive dashboard analytics data
     /// </summary>
     [Function("GetDashboardAnalytics")]
-    public Task<IActionResult> GetDashboardAnalyticsAsync(
+    [OpenApiOperation(operationId: "GetDashboardAnalytics", tags: new[] { "Analytics" }, Summary = "Get dashboard analytics", Description = "Retrieve comprehensive dashboard analytics data with time range filtering and tenant scope")]
+    [OpenApiParameter(name: "timeRange", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Time range filter (1h, 24h, 7d, 30d, 90d) - default: 7d")]
+    [OpenApiParameter(name: "parentId", In = ParameterLocation.Query, Required = false, Type = typeof(Guid), Description = "Filter by parent tenant ID")]
+    [OpenApiParameter(name: "includeDetails", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include detailed breakdown data")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(DashboardAnalyticsResponse), Description = "Dashboard analytics data")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid parameters")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotImplemented, contentType: "application/json", bodyType: typeof(object), Description = "Analytics implementation pending")]
+    public async Task<IActionResult> GetDashboardAnalyticsAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/dashboard")] HttpRequest req,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Getting dashboard analytics");
+        _logger.LogInformation("Getting dashboard analytics - implementation pending");
 
-        try
+        // TODO: Implement dashboard analytics once core RMM functionality is complete
+        return new ObjectResult(new { 
+            message = "Dashboard analytics implementation is planned for a future release",
+            status = "not_implemented",
+            plannedFeatures = new[] {
+                "Agent status distribution",
+                "Performance metrics", 
+                "Alert summaries",
+                "Usage trends",
+                "Geographic distribution"
+            }
+        })
         {
-            var query = req.Query;
-            var timeRange = query["timeRange"].FirstOrDefault() ?? "7d"; // 1h, 24h, 7d, 30d, 90d
+            StatusCode = StatusCodes.Status501NotImplemented
+        };
+    }
 
-            // TODO: Implement actual analytics logic
-            var analytics = new DashboardAnalyticsResponse
-            {
-                TimeRange = timeRange,
-                GeneratedAt = DateTime.UtcNow,
-                KPIs = new KPIMetrics
-                {
-                    TotalAgents = 42,
-                    OnlineAgents = 38,
-                    OfflineAgents = 4,
-                    AverageCpuUsage = 45.2,
-                    AverageMemoryUsage = 67.8,
-                    TotalAlerts = 3,
-                    CriticalAlerts = 1
-                },
-                AgentStatus = new AgentStatusDistribution
-                {
-                    StatusCounts = new Dictionary<string, int>
-                    {
-                        { "Online", 38 },
-                        { "Offline", 4 }
-                    },
-                    StatusPercentages = new Dictionary<string, double>
-                    {
-                        { "Online", 90.5 },
-                        { "Offline", 9.5 }
-                    }
-                },
-                Performance = new PerformanceMetrics
-                {
-                    CpuUsage = new List<TimeSeriesDataPoint>(),
-                    MemoryUsage = new List<TimeSeriesDataPoint>(),
-                    DiskUsage = new List<TimeSeriesDataPoint>(),
-                    NetworkThroughput = new List<TimeSeriesDataPoint>()
-                },
-                Alerts = new AlertSummary
-                {
-                    Total = 3,
-                    BySeverity = new Dictionary<string, int>
-                    {
-                        { "Critical", 1 },
-                        { "Warning", 2 }
-                    },
-                    ByCategory = new Dictionary<string, int>
-                    {
-                        { "Performance", 2 },
-                        { "Security", 1 }
-                    },
-                    RecentAlerts = new List<AlertInfo>()
-                },
-                UsageTrends = new UsageTrends
-                {
-                    AgentRegistrations = new List<TimeSeriesDataPoint>(),
-                    CommandExecutions = new List<TimeSeriesDataPoint>(),
-                    DataTransfer = new List<TimeSeriesDataPoint>()
-                },
-                Geographic = new GeographicDistribution
-                {
-                    ByRegion = new Dictionary<string, int>
-                    {
-                        { "North America", 25 },
-                        { "Europe", 17 }
-                    },
-                    ByCountry = new Dictionary<string, int>
-                    {
-                        { "USA", 20 },
-                        { "Canada", 5 },
-                        { "UK", 10 },
-                        { "Germany", 7 }
-                    }
-                }
-            };
+    /// <summary>
+    /// Get detailed tenant analytics
+    /// </summary>
+    [Function("GetTenantAnalytics")]
+    [OpenApiOperation(operationId: "GetTenantAnalytics", tags: new[] { "Analytics" }, Summary = "Get tenant analytics", Description = "Retrieve comprehensive analytics data for a specific tenant")]
+    [OpenApiParameter(name: "parentId", In = ParameterLocation.Path, Required = true, Type = typeof(Guid), Description = "The unique identifier of the tenant")]
+    [OpenApiParameter(name: "timeRange", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Time range filter (1h, 24h, 7d, 30d, 90d) - default: 30d")]
+    [OpenApiParameter(name: "includeChildren", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include child tenant data in analytics")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(TenantAnalyticsResponse), Description = "Tenant analytics data")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid tenant ID format")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotImplemented, contentType: "application/json", bodyType: typeof(object), Description = "Analytics implementation pending")]
+    public async Task<IActionResult> GetTenantAnalyticsAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/tenants/{parentId:guid}")] HttpRequest req,
+        Guid parentId,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Getting tenant analytics for {ParentId} - implementation pending", parentId);
 
-            return Task.FromResult<IActionResult>(new OkObjectResult(analytics));
-        }
-        catch (Exception ex)
+        // TODO: Implement tenant analytics once core tenant management is stable
+        return new ObjectResult(new { 
+            message = "Tenant analytics implementation is planned for a future release",
+            status = "not_implemented",
+            tenantId = parentId,
+            plannedFeatures = new[] {
+                "Agent metrics by tenant",
+                "Command execution analytics",
+                "Performance trends",
+                "Cost metrics",
+                "Security metrics"
+            }
+        })
         {
-            _logger.LogError(ex, "Error getting dashboard analytics");
-            return Task.FromResult<IActionResult>(new ObjectResult(new { error = "Failed to retrieve analytics", details = ex.Message })
-            {
-                StatusCode = StatusCodes.Status500InternalServerError
-            });
-        }
+            StatusCode = StatusCodes.Status501NotImplemented
+        };
+    }
+
+    /// <summary>
+    /// Get detailed agent analytics
+    /// </summary>
+    [Function("GetAgentAnalytics")]
+    [OpenApiOperation(operationId: "GetAgentAnalytics", tags: new[] { "Analytics" }, Summary = "Get agent analytics", Description = "Retrieve comprehensive analytics data for a specific agent")]
+    [OpenApiParameter(name: "agentId", In = ParameterLocation.Path, Required = true, Type = typeof(Guid), Description = "The unique identifier of the agent")]
+    [OpenApiParameter(name: "timeRange", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Time range filter (1h, 24h, 7d, 30d, 90d) - default: 7d")]
+    [OpenApiParameter(name: "includeDetailedMetrics", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include detailed performance metrics")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(AgentAnalyticsResponse), Description = "Agent analytics data")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid agent ID format")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotImplemented, contentType: "application/json", bodyType: typeof(object), Description = "Analytics implementation pending")]
+    public async Task<IActionResult> GetAgentAnalyticsAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/agents/{agentId:guid}")] HttpRequest req,
+        Guid agentId,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Getting agent analytics for {AgentId} - implementation pending", agentId);
+
+        // TODO: Implement agent analytics once telemetry collection is fully operational
+        return new ObjectResult(new { 
+            message = "Agent analytics implementation is planned for a future release",
+            status = "not_implemented",
+            agentId = agentId,
+            plannedFeatures = new[] {
+                "Performance metrics",
+                "Availability tracking",
+                "Command execution history",
+                "Resource utilization trends",
+                "Error analysis"
+            }
+        })
+        {
+            StatusCode = StatusCodes.Status501NotImplemented
+        };
+    }
+
+    #endregion
+
+    #region Reporting
+
+    /// <summary>
+    /// Generate comprehensive system reports
+    /// </summary>
+    [Function("GenerateReport")]
+    [OpenApiOperation(operationId: "GenerateReport", tags: new[] { "Analytics" }, Summary = "Generate report", Description = "Generate comprehensive analytics reports")]
+    [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(ReportGenerationRequest), Description = "Report generation parameters")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(ReportGenerationResponse), Description = "Generated report data")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid report request")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotImplemented, contentType: "application/json", bodyType: typeof(object), Description = "Reporting implementation pending")]
+    public async Task<IActionResult> GenerateReportAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "analytics/reports")] HttpRequest req,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Generating analytics report - implementation pending");
+
+        // TODO: Implement reporting once analytics data collection is established
+        return new ObjectResult(new { 
+            message = "Report generation implementation is planned for a future release",
+            status = "not_implemented",
+            plannedFeatures = new[] {
+                "Performance reports",
+                "Security audit reports", 
+                "Usage reports",
+                "Compliance reports",
+                "Custom report templates"
+            }
+        })
+        {
+            StatusCode = StatusCodes.Status501NotImplemented
+        };
+    }
+
+    /// <summary>
+    /// Get available report templates
+    /// </summary>
+    [Function("GetReportTemplates")]
+    [OpenApiOperation(operationId: "GetReportTemplates", tags: new[] { "Analytics" }, Summary = "Get report templates", Description = "Retrieve available report templates")]
+    [OpenApiParameter(name: "category", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Filter by category (performance, security, usage, compliance)")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(List<ReportTemplateResponse>), Description = "List of available report templates")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotImplemented, contentType: "application/json", bodyType: typeof(object), Description = "Report templates implementation pending")]
+    public async Task<IActionResult> GetReportTemplatesAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/report-templates")] HttpRequest req,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Getting report templates - implementation pending");
+
+        // TODO: Implement report templates once reporting system is built
+        return new ObjectResult(new { 
+            message = "Report templates implementation is planned for a future release",
+            status = "not_implemented"
+        })
+        {
+            StatusCode = StatusCodes.Status501NotImplemented
+        };
+    }
+
+    #endregion
+
+    #region Custom Analytics
+
+    /// <summary>
+    /// Execute custom analytics queries
+    /// </summary>
+    [Function("ExecuteCustomQuery")]
+    [OpenApiOperation(operationId: "ExecuteCustomQuery", tags: new[] { "Analytics" }, Summary = "Execute custom analytics query", Description = "Execute custom analytics queries with validation and security checks")]
+    [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(CustomAnalyticsQueryRequest), Description = "Custom analytics query parameters")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "Query execution results")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid query parameters")]
+    [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotImplemented, contentType: "application/json", bodyType: typeof(object), Description = "Custom analytics implementation pending")]
+    public async Task<IActionResult> ExecuteCustomQueryAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "analytics/custom-query")] HttpRequest req,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Executing custom analytics query - implementation pending");
+
+        // TODO: Implement custom analytics once core analytics infrastructure is ready
+        return new ObjectResult(new { 
+            message = "Custom analytics implementation is planned for a future release",
+            status = "not_implemented"
+        })
+        {
+            StatusCode = StatusCodes.Status501NotImplemented
+        };
     }
 
     #endregion
 }
-
-#region Supporting DTOs
-
-public class DashboardAnalytics
-{
-    public string TimeRange { get; set; } = string.Empty;
-    public DateTime GeneratedAt { get; set; }
-    public Guid? TenantId { get; set; }
-    public object KPIs { get; set; } = new();
-    public object AgentStatus { get; set; } = new();
-    public object Performance { get; set; } = new();
-    public object Alerts { get; set; } = new();
-    public object UsageTrends { get; set; } = new();
-    public object Geographic { get; set; } = new();
-    public object? Comparisons { get; set; }
-}
-
-public class TenantAnalytics
-{
-    public Guid TenantId { get; set; }
-    public string TimeRange { get; set; } = string.Empty;
-    public DateTime GeneratedAt { get; set; }
-    public bool IncludeChildTenants { get; set; }
-    public object AgentMetrics { get; set; } = new();
-    public object CommandMetrics { get; set; } = new();
-    public object PerformanceMetrics { get; set; } = new();
-    public object UsageMetrics { get; set; } = new();
-    public object CostMetrics { get; set; } = new();
-    public object SecurityMetrics { get; set; } = new();
-    public object Trends { get; set; } = new();
-}
-
-public class AgentAnalytics
-{
-    public Guid AgentId { get; set; }
-    public string TimeRange { get; set; } = string.Empty;
-    public DateTime GeneratedAt { get; set; }
-    public object PerformanceMetrics { get; set; } = new();
-    public object AvailabilityMetrics { get; set; } = new();
-    public object CommandAnalytics { get; set; } = new();
-    public object ResourceAnalytics { get; set; } = new();
-    public object ErrorAnalytics { get; set; } = new();
-    public object Trends { get; set; } = new();
-}
-
-public class ReportGenerationRequest
-{
-    public string Type { get; set; } = string.Empty; // "performance", "security", "usage", "compliance"
-    public DateTime StartDate { get; set; }
-    public DateTime EndDate { get; set; }
-    public string? TenantId { get; set; }
-    public string Format { get; set; } = "json"; // "json", "pdf", "excel", "csv"
-    public Dictionary<string, object> Parameters { get; set; } = new();
-}
-
-public class ReportTemplate
-{
-    public Guid Id { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public string Description { get; set; } = string.Empty;
-    public string Category { get; set; } = string.Empty;
-    public string[] Parameters { get; set; } = Array.Empty<string>();
-}
-
-public class ScheduledReport
-{
-    public Guid Id { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public Guid TemplateId { get; set; }
-    public string Schedule { get; set; } = string.Empty; // Cron expression
-    public bool IsActive { get; set; }
-    public DateTime? LastRun { get; set; }
-    public DateTime? NextRun { get; set; }
-    public Dictionary<string, object> Parameters { get; set; } = new();
-}
-
-public class CustomAnalyticsQuery
-{
-    public string QueryType { get; set; } = string.Empty; // "aggregation", "filter", "join"
-    public string DataSource { get; set; } = string.Empty; // "agents", "commands", "telemetry"
-    public Dictionary<string, object> Filters { get; set; } = new();
-    public string[] GroupBy { get; set; } = Array.Empty<string>();
-    public Dictionary<string, string> Aggregations { get; set; } = new(); // field -> function
-    public int Limit { get; set; } = 1000;
-}
-
-public class AnalyticsExportRequest
-{
-    public string DataType { get; set; } = string.Empty; // "agents", "tenants", "analytics"
-    public string Format { get; set; } = string.Empty; // "csv", "json", "excel"
-    public DateTime? StartDate { get; set; }
-    public DateTime? EndDate { get; set; }
-    public string? TenantId { get; set; }
-    public Dictionary<string, object> Filters { get; set; } = new();
-}
-
-#endregion

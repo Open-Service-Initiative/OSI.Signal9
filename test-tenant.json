@@ -1,9 +1,0 @@
-{
-  "name": "Test Tenant",
-  "tenantSlug": "test-tenant", 
-  "description": "A test tenant for validation",
-  "contactEmail": "test@example.com",
-  "tenantType": "Organization",
-  "subscriptionTier": 0,
-  "maxAgents": 10
-}

@@ -10,14 +10,9 @@ namespace Signal9.Shared.Services;
 public interface IAgentService
 {
     /// <summary>
-    /// Get all agents with advanced filtering and paging
+    /// Get all agents with paging and filtering
     /// </summary>
     Task<PagedResponse<AgentDto>> GetAgentsAsync(AgentQueryRequest request, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Get all agents with simple paging (legacy support)
-    /// </summary>
-    Task<PagedResponse<object>> GetAgentsAsync(int page = 1, int pageSize = 50, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Get agent by ID with optional includes
@@ -47,75 +42,26 @@ public interface IAgentService
     /// <summary>
     /// Get agent telemetry data with filtering
     /// </summary>
-    Task<PagedResponse<object>> GetAgentTelemetryAsync(Guid agentId, DateTime? from = null, DateTime? to = null, int page = 1, int pageSize = 50, CancellationToken cancellationToken = default);
+    Task<PagedResponse<TelemetryDataDto>> GetAgentTelemetryAsync(Guid agentId, DateTime? from = null, DateTime? to = null, int page = 1, int pageSize = 50, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Get agent command history
     /// </summary>
-    Task<PagedResponse<object>> GetAgentCommandsAsync(Guid agentId, int page = 1, int pageSize = 50, CancellationToken cancellationToken = default);
+    Task<PagedResponse<AgentCommandDto>> GetAgentCommandsAsync(Guid agentId, int page = 1, int pageSize = 50, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Bulk operations for efficiency
+    /// Generate agent configuration
     /// </summary>
-    Task<BulkOperationResponse<object>> BulkUpdateAgentsAsync(IEnumerable<object> agents, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Universal mapping interface for flexibility
-    /// </summary>
-    TEntity MapToEntity<TDto, TEntity>(TDto dto) where TEntity : class;
+    Task<AgentConfigurationDto> GenerateAgentConfigurationAsync(Guid agentId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
-/// Bulk operation response for efficient batch processing
+/// Agent configuration response
 /// </summary>
-public record BulkOperationResponse<T> : BaseDto<Guid>
+public record AgentConfigurationDto
 {
-    /// <summary>
-    /// Successfully processed items
-    /// </summary>
-    public List<T> SuccessfulItems { get; init; } = new();
-    
-    /// <summary>
-    /// Failed items with error details
-    /// </summary>
-    public List<BulkOperationError<T>> FailedItems { get; init; } = new();
-    
-    /// <summary>
-    /// Overall operation status
-    /// </summary>
-    public bool IsSuccess => FailedItems.Count == 0;
-    
-    /// <summary>
-    /// Performance metrics
-    /// </summary>
-    public TimeSpan ProcessingTime { get; init; }
-    public int TotalProcessed => SuccessfulItems.Count + FailedItems.Count;
-}
-
-/// <summary>
-/// Error details for bulk operations
-/// </summary>
-public record BulkOperationError<T>
-{
-    public required T Item { get; init; }
-    public required string ErrorMessage { get; init; }
-    public string? ErrorCode { get; init; }
-    public Exception? Exception { get; init; }
-}
-
-/// <summary>
-/// Paged response wrapper for collections (legacy)
-/// </summary>
-public record PagedResponse<T> : BaseDto<Guid>
-{
-    public required IEnumerable<T> Items { get; init; }
-    public required int TotalCount { get; init; }
-    public required int PageNumber { get; init; }
-    public required int PageSize { get; init; }
-    public int TotalPages => (int)Math.Ceiling((double)TotalCount / PageSize);
-    public bool HasNextPage => PageNumber < TotalPages;
-    public bool HasPreviousPage => PageNumber > 1;
-    
-    // Additional properties for unified hierarchy support
-    public int Page => PageNumber;
+    public string? ServerUrl { get; init; }
+    public string? ApiKey { get; init; }
+    public int HeartbeatIntervalSeconds { get; init; } = 60;
+    public Dictionary<string, object> Settings { get; init; } = new();
 }

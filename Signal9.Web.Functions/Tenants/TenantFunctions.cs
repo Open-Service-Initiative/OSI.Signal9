@@ -189,7 +189,7 @@ public class TenantFunctions
             TenantResponse? tenant;
             lock (LockObject)
             {
-                tenant = Tenants.FirstOrDefault(t => t.Id == id);  // Fixed: compare Guid to Guid directly
+                tenant = Tenants.FirstOrDefault(t => t.Id == id);
             }
 
             if (tenant == null)
@@ -261,7 +261,7 @@ public class TenantFunctions
             var tenantId = Guid.NewGuid();
             var tenant = new TenantResponse
             {
-                Id = tenantId,  // Fixed: use Guid directly instead of converting to string
+                Id = tenantId,
                 TenantId = tenantId.ToString(), // Required for TenantScopedDto
                 Name = createRequest!.Name,
                 Slug = createRequest.TenantSlug,
@@ -351,7 +351,7 @@ public class TenantFunctions
             TenantResponse? tenant;
             lock (LockObject)
             {
-                tenant = Tenants.FirstOrDefault(t => t.Id == id);  // Fixed: compare Guid to Guid directly
+                tenant = Tenants.FirstOrDefault(t => t.Id == id);
             }
 
             if (tenant == null)
@@ -447,7 +447,7 @@ public class TenantFunctions
             TenantResponse? tenant;
             lock (LockObject)
             {
-                tenant = Tenants.FirstOrDefault(t => t.Id == id);  // Fixed: compare Guid to Guid directly
+                tenant = Tenants.FirstOrDefault(t => t.Id == id);
             }
             var hasAgents = false; // TODO: Check when agents are implemented
             var hasChildTenants = false; // TODO: Check when hierarchy is implemented
@@ -724,7 +724,7 @@ public class TenantFunctions
             "name" => sortOrder.ToLower() == "desc" ? tenants.OrderByDescending(t => t.Name ?? string.Empty) : tenants.OrderBy(t => t.Name ?? string.Empty),
             "slug" => sortOrder.ToLower() == "desc" ? tenants.OrderByDescending(t => t.Slug ?? string.Empty) : tenants.OrderBy(t => t.Slug ?? string.Empty),
             "created" => sortOrder.ToLower() == "desc" ? tenants.OrderByDescending(t => t.CreatedAt) : tenants.OrderBy(t => t.CreatedAt),
-            "updated" => sortOrder.ToLower() == "desc" ? tenants.OrderByDescending(t => t.UpdatedAt) : tenants.OrderBy(t => t.UpdatedAt),
+            "updated" => sortOrder.ToLower() == "desc" ? tenants.OrderByDescending(t => t.UpdatedAt ?? DateTime.MinValue) : tenants.OrderBy(t => t.UpdatedAt ?? DateTime.MinValue),
             "agents" => sortOrder.ToLower() == "desc" ? tenants.OrderByDescending(t => t.AgentCount) : tenants.OrderBy(t => t.AgentCount),
             _ => tenants.OrderBy(t => t.Name ?? string.Empty)
         };
