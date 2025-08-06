@@ -133,12 +133,12 @@ public record AgentStatusDistribution
     /// <summary>
     /// Gets the count by status.
     /// </summary>
-    public Dictionary<string, int> StatusCounts { get; init; } = new();
+    public Dictionary<string, int> StatusCounts { get; init; } = [];
     
     /// <summary>
     /// Gets the percentage by status.
     /// </summary>
-    public Dictionary<string, double> StatusPercentages { get; init; } = new();
+    public Dictionary<string, double> StatusPercentages { get; init; } = [];
 }
 
 /// <summary>
@@ -149,22 +149,22 @@ public record PerformanceMetrics
     /// <summary>
     /// Gets the CPU usage time series data.
     /// </summary>
-    public List<TimeSeriesDataPoint> CpuUsage { get; init; } = new();
+    public List<TimeSeriesDataPoint> CpuUsage { get; init; } = [];
     
     /// <summary>
     /// Gets the memory usage time series data.
     /// </summary>
-    public List<TimeSeriesDataPoint> MemoryUsage { get; init; } = new();
+    public List<TimeSeriesDataPoint> MemoryUsage { get; init; } = [];
     
     /// <summary>
     /// Gets the disk usage time series data.
     /// </summary>
-    public List<TimeSeriesDataPoint> DiskUsage { get; init; } = new();
+    public List<TimeSeriesDataPoint> DiskUsage { get; init; } = [];
     
     /// <summary>
     /// Gets the network throughput time series data.
     /// </summary>
-    public List<TimeSeriesDataPoint> NetworkThroughput { get; init; } = new();
+    public List<TimeSeriesDataPoint> NetworkThroughput { get; init; } = [];
 }
 
 /// <summary>
@@ -180,17 +180,17 @@ public record AlertSummary
     /// <summary>
     /// Gets the alerts by severity.
     /// </summary>
-    public Dictionary<string, int> BySeverity { get; init; } = new();
+    public Dictionary<string, int> BySeverity { get; init; } = [];
     
     /// <summary>
     /// Gets the alerts by category.
     /// </summary>
-    public Dictionary<string, int> ByCategory { get; init; } = new();
+    public Dictionary<string, int> ByCategory { get; init; } = [];
     
     /// <summary>
     /// Gets the recent alerts.
     /// </summary>
-    public List<AlertInfo> RecentAlerts { get; init; } = new();
+    public List<AlertInfo> RecentAlerts { get; init; } = [];
 }
 
 /// <summary>
@@ -201,17 +201,17 @@ public record UsageTrends
     /// <summary>
     /// Gets the agent registration trends.
     /// </summary>
-    public List<TimeSeriesDataPoint> AgentRegistrations { get; init; } = new();
+    public List<TimeSeriesDataPoint> AgentRegistrations { get; init; } = [];
     
     /// <summary>
     /// Gets the command execution trends.
     /// </summary>
-    public List<TimeSeriesDataPoint> CommandExecutions { get; init; } = new();
+    public List<TimeSeriesDataPoint> CommandExecutions { get; init; } = [];
     
     /// <summary>
     /// Gets the data transfer trends.
     /// </summary>
-    public List<TimeSeriesDataPoint> DataTransfer { get; init; } = new();
+    public List<TimeSeriesDataPoint> DataTransfer { get; init; } = [];
 }
 
 /// <summary>
@@ -222,12 +222,12 @@ public record GeographicDistribution
     /// <summary>
     /// Gets the agents by region.
     /// </summary>
-    public Dictionary<string, int> ByRegion { get; init; } = new();
+    public Dictionary<string, int> ByRegion { get; init; } = [];
     
     /// <summary>
     /// Gets the agents by country.
     /// </summary>
-    public Dictionary<string, int> ByCountry { get; init; } = new();
+    public Dictionary<string, int> ByCountry { get; init; } = [];
 }
 
 /// <summary>
@@ -238,12 +238,12 @@ public record ComparisonData
     /// <summary>
     /// Gets the percentage change from previous period.
     /// </summary>
-    public Dictionary<string, double> PercentageChanges { get; init; } = new();
+    public Dictionary<string, double> PercentageChanges { get; init; } = [];
     
     /// <summary>
     /// Gets the trend indicators.
     /// </summary>
-    public Dictionary<string, string> TrendIndicators { get; init; } = new();
+    public Dictionary<string, string> TrendIndicators { get; init; } = [];
 }
 
 /// <summary>
@@ -383,7 +383,7 @@ public record TenantAgentMetrics
     /// <summary>
     /// Gets the agents by status.
     /// </summary>
-    public Dictionary<string, int> ByStatus { get; init; } = new();
+    public Dictionary<string, int> ByStatus { get; init; } = [];
 }
 
 /// <summary>
@@ -435,7 +435,7 @@ public record TenantPerformanceMetrics
     /// <summary>
     /// Gets the performance trends.
     /// </summary>
-    public List<TimeSeriesDataPoint> Trends { get; init; } = new();
+    public List<TimeSeriesDataPoint> Trends { get; init; } = [];
 }
 
 /// <summary>
@@ -472,7 +472,7 @@ public record TenantCostMetrics
     /// <summary>
     /// Gets the cost breakdown by category.
     /// </summary>
-    public Dictionary<string, decimal> Breakdown { get; init; } = new();
+    public Dictionary<string, decimal> Breakdown { get; init; } = [];
     
     /// <summary>
     /// Gets the projected monthly cost.
@@ -509,12 +509,12 @@ public record TenantTrends
     /// <summary>
     /// Gets the growth trends.
     /// </summary>
-    public Dictionary<string, double> Growth { get; init; } = new();
+    public Dictionary<string, double> Growth { get; init; } = [];
     
     /// <summary>
     /// Gets the forecasted values.
     /// </summary>
-    public Dictionary<string, double> Forecasts { get; init; } = new();
+    public Dictionary<string, double> Forecasts { get; init; } = [];
 }
 
 /// <summary>
@@ -633,7 +633,7 @@ public record AgentAvailabilityMetrics
     /// <summary>
     /// Gets the availability events.
     /// </summary>
-    public List<AvailabilityEvent> Events { get; init; } = new();
+    public List<AvailabilityEvent> Events { get; init; } = [];
 }
 
 /// <summary>
@@ -680,7 +680,7 @@ public record AgentCommandAnalytics
     /// <summary>
     /// Gets the commands by type.
     /// </summary>
-    public Dictionary<string, int> ByType { get; init; } = new();
+    public Dictionary<string, int> ByType { get; init; } = [];
 }
 
 /// <summary>
@@ -691,17 +691,17 @@ public record AgentResourceAnalytics
     /// <summary>
     /// Gets the CPU utilization trends.
     /// </summary>
-    public List<TimeSeriesDataPoint> CpuTrends { get; init; } = new();
+    public List<TimeSeriesDataPoint> CpuTrends { get; init; } = [];
     
     /// <summary>
     /// Gets the memory utilization trends.
     /// </summary>
-    public List<TimeSeriesDataPoint> MemoryTrends { get; init; } = new();
+    public List<TimeSeriesDataPoint> MemoryTrends { get; init; } = [];
     
     /// <summary>
     /// Gets the disk utilization trends.
     /// </summary>
-    public List<TimeSeriesDataPoint> DiskTrends { get; init; } = new();
+    public List<TimeSeriesDataPoint> DiskTrends { get; init; } = [];
 }
 
 /// <summary>
@@ -717,12 +717,12 @@ public record AgentErrorAnalytics
     /// <summary>
     /// Gets the errors by type.
     /// </summary>
-    public Dictionary<string, int> ByType { get; init; } = new();
+    public Dictionary<string, int> ByType { get; init; } = [];
     
     /// <summary>
     /// Gets the error trends.
     /// </summary>
-    public List<TimeSeriesDataPoint> Trends { get; init; } = new();
+    public List<TimeSeriesDataPoint> Trends { get; init; } = [];
 }
 
 /// <summary>
@@ -733,7 +733,7 @@ public record AgentTrends
     /// <summary>
     /// Gets the performance trends.
     /// </summary>
-    public Dictionary<string, string> PerformanceTrends { get; init; } = new();
+    public Dictionary<string, string> PerformanceTrends { get; init; } = [];
     
     /// <summary>
     /// Gets the reliability score.
@@ -779,7 +779,7 @@ public record ReportGenerationRequest : BaseDto<Guid>
     /// <summary>
     /// Gets additional parameters for the report.
     /// </summary>
-    public Dictionary<string, object> Parameters { get; init; } = new();
+    public Dictionary<string, object> Parameters { get; init; } = [];
 }
 
 /// <summary>
@@ -836,7 +836,7 @@ public record ReportTemplateResponse : BaseDto<Guid>
     /// <summary>
     /// Gets the available parameters.
     /// </summary>
-    public List<string> Parameters { get; init; } = new();
+    public List<string> Parameters { get; init; } = [];
 }
 
 /// <summary>
@@ -882,7 +882,7 @@ public record ScheduledReportResponse : BaseDto<Guid>
     /// <summary>
     /// Gets the report parameters.
     /// </summary>
-    public Dictionary<string, object> Parameters { get; init; } = new();
+    public Dictionary<string, object> Parameters { get; init; } = [];
 }
 
 /// <summary>
@@ -907,17 +907,17 @@ public record CustomAnalyticsQueryRequest : BaseDto<Guid>
     /// <summary>
     /// Gets the query filters.
     /// </summary>
-    public Dictionary<string, object> Filters { get; init; } = new();
+    public Dictionary<string, object> Filters { get; init; } = [];
     
     /// <summary>
     /// Gets the fields to group by.
     /// </summary>
-    public List<string> GroupBy { get; init; } = new();
+    public List<string> GroupBy { get; init; } = [];
     
     /// <summary>
     /// Gets the aggregations to apply.
     /// </summary>
-    public Dictionary<string, string> Aggregations { get; init; } = new();
+    public Dictionary<string, string> Aggregations { get; init; } = [];
     
     /// <summary>
     /// Gets the result limit.
@@ -963,7 +963,7 @@ public record AnalyticsExportRequest : BaseDto<Guid>
     /// <summary>
     /// Gets additional filters for the export.
     /// </summary>
-    public Dictionary<string, object> Filters { get; init; } = new();
+    public Dictionary<string, object> Filters { get; init; } = [];
 }
 
 /// <summary>

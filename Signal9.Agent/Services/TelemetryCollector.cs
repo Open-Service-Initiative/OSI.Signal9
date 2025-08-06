@@ -12,21 +12,13 @@ namespace Signal9.Agent.Services;
 /// Service for collecting telemetry data from the system
 /// Clean MSP-focused implementation using TelemetryDataDto
 /// </summary>
-public class TelemetryCollector : ITelemetryCollector
+public class TelemetryCollector(
+    ILogger<TelemetryCollector> logger,
+    IOptions<AgentConfiguration> agentConfiguration,
+    ISystemInfoProvider systemInfoProvider) : ITelemetryCollector
 {
-    private readonly ILogger<TelemetryCollector> _logger;
-    private readonly AgentConfiguration _agentConfiguration;
-    private readonly ISystemInfoProvider _systemInfoProvider;
-
-    public TelemetryCollector(
-        ILogger<TelemetryCollector> logger,
-        IOptions<AgentConfiguration> agentConfiguration,
-        ISystemInfoProvider systemInfoProvider)
-    {
-        _logger = logger;
-        _agentConfiguration = agentConfiguration.Value;
-        _systemInfoProvider = systemInfoProvider;
-    }
+    private readonly ILogger<TelemetryCollector> _logger = logger;
+    private readonly AgentConfiguration _agentConfiguration = agentConfiguration.Value;
 
     public async Task<TelemetryDataDto> CollectTelemetryAsync()
     {
@@ -136,7 +128,7 @@ public class TelemetryCollector : ITelemetryCollector
             "memory" => await CollectMemoryMetricAsync(),
             "disk" => await CollectDiskMetricAsync(),
             "process" => await CollectProcessMetricAsync(),
-            "system" => await _systemInfoProvider.GetSystemInfoAsync(),
+            "system" => await systemInfoProvider.GetSystemInfoAsync(),
             _ => await CollectTelemetryAsync()
         };
     }

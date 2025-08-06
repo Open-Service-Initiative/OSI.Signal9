@@ -19,7 +19,7 @@ public record SystemUser : BaseDto<Guid>
     public string? LastName { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTime? LastLoginAt { get; set; }
-    public string[] Roles { get; set; } = Array.Empty<string>();
+    public string[] Roles { get; set; } = [];
 }
 
 /// <summary>
@@ -38,8 +38,5 @@ public record SystemAlert : BaseDto<Guid>
     public DateTime? ResolvedAt { get; set; }
     public string? ResolvedBy { get; set; }
     public string Source { get; set; } = "System";
-    public Dictionary<string, object> Metadata { get; set; } = new();
+    public Dictionary<string, object> Metadata { get; set; } = [];
 }
-
-
-

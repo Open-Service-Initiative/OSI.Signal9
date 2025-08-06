@@ -83,12 +83,12 @@ public record CreateTenantRequest : BaseDto<Guid>
         return new
         {
             TenantCode = TenantSlug,
-            Name = Name,
-            Description = Description,
-            ContactEmail = ContactEmail,
-            SubscriptionTier = SubscriptionTier,
-            MaxAgents = MaxAgents,
-            DataRetentionDays = DataRetentionDays,
+            Name,
+            Description,
+            ContactEmail,
+            SubscriptionTier,
+            MaxAgents,
+            DataRetentionDays,
             Status = TenantStatus.Active
         };
     }
@@ -183,7 +183,7 @@ public record TenantResponse : BaseDto<Guid>
     /// <summary>
     /// Gets additional metadata about the tenant.
     /// </summary>
-    public Dictionary<string, object> Metadata { get; init; } = new();
+    public Dictionary<string, object> Metadata { get; init; } = [];
 
     /// <summary>
     /// Convenience properties that delegate to the inner Tenant for backward compatibility

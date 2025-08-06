@@ -2,6 +2,7 @@ using Signal9.Shared.DTOs.Tenants;
 using Signal9.Shared.DTOs;
 using System.Text.Json;
 using System.Text;
+using Signal9.Shared.DTOs.Core;
 
 namespace Signal9.Web.Services;
 

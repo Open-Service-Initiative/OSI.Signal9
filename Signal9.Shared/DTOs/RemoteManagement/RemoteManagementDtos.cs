@@ -295,12 +295,12 @@ public record FileTransferRequest : BaseDto<Guid>
     /// <summary>
     /// Gets the file patterns to include in the transfer.
     /// </summary>
-    public List<string> IncludePatterns { get; init; } = new();
+    public List<string> IncludePatterns { get; init; } = [];
     
     /// <summary>
     /// Gets the file patterns to exclude from the transfer.
     /// </summary>
-    public List<string> ExcludePatterns { get; init; } = new();
+    public List<string> ExcludePatterns { get; init; } = [];
     
     /// <summary>
     /// Gets the reason for the file transfer.
@@ -408,7 +408,7 @@ public record FileTransferResponse : BaseDto<Guid>
     /// <summary>
     /// Gets the list of files that failed to transfer.
     /// </summary>
-    public List<string> FailedFiles { get; init; } = new();
+    public List<string> FailedFiles { get; init; } = [];
 }
 
 /// <summary>
@@ -435,7 +435,7 @@ public record ScriptExecutionRequest : BaseDto<Guid>
     /// <summary>
     /// Gets the arguments to pass to the script.
     /// </summary>
-    public List<string> Arguments { get; init; } = new();
+    public List<string> Arguments { get; init; } = [];
     
     /// <summary>
     /// Gets the working directory for script execution.
@@ -462,7 +462,7 @@ public record ScriptExecutionRequest : BaseDto<Guid>
     /// <summary>
     /// Gets environment variables to set for the script execution.
     /// </summary>
-    public Dictionary<string, string> EnvironmentVariables { get; init; } = new();
+    public Dictionary<string, string> EnvironmentVariables { get; init; } = [];
     
     /// <summary>
     /// Gets whether to capture the script output.
@@ -671,12 +671,12 @@ public record RegistryOperationResponse : BaseDto<Guid>
     /// <summary>
     /// Gets the list of subkeys (for enumeration operations).
     /// </summary>
-    public List<string> Subkeys { get; init; } = new();
+    public List<string> Subkeys { get; init; } = [];
     
     /// <summary>
     /// Gets the list of values (for enumeration operations).
     /// </summary>
-    public List<RegistryValue> Values { get; init; } = new();
+    public List<RegistryValue> Values { get; init; } = [];
     
     /// <summary>
     /// Gets when the operation was executed.

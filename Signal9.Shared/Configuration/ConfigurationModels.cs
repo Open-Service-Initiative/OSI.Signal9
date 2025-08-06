@@ -60,7 +60,7 @@ public class AgentConfiguration
     public int MaxReconnectAttempts { get; set; } = 10;
     public TelemetryConfiguration Telemetry { get; set; } = new();
     public LoggingConfiguration Logging { get; set; } = new();
-    public Dictionary<string, object> CustomSettings { get; set; } = new();
+    public Dictionary<string, object> CustomSettings { get; set; } = [];
 }
 
 public class TelemetryConfiguration
@@ -70,9 +70,9 @@ public class TelemetryConfiguration
     public bool EnableEventLogs { get; set; } = true;
     public bool EnableNetworkMetrics { get; set; } = true;
     public bool EnableStorageMetrics { get; set; } = true;
-    public string[] PerformanceCounters { get; set; } = Array.Empty<string>();
-    public string[] EventLogSources { get; set; } = Array.Empty<string>();
-    public Dictionary<string, object> CustomMetrics { get; set; } = new();
+    public string[] PerformanceCounters { get; set; } = [];
+    public string[] EventLogSources { get; set; } = [];
+    public Dictionary<string, object> CustomMetrics { get; set; } = [];
 }
 
 public class LoggingConfiguration

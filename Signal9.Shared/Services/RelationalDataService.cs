@@ -11,19 +11,8 @@ namespace Signal9.Shared.Services;
 /// Enhanced relational data service implementing Microsoft's multi-tenant patterns
 /// Provides optimized data access for Azure SQL Database entities
 /// </summary>
-public class RelationalDataService : IRelationalDataService
+public class RelationalDataService(Signal9DbContext context, ILogger<RelationalDataService> logger, string? currentTenantId = null) : IRelationalDataService
 {
-    private readonly Signal9DbContext _context;
-    private readonly ILogger<RelationalDataService> _logger;
-    private readonly string? _currentTenantId;
-
-    public RelationalDataService(Signal9DbContext context, ILogger<RelationalDataService> logger, string? currentTenantId = null)
-    {
-        _context = context;
-        _logger = logger;
-        _currentTenantId = currentTenantId;
-    }
-
     public async Task<Agent?> GetAgentAsync(Guid tenantId, string agentId)
     {
         return await GetAgentByIdAsync(tenantId.ToString(), agentId);
@@ -35,12 +24,12 @@ public class RelationalDataService : IRelationalDataService
     {
         try
         {
-            return await _context.Agents
+            return await context.Agents
                 .FirstOrDefaultAsync(a => a.TenantId == tenantId && a.Id == agentId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving agent {AgentId} for tenant {TenantId}", agentId, tenantId);
+            logger.LogError(ex, "Error retrieving agent {AgentId} for tenant {TenantId}", agentId, tenantId);
             throw;
         }
     }
@@ -49,12 +38,12 @@ public class RelationalDataService : IRelationalDataService
     {
         try
         {
-            return await _context.Agents
+            return await context.Agents
                 .FirstOrDefaultAsync(a => a.TenantId == tenantId && a.MachineName == machineName);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving agent by machine name {MachineName} for tenant {TenantId}", machineName, tenantId);
+            logger.LogError(ex, "Error retrieving agent by machine name {MachineName} for tenant {TenantId}", machineName, tenantId);
             throw;
         }
     }
@@ -63,14 +52,14 @@ public class RelationalDataService : IRelationalDataService
     {
         try
         {
-            return await _context.Agents
+            return await context.Agents
                 .Where(a => a.TenantId == tenantId && a.Status == status)
                 .OrderBy(a => a.MachineName)
                 .ToListAsync();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving agents by status {Status} for tenant {TenantId}", status, tenantId);
+            logger.LogError(ex, "Error retrieving agents by status {Status} for tenant {TenantId}", status, tenantId);
             throw;
         }
     }
@@ -80,14 +69,14 @@ public class RelationalDataService : IRelationalDataService
         try
         {
             var cutoffTime = DateTime.UtcNow - timeSpan;
-            return await _context.Agents
+            return await context.Agents
                 .Where(a => a.TenantId == tenantId && a.LastSeen >= cutoffTime)
                 .OrderByDescending(a => a.LastSeen)
                 .ToListAsync();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving recently seen agents for tenant {TenantId}", tenantId);
+            logger.LogError(ex, "Error retrieving recently seen agents for tenant {TenantId}", tenantId);
             throw;
         }
     }
@@ -97,20 +86,20 @@ public class RelationalDataService : IRelationalDataService
         try
         {
             // Validate tenant isolation
-            if (_currentTenantId != null && agent.TenantId != _currentTenantId)
+            if (currentTenantId != null && agent.TenantId != currentTenantId)
             {
                 throw new UnauthorizedAccessException("Cannot create agent for different tenant");
             }
 
-            _context.Agents.Add(agent);
-            await _context.SaveChangesAsync();
+            context.Agents.Add(agent);
+            await context.SaveChangesAsync();
 
-            _logger.LogInformation("Agent {AgentId} created successfully for tenant {TenantId}", agent.Id, agent.TenantId);
+            logger.LogInformation("Agent {AgentId} created successfully for tenant {TenantId}", agent.Id, agent.TenantId);
             return agent;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating agent for tenant {TenantId}", agent.TenantId);
+            logger.LogError(ex, "Error creating agent for tenant {TenantId}", agent.TenantId);
             throw;
         }
     }
@@ -120,20 +109,20 @@ public class RelationalDataService : IRelationalDataService
         try
         {
             // Validate tenant isolation
-            if (_currentTenantId != null && agent.TenantId != _currentTenantId)
+            if (currentTenantId != null && agent.TenantId != currentTenantId)
             {
                 throw new UnauthorizedAccessException("Cannot update agent for different tenant");
             }
 
-            _context.Agents.Update(agent);
-            await _context.SaveChangesAsync();
+            context.Agents.Update(agent);
+            await context.SaveChangesAsync();
 
-            _logger.LogInformation("Agent {AgentId} updated successfully for tenant {TenantId}", agent.Id, agent.TenantId);
+            logger.LogInformation("Agent {AgentId} updated successfully for tenant {TenantId}", agent.Id, agent.TenantId);
             return agent;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating agent {AgentId} for tenant {TenantId}", agent.Id, agent.TenantId);
+            logger.LogError(ex, "Error updating agent {AgentId} for tenant {TenantId}", agent.Id, agent.TenantId);
             throw;
         }
     }
@@ -142,17 +131,17 @@ public class RelationalDataService : IRelationalDataService
     {
         try
         {
-            var agent = await _context.Agents.FirstOrDefaultAsync(a => a.Id == agentId);
+            var agent = await context.Agents.FirstOrDefaultAsync(a => a.Id == agentId);
             if (agent != null)
             {
                 agent.LastSeen = lastSeen;
                 agent.Status = AgentStatus.Online;
-                await _context.SaveChangesAsync();
+                await context.SaveChangesAsync();
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating last seen for agent {AgentId}", agentId);
+            logger.LogError(ex, "Error updating last seen for agent {AgentId}", agentId);
             throw;
         }
     }
@@ -165,12 +154,12 @@ public class RelationalDataService : IRelationalDataService
     {
         try
         {
-            return await _context.AgentCommands
+            return await context.AgentCommands
                 .FirstOrDefaultAsync(c => c.TenantId == tenantId && c.Id == commandId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving command {CommandId} for tenant {TenantId}", commandId, tenantId);
+            logger.LogError(ex, "Error retrieving command {CommandId} for tenant {TenantId}", commandId, tenantId);
             throw;
         }
     }
@@ -179,14 +168,14 @@ public class RelationalDataService : IRelationalDataService
     {
         try
         {
-            return await _context.AgentCommands
+            return await context.AgentCommands
                 .Where(c => c.TenantId == tenantId && c.AgentId == agentId)
                 .OrderByDescending(c => c.ScheduledAt)
                 .ToListAsync();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving commands for agent {AgentId} in tenant {TenantId}", agentId, tenantId);
+            logger.LogError(ex, "Error retrieving commands for agent {AgentId} in tenant {TenantId}", agentId, tenantId);
             throw;
         }
     }
@@ -195,7 +184,7 @@ public class RelationalDataService : IRelationalDataService
     {
         try
         {
-            return await _context.AgentCommands
+            return await context.AgentCommands
                 .Where(c => c.TenantId == tenantId && c.Status == CommandStatus.Pending)
                 .OrderBy(c => c.Priority)
                 .ThenBy(c => c.ScheduledAt)
@@ -203,7 +192,7 @@ public class RelationalDataService : IRelationalDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving pending commands for tenant {TenantId}", tenantId);
+            logger.LogError(ex, "Error retrieving pending commands for tenant {TenantId}", tenantId);
             throw;
         }
     }
@@ -213,21 +202,21 @@ public class RelationalDataService : IRelationalDataService
         try
         {
             // Validate tenant isolation
-            if (_currentTenantId != null && command.TenantId != _currentTenantId)
+            if (currentTenantId != null && command.TenantId != currentTenantId)
             {
                 throw new UnauthorizedAccessException("Cannot create command for different tenant");
             }
 
-            _context.AgentCommands.Add(command);
-            await _context.SaveChangesAsync();
+            context.AgentCommands.Add(command);
+            await context.SaveChangesAsync();
 
-            _logger.LogInformation("Command {CommandId} created successfully for agent {AgentId} in tenant {TenantId}", 
+            logger.LogInformation("Command {CommandId} created successfully for agent {AgentId} in tenant {TenantId}", 
                 command.Id, command.AgentId, command.TenantId);
             return command;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating command for agent {AgentId} in tenant {TenantId}", 
+            logger.LogError(ex, "Error creating command for agent {AgentId} in tenant {TenantId}", 
                 command.AgentId, command.TenantId);
             throw;
         }
@@ -237,7 +226,7 @@ public class RelationalDataService : IRelationalDataService
     {
         try
         {
-            var command = await _context.AgentCommands.FirstOrDefaultAsync(c => c.Id == commandId);
+            var command = await context.AgentCommands.FirstOrDefaultAsync(c => c.Id == commandId);
             if (command != null)
             {
                 command.Status = status;
@@ -257,12 +246,12 @@ public class RelationalDataService : IRelationalDataService
                         break;
                 }
 
-                await _context.SaveChangesAsync();
+                await context.SaveChangesAsync();
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating command status for command {CommandId}", commandId);
+            logger.LogError(ex, "Error updating command status for command {CommandId}", commandId);
             throw;
         }
     }
@@ -275,12 +264,12 @@ public class RelationalDataService : IRelationalDataService
     {
         try
         {
-            return await _context.Tenants
+            return await context.Tenants
                 .FirstOrDefaultAsync(t => t.TenantCode == tenantCode);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving tenant by code {TenantCode}", tenantCode);
+            logger.LogError(ex, "Error retrieving tenant by code {TenantCode}", tenantCode);
             throw;
         }
     }
@@ -289,12 +278,12 @@ public class RelationalDataService : IRelationalDataService
     {
         try
         {
-            return await _context.Tenants
+            return await context.Tenants
                 .FirstOrDefaultAsync(t => t.ApiKey == apiKey);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving tenant by API key");
+            logger.LogError(ex, "Error retrieving tenant by API key");
             throw;
         }
     }
@@ -303,12 +292,12 @@ public class RelationalDataService : IRelationalDataService
     {
         try
         {
-            return await _context.Tenants
+            return await context.Tenants
                 .AnyAsync(t => t.TenantCode == tenantCode && t.Status == TenantStatus.Active);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error validating tenant code {TenantCode}", tenantCode);
+            logger.LogError(ex, "Error validating tenant code {TenantCode}", tenantCode);
             throw;
         }
     }
@@ -317,16 +306,16 @@ public class RelationalDataService : IRelationalDataService
     {
         try
         {
-            _context.Tenants.Add(tenant);
-            await _context.SaveChangesAsync();
+            context.Tenants.Add(tenant);
+            await context.SaveChangesAsync();
 
-            _logger.LogInformation("Tenant {TenantId} created successfully with code {TenantCode}", 
+            logger.LogInformation("Tenant {TenantId} created successfully with code {TenantCode}", 
                 tenant.Id, tenant.TenantCode);
             return tenant;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating tenant with code {TenantCode}", tenant.TenantCode);
+            logger.LogError(ex, "Error creating tenant with code {TenantCode}", tenant.TenantCode);
             throw;
         }
     }
@@ -339,11 +328,11 @@ public class RelationalDataService : IRelationalDataService
     {
         try
         {
-            return await _context.Set<T>().FindAsync(id);
+            return await context.Set<T>().FindAsync(id);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving entity {EntityType} with id {Id}", typeof(T).Name, id);
+            logger.LogError(ex, "Error retrieving entity {EntityType} with id {Id}", typeof(T).Name, id);
             throw;
         }
     }
@@ -352,11 +341,11 @@ public class RelationalDataService : IRelationalDataService
     {
         try
         {
-            return await _context.Set<T>().ToListAsync();
+            return await context.Set<T>().ToListAsync();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving all entities of type {EntityType}", typeof(T).Name);
+            logger.LogError(ex, "Error retrieving all entities of type {EntityType}", typeof(T).Name);
             throw;
         }
     }
@@ -365,11 +354,11 @@ public class RelationalDataService : IRelationalDataService
     {
         try
         {
-            return await _context.Set<T>().CountAsync();
+            return await context.Set<T>().CountAsync();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error counting entities of type {EntityType}", typeof(T).Name);
+            logger.LogError(ex, "Error counting entities of type {EntityType}", typeof(T).Name);
             throw;
         }
     }
@@ -378,6 +367,6 @@ public class RelationalDataService : IRelationalDataService
 
     public void Dispose()
     {
-        _context.Dispose();
+        context.Dispose();
     }
 }

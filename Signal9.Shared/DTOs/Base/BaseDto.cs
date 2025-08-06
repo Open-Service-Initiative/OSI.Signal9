@@ -13,7 +13,7 @@ public abstract record BaseDto<TId> : IBaseDto<TId> where TId : notnull
     /// Gets the unique identifier for this DTO.
     /// </summary>
     [Required(ErrorMessage = "Id is required")]
-    public TId Id { get; init; } = typeof(TId) == typeof(Guid) ? (TId)(object)Guid.NewGuid() : default(TId)!;
+    public TId Id { get; init; } = typeof(TId) == typeof(Guid) ? (TId)(object)Guid.NewGuid() : default!;
 
     /// <summary>
     /// Gets the parent DTO's ID for hierarchical relationships.

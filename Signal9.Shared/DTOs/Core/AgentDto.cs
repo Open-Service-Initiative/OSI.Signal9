@@ -3,7 +3,7 @@ using Signal9.Shared.DTOs.Base;
 using Signal9.Shared.Contracts;
 using Signal9.Shared.Models;
 
-namespace Signal9.Shared.DTOs;
+namespace Signal9.Shared.DTOs.Core;
 
 /// <summary>
 /// Agent DTO - represents a managed endpoint in the Signal9 RMM system.

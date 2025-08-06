@@ -12,7 +12,7 @@ public record PaginatedResponse<T> : BaseDto<Guid>
     /// <summary>
     /// The data items for the current page
     /// </summary>
-    public IEnumerable<T> Data { get; set; } = Array.Empty<T>();
+    public IEnumerable<T> Data { get; set; } = [];
 
     /// <summary>
     /// Legacy property for backward compatibility

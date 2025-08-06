@@ -64,7 +64,7 @@ public record AlertRequest : BaseDto<Guid>
     /// <summary>
     /// Gets the tags associated with this alert.
     /// </summary>
-    public List<string> Tags { get; init; } = new();
+    public List<string> Tags { get; init; } = [];
 }
 
 /// <summary>
@@ -175,7 +175,7 @@ public record AlertResponse : BaseDto<Guid>
     /// <summary>
     /// Gets the tags associated with this alert.
     /// </summary>
-    public List<string> Tags { get; init; } = new();
+    public List<string> Tags { get; init; } = [];
 }
 
 /// <summary>
@@ -239,17 +239,17 @@ public record AlertRuleRequest : BaseDto<Guid>
     /// <summary>
     /// Gets the agent IDs this rule applies to (empty means all agents).
     /// </summary>
-    public List<Guid> AgentIds { get; init; } = new();
+    public List<Guid> AgentIds { get; init; } = [];
     
     /// <summary>
     /// Gets the notification targets for this rule.
     /// </summary>
-    public List<Guid> NotificationIds { get; init; } = new();
+    public List<Guid> NotificationIds { get; init; } = [];
     
     /// <summary>
     /// Gets the tags for filtering agents this rule applies to.
     /// </summary>
-    public List<string> AgentTags { get; init; } = new();
+    public List<string> AgentTags { get; init; } = [];
     
     /// <summary>
     /// Gets additional rule configuration.
@@ -330,17 +330,17 @@ public record AlertRuleResponse : BaseDto<Guid>
     /// <summary>
     /// Gets the agent IDs this rule applies to.
     /// </summary>
-    public List<Guid> AgentIds { get; init; } = new();
+    public List<Guid> AgentIds { get; init; } = [];
     
     /// <summary>
     /// Gets the notification targets for this rule.
     /// </summary>
-    public List<Guid> NotificationIds { get; init; } = new();
+    public List<Guid> NotificationIds { get; init; } = [];
     
     /// <summary>
     /// Gets the tags for filtering agents this rule applies to.
     /// </summary>
-    public List<string> AgentTags { get; init; } = new();
+    public List<string> AgentTags { get; init; } = [];
     
     /// <summary>
     /// Gets additional rule configuration.
@@ -388,7 +388,7 @@ public record NotificationRequest : BaseDto<Guid>
     /// <summary>
     /// Gets the categories of alerts to notify about.
     /// </summary>
-    public List<AlertCategory> Categories { get; init; } = new();
+    public List<AlertCategory> Categories { get; init; } = [];
     
     /// <summary>
     /// Gets the quiet hours configuration.
@@ -439,7 +439,7 @@ public record NotificationResponse : BaseDto<Guid>
     /// <summary>
     /// Gets the categories of alerts to notify about.
     /// </summary>
-    public List<AlertCategory> Categories { get; init; } = new();
+    public List<AlertCategory> Categories { get; init; } = [];
     
     /// <summary>
     /// Gets the quiet hours configuration.
@@ -531,7 +531,7 @@ public record SystemEvent : BaseDto<Guid>
     /// <summary>
     /// Gets the tags associated with this event.
     /// </summary>
-    public List<string> Tags { get; init; } = new();
+    public List<string> Tags { get; init; } = [];
 }
 
 /// <summary>
@@ -661,12 +661,12 @@ public record HealthStatus : BaseDto<Guid>
     /// <summary>
     /// Gets the individual health checks and their results.
     /// </summary>
-    public List<HealthCheck> HealthChecks { get; init; } = new();
+    public List<HealthCheck> HealthChecks { get; init; } = [];
     
     /// <summary>
     /// Gets performance metrics related to health.
     /// </summary>
-    public Dictionary<string, double> Metrics { get; init; } = new();
+    public Dictionary<string, double> Metrics { get; init; } = [];
     
     /// <summary>
     /// Gets the trends in health status.
@@ -766,7 +766,7 @@ public record QuietHours
     /// <summary>
     /// Gets the days of the week quiet hours apply to.
     /// </summary>
-    public List<DayOfWeek> Days { get; init; } = new();
+    public List<DayOfWeek> Days { get; init; } = [];
     
     /// <summary>
     /// Gets the timezone for quiet hours.

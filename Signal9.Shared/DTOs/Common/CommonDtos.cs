@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Signal9.Shared.DTOs.Base;
+using Signal9.Shared.DTOs.Core;
 using Signal9.Shared.Models;
 
 namespace Signal9.Shared.DTOs.Common;
@@ -32,7 +33,7 @@ public record AgentResponse : BaseDto<Guid>
     /// <summary>
     /// Additional metadata
     /// </summary>
-    public Dictionary<string, object> Metadata { get; init; } = new();
+    public Dictionary<string, object> Metadata { get; init; } = [];
 
     /// <summary>
     /// Factory method from AgentDto
@@ -123,7 +124,7 @@ public record CommandResponse : BaseDto<Guid>
 public record TelemetryResponse : BaseDto<Guid>
 {
     public TelemetryDataDto? Telemetry { get; init; }
-    public Dictionary<string, double> ComputedMetrics { get; init; } = new();
+    public Dictionary<string, double> ComputedMetrics { get; init; } = [];
     public DateTime CollectedAt { get; init; } = DateTime.UtcNow;
 
     /// <summary>
@@ -135,7 +136,7 @@ public record TelemetryResponse : BaseDto<Guid>
         {
             Id = Guid.NewGuid(),
             Telemetry = telemetry,
-            ComputedMetrics = computedMetrics ?? new(),
+            ComputedMetrics = computedMetrics ?? [],
             CollectedAt = DateTime.UtcNow
         };
     }
@@ -164,9 +165,5 @@ public record SystemInfo
     public long TotalMemory => TotalMemoryMb * 1024 * 1024; // Convert MB to bytes
     public long AvailableMemory { get; init; }
     public TimeSpan Uptime { get; init; }
-    public Dictionary<string, object> Drives { get; init; } = new();
+    public Dictionary<string, object> Drives { get; init; } = [];
 }
-
-
-
-

@@ -1,5 +1,6 @@
 using Signal9.Shared.DTOs.Tenants;
 using Signal9.Shared.DTOs;
+using Signal9.Shared.DTOs.Core;
 
 namespace Signal9.Web.Services;
 

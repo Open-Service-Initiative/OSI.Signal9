@@ -10,17 +10,9 @@ namespace Signal9.Shared.Services;
 /// Enhanced table storage service optimized for Azure Tables
 /// Implements Microsoft's recommended patterns for time-series data and multi-tenant isolation
 /// </summary>
-public class TableStorageService : ITableStorageService
+public class TableStorageService(TableServiceClient tableServiceClient, ILogger<TableStorageService> logger) : ITableStorageService
 {
-    private readonly TableServiceClient _tableServiceClient;
-    private readonly ILogger<TableStorageService> _logger;
     private readonly string _telemetryTableName = "telemetrydata";
-
-    public TableStorageService(TableServiceClient tableServiceClient, ILogger<TableStorageService> logger)
-    {
-        _tableServiceClient = tableServiceClient;
-        _logger = logger;
-    }
 
     #region Telemetry Data Repository Implementation
 
@@ -34,7 +26,7 @@ public class TableStorageService : ITableStorageService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving telemetry data {RowKey} for tenant {TenantId}", rowKey, tenantId);
+            logger.LogError(ex, "Error retrieving telemetry data {RowKey} for tenant {TenantId}", rowKey, tenantId);
             throw;
         }
     }
@@ -74,7 +66,7 @@ public class TableStorageService : ITableStorageService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving telemetry data for agent {AgentId} in tenant {TenantId}", agentId, tenantId);
+            logger.LogError(ex, "Error retrieving telemetry data for agent {AgentId} in tenant {TenantId}", agentId, tenantId);
             throw;
         }
     }
@@ -101,7 +93,7 @@ public class TableStorageService : ITableStorageService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving telemetry data by type {TelemetryType} for tenant {TenantId}", telemetryType, tenantId);
+            logger.LogError(ex, "Error retrieving telemetry data by type {TelemetryType} for tenant {TenantId}", telemetryType, tenantId);
             throw;
         }
     }
@@ -125,7 +117,7 @@ public class TableStorageService : ITableStorageService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving recent telemetry data for tenant {TenantId}", tenantId);
+            logger.LogError(ex, "Error retrieving recent telemetry data for tenant {TenantId}", tenantId);
             throw;
         }
     }
@@ -137,13 +129,13 @@ public class TableStorageService : ITableStorageService
             var tableClient = await GetTableClientAsync(_telemetryTableName);
             await tableClient.UpsertEntityAsync(telemetry);
 
-            _logger.LogDebug("Telemetry data created successfully for agent {AgentId} in tenant {TenantId}", 
+            logger.LogDebug("Telemetry data created successfully for agent {AgentId} in tenant {TenantId}", 
                 telemetry.AgentId, telemetry.TenantId);
             return telemetry;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating telemetry data for agent {AgentId} in tenant {TenantId}", 
+            logger.LogError(ex, "Error creating telemetry data for agent {AgentId} in tenant {TenantId}", 
                 telemetry.AgentId, telemetry.TenantId);
             throw;
         }
@@ -164,12 +156,12 @@ public class TableStorageService : ITableStorageService
                 await tableClient.SubmitTransactionAsync(batchOperations);
             }
 
-            _logger.LogInformation("Batch created {Count} telemetry data entries", telemetryData.Count());
+            logger.LogInformation("Batch created {Count} telemetry data entries", telemetryData.Count());
             return telemetryData;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error batch creating telemetry data");
+            logger.LogError(ex, "Error batch creating telemetry data");
             throw;
         }
     }
@@ -182,7 +174,7 @@ public class TableStorageService : ITableStorageService
             var filter = $"PartitionKey eq '{tenantId}' and CreatedAt lt datetime'{cutoffDate:yyyy-MM-ddTHH:mm:ss.fffZ}'";
             var entitiesToDelete = new List<(string partitionKey, string rowKey)>();
 
-            await foreach (var entity in tableClient.QueryAsync<TelemetryData>(filter, select: new[] { "PartitionKey", "RowKey" }))
+            await foreach (var entity in tableClient.QueryAsync<TelemetryData>(filter, select: ["PartitionKey", "RowKey"]))
             {
                 entitiesToDelete.Add((entity.PartitionKey, entity.RowKey));
             }
@@ -200,12 +192,12 @@ public class TableStorageService : ITableStorageService
                 }
             }
 
-            _logger.LogInformation("Cleaned up {Count} old telemetry entries for tenant {TenantId}", 
+            logger.LogInformation("Cleaned up {Count} old telemetry entries for tenant {TenantId}", 
                 entitiesToDelete.Count, tenantId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error cleaning up old telemetry data for tenant {TenantId}", tenantId);
+            logger.LogError(ex, "Error cleaning up old telemetry data for tenant {TenantId}", tenantId);
             throw;
         }
     }
@@ -224,7 +216,7 @@ public class TableStorageService : ITableStorageService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving entity from table {TableName}", tableName);
+            logger.LogError(ex, "Error retrieving entity from table {TableName}", tableName);
             throw;
         }
     }
@@ -245,7 +237,7 @@ public class TableStorageService : ITableStorageService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error querying entities from table {TableName}", tableName);
+            logger.LogError(ex, "Error querying entities from table {TableName}", tableName);
             throw;
         }
     }
@@ -260,7 +252,7 @@ public class TableStorageService : ITableStorageService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error upserting entity to table {TableName}", tableName);
+            logger.LogError(ex, "Error upserting entity to table {TableName}", tableName);
             throw;
         }
     }
@@ -274,7 +266,7 @@ public class TableStorageService : ITableStorageService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting entity from table {TableName}", tableName);
+            logger.LogError(ex, "Error deleting entity from table {TableName}", tableName);
             throw;
         }
     }
@@ -285,7 +277,7 @@ public class TableStorageService : ITableStorageService
 
     private async Task<TableClient> GetTableClientAsync(string tableName)
     {
-        var tableClient = _tableServiceClient.GetTableClient(tableName);
+        var tableClient = tableServiceClient.GetTableClient(tableName);
         await tableClient.CreateIfNotExistsAsync();
         return tableClient;
     }

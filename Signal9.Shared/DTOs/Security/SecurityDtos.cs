@@ -31,7 +31,7 @@ public record UserAccountRequest : BaseDto<Guid>
     /// <summary>
     /// Gets the role IDs to assign to the user.
     /// </summary>
-    public List<Guid> RoleIds { get; init; } = new();
+    public List<Guid> RoleIds { get; init; } = [];
     
     /// <summary>
     /// Gets whether the account is active.
@@ -72,7 +72,7 @@ public record UserAccountResponse : BaseDto<Guid>
     /// <summary>
     /// Gets the roles assigned to the user.
     /// </summary>
-    public List<RoleResponse> Roles { get; init; } = new();
+    public List<RoleResponse> Roles { get; init; } = [];
     
     /// <summary>
     /// Gets whether the account is active.
@@ -105,7 +105,7 @@ public record RoleRequest : BaseDto<Guid>
     /// <summary>
     /// Gets the permission IDs to assign to the role.
     /// </summary>
-    public List<Guid> PermissionIds { get; init; } = new();
+    public List<Guid> PermissionIds { get; init; } = [];
     
     /// <summary>
     /// Gets whether the role is active.
@@ -136,7 +136,7 @@ public record RoleResponse : BaseDto<Guid>
     /// <summary>
     /// Gets the permissions assigned to the role.
     /// </summary>
-    public List<PermissionDto> Permissions { get; init; } = new();
+    public List<PermissionDto> Permissions { get; init; } = [];
     
     /// <summary>
     /// Gets whether the role is active.
@@ -278,12 +278,12 @@ public record ComplianceReport : BaseDto<Guid>
     /// <summary>
     /// Gets the compliance findings.
     /// </summary>
-    public List<ComplianceFinding> Findings { get; init; } = new();
+    public List<ComplianceFinding> Findings { get; init; } = [];
     
     /// <summary>
     /// Gets compliance metrics by category.
     /// </summary>
-    public Dictionary<string, double> MetricsByCategory { get; init; } = new();
+    public Dictionary<string, double> MetricsByCategory { get; init; } = [];
 }
 
 /// <summary>
@@ -528,5 +528,3 @@ public enum AntivirusHealthStatus
 }
 
 #endregion
-
-

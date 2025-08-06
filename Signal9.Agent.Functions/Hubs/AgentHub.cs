@@ -1,6 +1,7 @@
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using Signal9.Shared.DTOs;
+using Signal9.Shared.DTOs.Core;
 using Signal9.Shared.DTOs.Extensions;
 using Signal9.Shared.Services;
 using System.Text.Json;

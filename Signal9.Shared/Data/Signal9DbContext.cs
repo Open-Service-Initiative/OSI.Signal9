@@ -8,11 +8,8 @@ namespace Signal9.Shared.Data;
 /// Focuses only on core entities that actually exist
 /// Multi-tenant with strict tenant isolation
 /// </summary>
-public class Signal9DbContext : DbContext
+public class Signal9DbContext(DbContextOptions<Signal9DbContext> options) : DbContext(options)
 {
-    public Signal9DbContext(DbContextOptions<Signal9DbContext> options) : base(options)
-    {
-    }
 
     #region DbSets - Core Entities Only
 

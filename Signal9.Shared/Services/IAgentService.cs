@@ -1,5 +1,5 @@
-using Signal9.Shared.DTOs;
 using Signal9.Shared.DTOs.Base;
+using Signal9.Shared.DTOs.Core;
 using Signal9.Shared.Models;
 
 namespace Signal9.Shared.Services;
@@ -63,5 +63,5 @@ public record AgentConfigurationDto
     public string? ServerUrl { get; init; }
     public string? ApiKey { get; init; }
     public int HeartbeatIntervalSeconds { get; init; } = 60;
-    public Dictionary<string, object> Settings { get; init; } = new();
+    public Dictionary<string, object> Settings { get; init; } = [];
 }

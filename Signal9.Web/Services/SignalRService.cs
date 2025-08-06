@@ -9,18 +9,10 @@ namespace Signal9.Web.Services;
 /// <summary>
 /// SignalR service for WebAssembly dashboard real-time updates
 /// </summary>
-public class SignalRService : IAsyncDisposable
+public class SignalRService(ILogger<SignalRService> logger, IJSRuntime jsRuntime) : IAsyncDisposable
 {
-    private readonly ILogger<SignalRService> _logger;
-    private readonly IJSRuntime _jsRuntime;
     private HubConnection? _hubConnection;
     private bool _isDisposed;
-
-    public SignalRService(ILogger<SignalRService> logger, IJSRuntime jsRuntime)
-    {
-        _logger = logger;
-        _jsRuntime = jsRuntime;
-    }
 
     /// <summary>
     /// Connection state of the SignalR hub
@@ -56,11 +48,11 @@ public class SignalRService : IAsyncDisposable
             _hubConnection.Closed += OnClosed;
 
             await _hubConnection.StartAsync();
-            _logger.LogInformation("SignalR connection established");
+            logger.LogInformation("SignalR connection established");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to initialize SignalR connection");
+            logger.LogError(ex, "Failed to initialize SignalR connection");
             throw;
         }
     }
@@ -75,11 +67,11 @@ public class SignalRService : IAsyncDisposable
             try
             {
                 await _hubConnection.InvokeAsync("JoinTenant", tenantId);
-                _logger.LogDebug("Joined tenant group {TenantId}", tenantId);
+                logger.LogDebug("Joined tenant group {TenantId}", tenantId);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to join tenant group {TenantId}", tenantId);
+                logger.LogError(ex, "Failed to join tenant group {TenantId}", tenantId);
             }
         }
     }
@@ -94,11 +86,11 @@ public class SignalRService : IAsyncDisposable
             try
             {
                 await _hubConnection.InvokeAsync("LeaveTenant", tenantId);
-                _logger.LogDebug("Left tenant group {TenantId}", tenantId);
+                logger.LogDebug("Left tenant group {TenantId}", tenantId);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to leave tenant group {TenantId}", tenantId);
+                logger.LogError(ex, "Failed to leave tenant group {TenantId}", tenantId);
             }
         }
     }
@@ -111,7 +103,7 @@ public class SignalRService : IAsyncDisposable
         if (_hubConnection != null)
         {
             await _hubConnection.StopAsync();
-            _logger.LogInformation("SignalR connection stopped");
+            logger.LogInformation("SignalR connection stopped");
         }
     }
 
@@ -120,14 +112,14 @@ public class SignalRService : IAsyncDisposable
     {
         try
         {
-            _logger.LogDebug("Agent {AgentId} status changed to {Status}", agentId, status);
+            logger.LogDebug("Agent {AgentId} status changed to {Status}", agentId, status);
             
             // Update UI via JavaScript interop
-            await _jsRuntime.InvokeVoidAsync("dashboard.updateAgentStatus", agentId, status);
+            await jsRuntime.InvokeVoidAsync("dashboard.updateAgentStatus", agentId, status);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error handling agent status update");
+            logger.LogError(ex, "Error handling agent status update");
         }
     }
 
@@ -135,14 +127,14 @@ public class SignalRService : IAsyncDisposable
     {
         try
         {
-            _logger.LogDebug("Telemetry update received for agent {AgentId}", agentId);
+            logger.LogDebug("Telemetry update received for agent {AgentId}", agentId);
             
             // Update UI via JavaScript interop
-            await _jsRuntime.InvokeVoidAsync("dashboard.updateTelemetry", agentId, telemetryData);
+            await jsRuntime.InvokeVoidAsync("dashboard.updateTelemetry", agentId, telemetryData);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error handling telemetry update");
+            logger.LogError(ex, "Error handling telemetry update");
         }
     }
 
@@ -150,32 +142,32 @@ public class SignalRService : IAsyncDisposable
     {
         try
         {
-            _logger.LogError("SignalR error: {Message}", message);
+            logger.LogError("SignalR error: {Message}", message);
             
             // Show error notification
-            await _jsRuntime.InvokeVoidAsync("dashboard.showError", message);
+            await jsRuntime.InvokeVoidAsync("dashboard.showError", message);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error handling SignalR error message");
+            logger.LogError(ex, "Error handling SignalR error message");
         }
     }
 
     private Task OnReconnecting(Exception? exception)
     {
-        _logger.LogWarning("SignalR reconnecting: {Exception}", exception?.Message);
+        logger.LogWarning("SignalR reconnecting: {Exception}", exception?.Message);
         return Task.CompletedTask;
     }
 
     private Task OnReconnected(string? connectionId)
     {
-        _logger.LogInformation("SignalR reconnected with connection ID: {ConnectionId}", connectionId);
+        logger.LogInformation("SignalR reconnected with connection ID: {ConnectionId}", connectionId);
         return Task.CompletedTask;
     }
 
     private Task OnClosed(Exception? exception)
     {
-        _logger.LogWarning("SignalR connection closed: {Exception}", exception?.Message);
+        logger.LogWarning("SignalR connection closed: {Exception}", exception?.Message);
         return Task.CompletedTask;
     }
 

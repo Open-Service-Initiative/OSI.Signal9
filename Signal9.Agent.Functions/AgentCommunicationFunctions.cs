@@ -14,14 +14,8 @@ namespace Signal9.Agent.Functions;
 /// <summary>
 /// Functions for handling agent communications through Azure SignalR Service
 /// </summary>
-public class AgentCommunicationFunctions
+public class AgentCommunicationFunctions(ILogger<AgentCommunicationFunctions> logger)
 {
-    private readonly ILogger<AgentCommunicationFunctions> _logger;
-
-    public AgentCommunicationFunctions(ILogger<AgentCommunicationFunctions> logger)
-    {
-        _logger = logger;
-    }
 
     /// <summary>
     /// SignalR negotiate function for agent connections
@@ -31,7 +25,7 @@ public class AgentCommunicationFunctions
         [HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequestData req,
         [SignalRConnectionInfoInput(HubName = "AgentHub")] SignalRConnectionInfo connectionInfo)
     {
-        _logger.LogInformation("Agent requesting SignalR connection negotiation");
+        logger.LogInformation("Agent requesting SignalR connection negotiation");
         return connectionInfo;
     }
 
@@ -42,7 +36,7 @@ public class AgentCommunicationFunctions
     public async Task<HttpResponseData> RegisterAgentAsync(
         [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData req)
     {
-        _logger.LogInformation("Processing agent registration");
+        logger.LogInformation("Processing agent registration");
 
         try
         {
@@ -64,7 +58,7 @@ public class AgentCommunicationFunctions
             // TODO: Create agent record in database
             // TODO: Generate authentication token
 
-            _logger.LogInformation("Registered agent {AgentId} for tenant {TenantCode}", 
+            logger.LogInformation("Registered agent {AgentId} for tenant {TenantCode}", 
                 registrationData.AgentId, registrationData.TenantCode);
 
             var response = req.CreateResponse(HttpStatusCode.OK);
@@ -79,7 +73,7 @@ public class AgentCommunicationFunctions
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing agent registration");
+            logger.LogError(ex, "Error processing agent registration");
             var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
             await errorResponse.WriteStringAsync("Registration failed");
             return errorResponse;
@@ -93,7 +87,7 @@ public class AgentCommunicationFunctions
     public async Task<HttpResponseData> ReceiveTelemetryAsync(
         [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData req)
     {
-        _logger.LogInformation("Processing telemetry data");
+        logger.LogInformation("Processing telemetry data");
 
         try
         {
@@ -114,7 +108,7 @@ public class AgentCommunicationFunctions
             // TODO: Store telemetry in database
             // TODO: Trigger alerts if thresholds exceeded
 
-            _logger.LogInformation("Received telemetry from agent {AgentId}", telemetryData.AgentId);
+            logger.LogInformation("Received telemetry from agent {AgentId}", telemetryData.AgentId);
 
             var response = req.CreateResponse(HttpStatusCode.OK);
             await response.WriteStringAsync(JsonSerializer.Serialize(new 
@@ -127,7 +121,7 @@ public class AgentCommunicationFunctions
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing telemetry data");
+            logger.LogError(ex, "Error processing telemetry data");
             var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
             await errorResponse.WriteStringAsync("Telemetry processing failed");
             return errorResponse;
@@ -142,7 +136,7 @@ public class AgentCommunicationFunctions
         [HttpTrigger(AuthorizationLevel.Function, "post", Route = "agents/{agentId}/commands")] HttpRequestData req,
         string agentId)
     {
-        _logger.LogInformation("Sending command to agent {AgentId}", agentId);
+        logger.LogInformation("Sending command to agent {AgentId}", agentId);
 
         try
         {
@@ -162,7 +156,7 @@ public class AgentCommunicationFunctions
             // TODO: Send command to specific agent via SignalR
             // This would require a separate SignalR sending mechanism
 
-            _logger.LogInformation("Command {CommandType} queued for agent {AgentId}", command.CommandType, agentId);
+            logger.LogInformation("Command {CommandType} queued for agent {AgentId}", command.CommandType, agentId);
 
             var response = req.CreateResponse(HttpStatusCode.OK);
             await response.WriteStringAsync(JsonSerializer.Serialize(new 
@@ -175,7 +169,7 @@ public class AgentCommunicationFunctions
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error sending command to agent {AgentId}", agentId);
+            logger.LogError(ex, "Error sending command to agent {AgentId}", agentId);
             var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
             await errorResponse.WriteStringAsync("Command sending failed");
             return errorResponse;
@@ -190,7 +184,7 @@ public class AgentCommunicationFunctions
         [HttpTrigger(AuthorizationLevel.Function, "post", Route = "agents/{agentId}/heartbeat")] HttpRequestData req,
         string agentId)
     {
-        _logger.LogDebug("Received heartbeat from agent {AgentId}", agentId);
+        logger.LogDebug("Received heartbeat from agent {AgentId}", agentId);
 
         try
         {
@@ -209,7 +203,7 @@ public class AgentCommunicationFunctions
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing heartbeat for agent {AgentId}", agentId);
+            logger.LogError(ex, "Error processing heartbeat for agent {AgentId}", agentId);
             var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
             await errorResponse.WriteStringAsync("Heartbeat processing failed");
             return errorResponse;

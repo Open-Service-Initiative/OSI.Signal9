@@ -7,7 +7,7 @@ using Signal9.Shared.DTOs;
 using Signal9.Shared.Models;
 using System.Text.Json;
 using System.Text;
-using System.Threading.Channels;
+using Signal9.Shared.DTOs.Core;
 
 namespace Signal9.Agent.Services;
 

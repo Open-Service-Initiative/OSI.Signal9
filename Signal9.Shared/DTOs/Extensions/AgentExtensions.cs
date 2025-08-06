@@ -1,4 +1,5 @@
 using Signal9.Shared.DTOs.Common;
+using Signal9.Shared.DTOs.Core;
 using Signal9.Shared.Models;
 
 namespace Signal9.Shared.DTOs.Extensions;

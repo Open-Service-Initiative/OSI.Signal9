@@ -70,17 +70,17 @@ public record NetworkInterfaceInfo : BaseDto<Guid>
     /// <summary>
     /// Gets the IPv4 addresses assigned to this interface.
     /// </summary>
-    public List<IPv4AddressInfo> IPv4Addresses { get; init; } = new();
+    public List<IPv4AddressInfo> IPv4Addresses { get; init; } = [];
     
     /// <summary>
     /// Gets the IPv6 addresses assigned to this interface.
     /// </summary>
-    public List<IPv6AddressInfo> IPv6Addresses { get; init; } = new();
+    public List<IPv6AddressInfo> IPv6Addresses { get; init; } = [];
     
     /// <summary>
     /// Gets the DNS servers configured for this interface.
     /// </summary>
-    public List<string> DnsServers { get; init; } = new();
+    public List<string> DnsServers { get; init; } = [];
     
     /// <summary>
     /// Gets the default gateway for this interface.
@@ -324,12 +324,12 @@ public record BandwidthUsageMetrics : BaseDto<Guid>
     /// <summary>
     /// Gets bandwidth usage by application or protocol.
     /// </summary>
-    public List<ApplicationBandwidthUsage> ApplicationUsage { get; init; } = new();
+    public List<ApplicationBandwidthUsage> ApplicationUsage { get; init; } = [];
     
     /// <summary>
     /// Gets bandwidth usage by time intervals within the period.
     /// </summary>
-    public List<TimeIntervalUsage> TimeIntervals { get; init; } = new();
+    public List<TimeIntervalUsage> TimeIntervals { get; init; } = [];
     
     /// <summary>
     /// Gets quality of service metrics.
@@ -607,12 +607,12 @@ public record DnsConfiguration
     /// <summary>
     /// Gets additional DNS servers.
     /// </summary>
-    public List<string> AdditionalDnsServers { get; init; } = new();
+    public List<string> AdditionalDnsServers { get; init; } = [];
     
     /// <summary>
     /// Gets the DNS suffix search list.
     /// </summary>
-    public List<string> SearchSuffixes { get; init; } = new();
+    public List<string> SearchSuffixes { get; init; } = [];
     
     /// <summary>
     /// Gets whether to register this connection's addresses in DNS.
@@ -663,7 +663,7 @@ public record ProxyConfiguration
     /// <summary>
     /// Gets the addresses that bypass the proxy.
     /// </summary>
-    public List<string> BypassList { get; init; } = new();
+    public List<string> BypassList { get; init; } = [];
     
     /// <summary>
     /// Gets whether to bypass proxy for local addresses.
@@ -709,7 +709,7 @@ public record FirewallConfiguration
     /// <summary>
     /// Gets custom firewall rules.
     /// </summary>
-    public List<FirewallRule> CustomRules { get; init; } = new();
+    public List<FirewallRule> CustomRules { get; init; } = [];
 }
 
 /// <summary>
@@ -817,12 +817,12 @@ public record QosConfiguration
     /// <summary>
     /// Gets the traffic shaping rules.
     /// </summary>
-    public List<TrafficShapingRule> TrafficShaping { get; init; } = new();
+    public List<TrafficShapingRule> TrafficShaping { get; init; } = [];
     
     /// <summary>
     /// Gets the priority classes.
     /// </summary>
-    public List<QosPriorityClass> PriorityClasses { get; init; } = new();
+    public List<QosPriorityClass> PriorityClasses { get; init; } = [];
 }
 
 /// <summary>
@@ -874,7 +874,7 @@ public record ApplicationBandwidthUsage
     /// <summary>
     /// Gets the remote endpoints connected to.
     /// </summary>
-    public List<string> RemoteEndpoints { get; init; } = new();
+    public List<string> RemoteEndpoints { get; init; } = [];
 }
 
 /// <summary>
@@ -1151,7 +1151,7 @@ public record SplitTunnelingConfig
     /// <summary>
     /// Gets the list of addresses or applications for split tunneling.
     /// </summary>
-    public List<string> Rules { get; init; } = new();
+    public List<string> Rules { get; init; } = [];
 }
 
 /// <summary>
@@ -1214,9 +1214,7 @@ public record QosPriorityClass
     /// <summary>
     /// Gets the traffic matching criteria.
     /// </summary>
-    public List<string> MatchingCriteria { get; init; } = new();
+    public List<string> MatchingCriteria { get; init; } = [];
 }
 
 #endregion
-
-

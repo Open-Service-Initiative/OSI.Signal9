@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Signal9.Shared.DTOs.Base;
 
-namespace Signal9.Shared.DTOs;
+namespace Signal9.Shared.DTOs.Core;
 
 /// <summary>
 /// Tag DTO - represents organizational labels for agents and other entities.
