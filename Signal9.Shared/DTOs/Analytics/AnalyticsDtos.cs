@@ -287,7 +287,7 @@ public record AlertInfo
     /// <summary>
     /// Gets the alert ID.
     /// </summary>
-    
+    public Guid Id { get; init; }
     
     /// <summary>
     /// Gets the alert title.
@@ -307,7 +307,8 @@ public record AlertInfo
     /// <summary>
     /// Gets when the alert was created.
     /// </summary>
-    }
+    public DateTime CreatedAt { get; init; }
+}
 
 /// <summary>
 /// Tenant analytics response containing detailed metrics for a specific tenant.

@@ -5,13 +5,19 @@ using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Signal9.Shared.Data;
-using Microsoft.Azure.Functions.Worker.Extensions.OpenApi.Extensions;
+using System.Text.Json;
 
 var builder = FunctionsApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
-builder.ConfigureFunctionsWebApplication();
 
+// Configure JSON serialization for the Functions Worker
+builder.Services.Configure<JsonSerializerOptions>(options =>
+{
+    options.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+    options.WriteIndented = true;
+    options.PropertyNameCaseInsensitive = true;
+});
 
 // Configure Entity Framework
 var connectionString = Environment.GetEnvironmentVariable("DefaultConnection");

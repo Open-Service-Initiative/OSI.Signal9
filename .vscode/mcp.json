@@ -1,0 +1,42 @@
+{
+	"inputs": [
+		{
+			"id": "functions_mcp_extension_system_key",
+			"description": "Azure Functions MCP Extension System Key",
+			"type": "promptString",
+			"password": true
+		}
+	],
+	"servers": {
+		"playwright": {
+			"type": "stdio",
+			"command": "npx",
+			"args": [
+				"@playwright/mcp@latest"
+			]
+		},
+		"microsoft-docs": {
+			"type": "http",
+			"url": "https://learn.microsoft.com/api/mcp"
+		},
+		"sequentialthinking": {
+			"type": "stdio",
+			"command": "npx",
+			"args": [
+				"-y",
+				"@modelcontextprotocol/server-sequential-thinking@latest"
+			]
+		},
+		"context7": {
+			"url": "https://mcp.context7.com/mcp",
+			"type": "http"
+		},
+		"memory": {
+			"type": "sse",
+			"url": "https://central-memory.mcp.bezalu.com/runtime/webhooks/mcp/sse?workspace=Signal9",
+			"headers": {
+				"x-functions-key": "${input:functions_mcp_extension_system_key}"
+			}
+		}
+	}
+}

@@ -5,34 +5,44 @@ using Signal9.Shared.Models;
 namespace Signal9.Shared.Services;
 
 /// <summary>
-/// Service interface for agent management operations using Entity Framework
+/// Service interface for agent management operations using Entity Framework with unified hierarchy support
 /// </summary>
 public interface IAgentService
 {
     /// <summary>
-    /// Get all agents with paging
+    /// Get all agents with advanced filtering and paging
+    /// </summary>
+    Task<PagedResponse<AgentDto>> GetAgentsAsync(AgentQueryRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Get all agents with simple paging (legacy support)
     /// </summary>
     Task<PagedResponse<object>> GetAgentsAsync(int page = 1, int pageSize = 50, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Get agent by ID with optional includes
     /// </summary>
-    Task<object?> GetAgentByIdAsync(Guid agentId, bool includeMetrics = false, bool includeTelemetry = false, CancellationToken cancellationToken = default);
+    Task<AgentDto?> GetAgentByIdAsync(Guid agentId, bool includeMetrics = false, bool includeTelemetry = false, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Register a new agent
     /// </summary>
-    Task<object> RegisterAgentAsync(object agentDto, CancellationToken cancellationToken = default);
+    Task<AgentDto> RegisterAgentAsync(AgentDto agentDto, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Update agent information
     /// </summary>
-    Task<object?> UpdateAgentAsync(Guid agentId, object updateRequest, CancellationToken cancellationToken = default);
+    Task<AgentDto?> UpdateAgentAsync(Guid agentId, AgentUpdateRequest updateRequest, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Delete agent with optional data preservation
     /// </summary>
     Task<bool> DeleteAgentAsync(Guid agentId, bool preserveData = false, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Generate agent configuration for registration
+    /// </summary>
+    Task<object> GenerateAgentConfigurationAsync(Guid agentId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Get agent telemetry data with filtering
@@ -94,7 +104,7 @@ public record BulkOperationError<T>
 }
 
 /// <summary>
-/// Paged response wrapper for collections
+/// Paged response wrapper for collections (legacy)
 /// </summary>
 public record PagedResponse<T> : BaseDto<Guid>
 {
@@ -105,4 +115,7 @@ public record PagedResponse<T> : BaseDto<Guid>
     public int TotalPages => (int)Math.Ceiling((double)TotalCount / PageSize);
     public bool HasNextPage => PageNumber < TotalPages;
     public bool HasPreviousPage => PageNumber > 1;
+    
+    // Additional properties for unified hierarchy support
+    public int Page => PageNumber;
 }

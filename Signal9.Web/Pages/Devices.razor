@@ -471,11 +471,11 @@
                 // Update existing device
                 var updateRequest = new AgentUpdateRequest
                 {
-                    TenantId = editingDevice.TenantId,
+                    ParentId = editingDevice.ParentId,  // Fixed: was TenantId
                     MachineName = deviceForm.MachineName,
-                    Description = deviceForm.Description,
-                    Tags = deviceForm.GroupName,
-                    Status = Enum.TryParse<AgentStatus>(deviceForm.Status, out var status) ? status : null
+                    IpAddress = deviceForm.IpAddress,  // Fixed: was Description (doesn't exist)
+                    // Tags = deviceForm.GroupName,  // Fixed: Tags property doesn't exist in AgentUpdateRequest
+                    // Status = Enum.TryParse<AgentStatus>(deviceForm.Status, out var status) ? status : null  // Fixed: Status property doesn't exist
                 };
 
                 await DashboardService.UpdateDeviceAsync(editingDevice.Id.ToString(), updateRequest);
@@ -489,10 +489,11 @@
                     TenantCode = "default", // TODO: Get from context
                     MachineName = deviceForm.MachineName!,
                     OperatingSystem = deviceForm.OperatingSystem!,
+                    OSVersion = "Unknown",  // Fixed: Required property was missing
                     IpAddress = deviceForm.IpAddress!,
-                    Architecture = deviceForm.Architecture,
+                    Architecture = deviceForm.Architecture ?? "Unknown",
                     Version = "1.0.0",
-                    TenantId = Guid.NewGuid() // TODO: Get from context or selection
+                    ParentId = Guid.NewGuid() // Fixed: was TenantId, now ParentId for unified hierarchy
                 };
 
                 await DashboardService.CreateDeviceAsync(createRequest);

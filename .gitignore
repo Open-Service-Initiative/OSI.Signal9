@@ -303,4 +303,3 @@ obj/
 Signal9.code-workspace
 AppHost/appsettings.json
 AppHost/appsettings.Development.json
-.vscode/mcp.json

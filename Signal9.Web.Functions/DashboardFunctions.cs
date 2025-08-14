@@ -3,8 +3,6 @@ using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Text.Json;
-using Microsoft.Azure.WebJobs.Extensions.OpenApi.Core.Attributes;
-using Microsoft.OpenApi.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Signal9.Shared.DTOs.Base;
@@ -27,13 +25,6 @@ public class DashboardFunctions
     /// Get comprehensive dashboard overview with real-time metrics
     /// </summary>
     [Function("GetDashboardOverview")]
-    [OpenApiOperation(operationId: "GetDashboardOverview", tags: new[] { "Dashboard" }, Summary = "Get dashboard overview", Description = "Retrieve comprehensive dashboard overview with real-time metrics and activity")]
-    [OpenApiParameter(name: "tenantId", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Optional tenant ID to filter dashboard data")]
-    [OpenApiParameter(name: "includeActivity", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include recent activity feed (default: true)")]
-    [OpenApiParameter(name: "activityLimit", In = ParameterLocation.Query, Required = false, Type = typeof(int), Description = "Number of recent activities to include (default: 10, max: 50)")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "Dashboard overview data")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid request parameters")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
     public Task<IActionResult> GetDashboardOverviewAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "dashboard/overview")] HttpRequest req)
     {
@@ -114,13 +105,6 @@ public class DashboardFunctions
     /// Get dashboard statistics with comprehensive metrics
     /// </summary>
     [Function("GetDashboardStatistics")]
-    [OpenApiOperation(operationId: "GetDashboardStatistics", tags: new[] { "Dashboard" }, Summary = "Get dashboard statistics", Description = "Retrieve comprehensive dashboard statistics including historical trends and performance metrics")]
-    [OpenApiParameter(name: "tenantId", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Optional tenant ID to filter statistics")]
-    [OpenApiParameter(name: "timeRange", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Time range for statistics (1h, 24h, 7d, 30d, 90d) - default: 24h")]
-    [OpenApiParameter(name: "includeHistorical", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include historical trend data (default: false)")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "Dashboard statistics")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid request parameters")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
     public Task<IActionResult> GetDashboardStatisticsAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "dashboard/statistics")] HttpRequest req)
     {
@@ -208,9 +192,6 @@ public class DashboardFunctions
     /// SignalR negotiate function for web dashboard connections
     /// </summary>
     [Function("negotiate")]
-    [OpenApiOperation(operationId: "NegotiateDashboardConnection", tags: new[] { "Dashboard" }, Summary = "Negotiate SignalR connection", Description = "Negotiate a SignalR connection for real-time dashboard updates")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "SignalR connection info")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
     public Task<IActionResult> NegotiateDashboardConnectionAsync(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "dashboard/negotiate")] HttpRequest req)
     {

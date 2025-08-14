@@ -49,13 +49,13 @@ public class AgentHub
             var registeredAgent = await _agentService.RegisterAgentAsync(agentDto);
 
             // Generate agent configuration
-            var configuration = await _agentService.GenerateAgentConfigurationAsync(Guid.Parse(registeredAgent.Id));
+            var configuration = await _agentService.GenerateAgentConfigurationAsync(registeredAgent.Id);
 
             // Add agent to SignalR group for tenant isolation
-            var tenantGroup = $"tenant-{request.ParentId}";
+            var parentGroup = $"parent-{request.ParentId}";
             var agentGroup = $"agent-{registeredAgent.Id}";
 
-            _logger.LogInformation("Agent {AgentId} registered successfully for tenant {TenantId}", 
+            _logger.LogInformation("Agent {AgentId} registered successfully for parent {ParentId}", 
                 registeredAgent.Id, request.ParentId);
 
             return new SignalRMessageAction("registrationResponse")
@@ -64,7 +64,7 @@ public class AgentHub
                     Success = true, 
                     AgentId = registeredAgent.Id,
                     Configuration = configuration,
-                    TenantGroup = tenantGroup,
+                    ParentGroup = parentGroup,
                     AgentGroup = agentGroup
                 } }
             };

@@ -8,8 +8,7 @@ using Signal9.Shared.Data;
 using Microsoft.Extensions.Options;
 
 var builder = FunctionsApplication.CreateBuilder(args);
-builder.AddServiceDefaults()
-    .ConfigureFunctionsWebApplication();
+builder.AddServiceDefaults();
 
 var connectionString = Environment.GetEnvironmentVariable("DefaultConnection");
 if (string.IsNullOrEmpty(connectionString))
