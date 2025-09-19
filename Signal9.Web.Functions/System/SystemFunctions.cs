@@ -17,15 +17,8 @@ namespace Signal9.Web.Functions.System;
 /// <summary>
 /// Modern Azure Functions for comprehensive system administration and management operations
 /// </summary>
-public class SystemFunctions
+public class SystemFunctions(ILogger<SystemFunctions> logger)
 {
-    private readonly ILogger<SystemFunctions> _logger;
-
-    public SystemFunctions(ILogger<SystemFunctions> logger)
-    {
-        _logger = logger;
-    }
-
     #region Health and Status
 
     /// <summary>
@@ -35,7 +28,7 @@ public class SystemFunctions
     public Task<IActionResult> GetSystemHealthAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "system/health")] HttpRequest req)
     {
-        _logger.LogInformation("Getting system health status");
+        logger.LogInformation("Getting system health status");
 
         try
         {
@@ -59,7 +52,7 @@ public class SystemFunctions
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting system health");
+            logger.LogError(ex, "Error getting system health");
             return Task.FromResult<IActionResult>(new ObjectResult(new { error = "Failed to retrieve health status", details = ex.Message })
             {
                 StatusCode = StatusCodes.Status500InternalServerError
@@ -74,7 +67,7 @@ public class SystemFunctions
     public Task<IActionResult> GetSystemInfoAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "system/info")] HttpRequest req)
     {
-        _logger.LogInformation("Getting system information");
+        logger.LogInformation("Getting system information");
 
         try
         {
@@ -96,7 +89,7 @@ public class SystemFunctions
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting system information");
+            logger.LogError(ex, "Error getting system information");
             return Task.FromResult<IActionResult>(new ObjectResult(new { error = "Failed to retrieve system information", details = ex.Message })
             {
                 StatusCode = StatusCodes.Status500InternalServerError
@@ -115,7 +108,7 @@ public class SystemFunctions
     public Task<IActionResult> TriggerMaintenanceAsync(
         [HttpTrigger(AuthorizationLevel.Function, "post", Route = "system/maintenance")] HttpRequest req)
     {
-        _logger.LogInformation("Triggering system maintenance");
+        logger.LogInformation("Triggering system maintenance");
 
         try
         {
@@ -133,8 +126,7 @@ public class SystemFunctions
             if (!validOperations.Contains(operation.ToLower()))
             {
                 return Task.FromResult<IActionResult>(new BadRequestObjectResult(new { 
-                    error = "Invalid operation", 
-                    validOperations = validOperations 
+                    error = "Invalid operation", validOperations 
                 }));
             }
 
@@ -152,7 +144,7 @@ public class SystemFunctions
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error triggering maintenance");
+            logger.LogError(ex, "Error triggering maintenance");
             return Task.FromResult<IActionResult>(new ObjectResult(new { error = "Failed to trigger maintenance", details = ex.Message })
             {
                 StatusCode = StatusCodes.Status500InternalServerError
@@ -174,7 +166,7 @@ public class SystemFunctions
     private DateTime GetBuildDate()
     {
         var assembly = Assembly.GetExecutingAssembly();
-        var buildAttribute = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>();
+        var unused = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>();
         // TODO: Extract actual build date from assembly metadata
         return DateTime.UtcNow; // Placeholder
     }
@@ -183,12 +175,12 @@ public class SystemFunctions
     {
         return new
         {
-            MachineName = Environment.MachineName,
+            Environment.MachineName,
             OSVersion = Environment.OSVersion.ToString(),
-            ProcessorCount = Environment.ProcessorCount,
-            WorkingSet = Environment.WorkingSet,
-            Is64BitProcess = Environment.Is64BitProcess,
-            Is64BitOperatingSystem = Environment.Is64BitOperatingSystem
+            Environment.ProcessorCount,
+            Environment.WorkingSet,
+            Environment.Is64BitProcess,
+            Environment.Is64BitOperatingSystem
         };
     }
 
@@ -199,8 +191,8 @@ public class SystemFunctions
             RuntimeVersion = Environment.Version.ToString(),
             FrameworkDescription = "NET 9.0",
             OSDescription = Environment.OSVersion.ToString(),
-            ProcessorCount = Environment.ProcessorCount,
-            Is64BitProcess = Environment.Is64BitProcess
+            Environment.ProcessorCount,
+            Environment.Is64BitProcess
         };
     }
 
@@ -287,7 +279,7 @@ public class SystemHealthStatus
     public DateTime Timestamp { get; set; }
     public string Version { get; set; } = string.Empty;
     public TimeSpan Uptime { get; set; }
-    public List<ComponentHealthInfo> Components { get; set; } = new();
+    public List<ComponentHealthInfo> Components { get; set; } = [];
     public SystemMetrics Metrics { get; set; } = new();
 }
 
@@ -319,21 +311,21 @@ public class SystemStatistics
     public long CommandsProcessed { get; set; }
     public long TelemetryEvents { get; set; }
     public double ErrorRate { get; set; }
-    public Dictionary<string, double> ResponseTimes { get; set; } = new();
-    public Dictionary<string, object> ResourceUsage { get; set; } = new();
+    public Dictionary<string, double> ResponseTimes { get; set; } = [];
+    public Dictionary<string, object> ResourceUsage { get; set; } = [];
     public object? TrendData { get; set; }
 }
 
 public class SystemConfigurationUpdate
 {
-    public Dictionary<string, object> Settings { get; set; } = new();
+    public Dictionary<string, object> Settings { get; set; } = [];
     public string? Reason { get; set; }
     public bool CreateBackup { get; set; } = true;
 }
 
 public class MaintenanceRequest
 {
-    public List<string> Operations { get; set; } = new(); // "cleanup_logs", "optimize_database", "purge_old_data"
+    public List<string> Operations { get; set; } = []; // "cleanup_logs", "optimize_database", "purge_old_data"
     public bool ForceExecution { get; set; }
     public string? Reason { get; set; }
 }
@@ -351,7 +343,7 @@ public class MaintenanceResult
 public class BackupRequest
 {
     public string Type { get; set; } = "full"; // "full", "incremental", "differential"
-    public List<string> Components { get; set; } = new(); // "database", "files", "configuration"
+    public List<string> Components { get; set; } = []; // "database", "files", "configuration"
     public bool CompressBackup { get; set; } = true;
     public string? Description { get; set; }
 }

@@ -17,17 +17,16 @@ public class TelemetryCollector(
     IOptions<AgentConfiguration> agentConfiguration,
     ISystemInfoProvider systemInfoProvider) : ITelemetryCollector
 {
-    private readonly ILogger<TelemetryCollector> _logger = logger;
     private readonly AgentConfiguration _agentConfiguration = agentConfiguration.Value;
 
     public async Task<TelemetryDataDto> CollectTelemetryAsync()
     {
         try
         {
-            _logger.LogDebug("Collecting telemetry data");
+            logger.LogDebug("Collecting telemetry data");
 
             var cpuUsage = await GetCpuUsageAsync();
-            var memoryInfo = await GetMemoryInfoAsync();
+            var (usedMb, availableMb) = await GetMemoryInfoAsync();
             var diskInfo = await GetDiskInfoAsync();
 
             return new TelemetryDataDto
@@ -35,8 +34,8 @@ public class TelemetryCollector(
                 AgentId = Environment.MachineName, // Will be set by calling service
                 TelemetryType = TelemetryType.SystemMetrics,
                 CpuUsagePercent = cpuUsage,
-                MemoryUsageMB = memoryInfo.UsedMB,
-                AvailableMemoryMB = memoryInfo.AvailableMB,
+                MemoryUsageMB = usedMb,
+                AvailableMemoryMB = availableMb,
                 DiskUsage = JsonSerializer.Serialize(diskInfo),
                 ProcessCount = System.Diagnostics.Process.GetProcesses().Length,
                 UptimeSeconds = (long)TimeSpan.FromMilliseconds(Environment.TickCount64).TotalSeconds,
@@ -45,7 +44,7 @@ public class TelemetryCollector(
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error collecting telemetry data");
+            logger.LogError(ex, "Error collecting telemetry data");
             return new TelemetryDataDto
             {
                 AgentId = Environment.MachineName,
@@ -68,7 +67,7 @@ public class TelemetryCollector(
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error collecting metric: {Metric}", metric);
+                logger.LogError(ex, "Error collecting metric: {Metric}", metric);
                 results.Add(new TelemetryDataDto
                 {
                     AgentId = Environment.MachineName,
@@ -78,7 +77,7 @@ public class TelemetryCollector(
             }
         }
 
-        return results.ToArray();
+        return [..results];
     }
 
     public async Task<TelemetryDataDto> CollectTelemetryAsync(string[] metrics)
@@ -110,7 +109,7 @@ public class TelemetryCollector(
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error collecting telemetry with specific metrics");
+            logger.LogError(ex, "Error collecting telemetry with specific metrics");
             return new TelemetryDataDto
             {
                 AgentId = Environment.MachineName,
@@ -147,13 +146,13 @@ public class TelemetryCollector(
 
     private async Task<TelemetryDataDto> CollectMemoryMetricAsync()
     {
-        var memoryInfo = await GetMemoryInfoAsync();
+        var (usedMb, availableMb) = await GetMemoryInfoAsync();
         return new TelemetryDataDto
         {
             AgentId = Environment.MachineName,
             TelemetryType = TelemetryType.SystemMetrics,
-            MemoryUsageMB = memoryInfo.UsedMB,
-            AvailableMemoryMB = memoryInfo.AvailableMB
+            MemoryUsageMB = usedMb,
+            AvailableMemoryMB = availableMb
         };
     }
 
@@ -179,7 +178,7 @@ public class TelemetryCollector(
             CustomMetrics = JsonSerializer.Serialize(processes.Take(10).Select(p => new
             {
                 Name = p.ProcessName,
-                Id = p.Id,
+                p.Id,
                 WorkingSet = p.WorkingSet64 / 1024 / 1024, // MB
                 CpuTime = p.TotalProcessorTime.TotalMilliseconds
             }))
@@ -234,8 +233,8 @@ public class TelemetryCollector(
                 .Where(d => d.IsReady)
                 .Select(d => new
                 {
-                    Name = d.Name,
-                    TotalSize = d.TotalSize,
+                    d.Name,
+                    d.TotalSize,
                     AvailableSpace = d.AvailableFreeSpace,
                     UsagePercent = (double)(d.TotalSize - d.AvailableFreeSpace) / d.TotalSize * 100
                 })
@@ -245,7 +244,7 @@ public class TelemetryCollector(
         }
         catch
         {
-            return new object[0];
+            return Array.Empty<object>();
         }
     }
 }

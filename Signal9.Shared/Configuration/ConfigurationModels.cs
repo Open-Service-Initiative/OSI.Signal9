@@ -50,17 +50,17 @@ public class SignalRConfiguration
 /// </summary>
 public class AgentConfiguration
 {
-    public string? AgentFunctionsUrl { get; set; }
-    public string? FunctionKey { get; set; }
-    public string? TenantCode { get; set; }
-    public string? GroupName { get; set; }
-    public int HeartbeatInterval { get; set; } = 30;
-    public int TelemetryInterval { get; set; } = 60;
-    public int ReconnectDelay { get; set; } = 5;
-    public int MaxReconnectAttempts { get; set; } = 10;
-    public TelemetryConfiguration Telemetry { get; set; } = new();
-    public LoggingConfiguration Logging { get; set; } = new();
-    public Dictionary<string, object> CustomSettings { get; set; } = [];
+    public string? AgentFunctionsUrl { get; init; }
+    public string? FunctionKey { get; init; }
+    public string? TenantCode { get; init; }
+    public string? GroupName { get; init; }
+    public int HeartbeatInterval { get; init; } = 30;
+    public int TelemetryInterval { get; init; } = 60;
+    public int ReconnectDelay { get; init; } = 5;
+    public int MaxReconnectAttempts { get; init; } = 10;
+    public TelemetryConfiguration Telemetry { get; init; } = new();
+    public LoggingConfiguration Logging { get; init; } = new();
+    public Dictionary<string, object> CustomSettings { get; init; } = [];
 }
 
 public class TelemetryConfiguration

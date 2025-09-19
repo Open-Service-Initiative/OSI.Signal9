@@ -13,22 +13,15 @@ namespace Signal9.Web.Functions.Analytics;
 /// Azure Functions for analytics, reporting, and business intelligence operations
 /// Currently focused on API structure - analytics implementation is planned for future phases.
 /// </summary>
-public class AnalyticsFunctions
+public class AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
 {
-    private readonly ILogger<AnalyticsFunctions> _logger;
-
-    public AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
-    {
-        _logger = logger;
-    }
-
     #region Dashboard Analytics
 
     /// <summary>
     /// Get comprehensive dashboard analytics data
     /// </summary>
     [Function("GetDashboardAnalytics")]
-    [OpenApiOperation(operationId: "GetDashboardAnalytics", tags: new[] { "Analytics" }, Summary = "Get dashboard analytics", Description = "Retrieve comprehensive dashboard analytics data with time range filtering and tenant scope")]
+    [OpenApiOperation(operationId: "GetDashboardAnalytics", tags: ["Analytics"], Summary = "Get dashboard analytics", Description = "Retrieve comprehensive dashboard analytics data with time range filtering and tenant scope")]
     [OpenApiParameter(name: "timeRange", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Time range filter (1h, 24h, 7d, 30d, 90d) - default: 7d")]
     [OpenApiParameter(name: "parentId", In = ParameterLocation.Query, Required = false, Type = typeof(Guid), Description = "Filter by parent tenant ID")]
     [OpenApiParameter(name: "includeDetails", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include detailed breakdown data")]
@@ -39,7 +32,7 @@ public class AnalyticsFunctions
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/dashboard")] HttpRequest req,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Getting dashboard analytics - implementation pending");
+        logger.LogInformation("Getting dashboard analytics - implementation pending");
 
         // TODO: Implement dashboard analytics once core RMM functionality is complete
         return new ObjectResult(new { 
@@ -62,7 +55,7 @@ public class AnalyticsFunctions
     /// Get detailed tenant analytics
     /// </summary>
     [Function("GetTenantAnalytics")]
-    [OpenApiOperation(operationId: "GetTenantAnalytics", tags: new[] { "Analytics" }, Summary = "Get tenant analytics", Description = "Retrieve comprehensive analytics data for a specific tenant")]
+    [OpenApiOperation(operationId: "GetTenantAnalytics", tags: ["Analytics"], Summary = "Get tenant analytics", Description = "Retrieve comprehensive analytics data for a specific tenant")]
     [OpenApiParameter(name: "parentId", In = ParameterLocation.Path, Required = true, Type = typeof(Guid), Description = "The unique identifier of the tenant")]
     [OpenApiParameter(name: "timeRange", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Time range filter (1h, 24h, 7d, 30d, 90d) - default: 30d")]
     [OpenApiParameter(name: "includeChildren", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include child tenant data in analytics")]
@@ -74,7 +67,7 @@ public class AnalyticsFunctions
         Guid parentId,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Getting tenant analytics for {ParentId} - implementation pending", parentId);
+        logger.LogInformation("Getting tenant analytics for {ParentId} - implementation pending", parentId);
 
         // TODO: Implement tenant analytics once core tenant management is stable
         return new ObjectResult(new { 
@@ -98,7 +91,7 @@ public class AnalyticsFunctions
     /// Get detailed agent analytics
     /// </summary>
     [Function("GetAgentAnalytics")]
-    [OpenApiOperation(operationId: "GetAgentAnalytics", tags: new[] { "Analytics" }, Summary = "Get agent analytics", Description = "Retrieve comprehensive analytics data for a specific agent")]
+    [OpenApiOperation(operationId: "GetAgentAnalytics", tags: ["Analytics"], Summary = "Get agent analytics", Description = "Retrieve comprehensive analytics data for a specific agent")]
     [OpenApiParameter(name: "agentId", In = ParameterLocation.Path, Required = true, Type = typeof(Guid), Description = "The unique identifier of the agent")]
     [OpenApiParameter(name: "timeRange", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Time range filter (1h, 24h, 7d, 30d, 90d) - default: 7d")]
     [OpenApiParameter(name: "includeDetailedMetrics", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include detailed performance metrics")]
@@ -110,13 +103,13 @@ public class AnalyticsFunctions
         Guid agentId,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Getting agent analytics for {AgentId} - implementation pending", agentId);
+        logger.LogInformation("Getting agent analytics for {AgentId} - implementation pending", agentId);
 
         // TODO: Implement agent analytics once telemetry collection is fully operational
         return new ObjectResult(new { 
             message = "Agent analytics implementation is planned for a future release",
             status = "not_implemented",
-            agentId = agentId,
+            agentId,
             plannedFeatures = new[] {
                 "Performance metrics",
                 "Availability tracking",
@@ -138,7 +131,7 @@ public class AnalyticsFunctions
     /// Generate comprehensive system reports
     /// </summary>
     [Function("GenerateReport")]
-    [OpenApiOperation(operationId: "GenerateReport", tags: new[] { "Analytics" }, Summary = "Generate report", Description = "Generate comprehensive analytics reports")]
+    [OpenApiOperation(operationId: "GenerateReport", tags: ["Analytics"], Summary = "Generate report", Description = "Generate comprehensive analytics reports")]
     [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(ReportGenerationRequest), Description = "Report generation parameters")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(ReportGenerationResponse), Description = "Generated report data")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid report request")]
@@ -147,7 +140,7 @@ public class AnalyticsFunctions
         [HttpTrigger(AuthorizationLevel.Function, "post", Route = "analytics/reports")] HttpRequest req,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Generating analytics report - implementation pending");
+        logger.LogInformation("Generating analytics report - implementation pending");
 
         // TODO: Implement reporting once analytics data collection is established
         return new ObjectResult(new { 
@@ -170,7 +163,7 @@ public class AnalyticsFunctions
     /// Get available report templates
     /// </summary>
     [Function("GetReportTemplates")]
-    [OpenApiOperation(operationId: "GetReportTemplates", tags: new[] { "Analytics" }, Summary = "Get report templates", Description = "Retrieve available report templates")]
+    [OpenApiOperation(operationId: "GetReportTemplates", tags: ["Analytics"], Summary = "Get report templates", Description = "Retrieve available report templates")]
     [OpenApiParameter(name: "category", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Filter by category (performance, security, usage, compliance)")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(List<ReportTemplateResponse>), Description = "List of available report templates")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotImplemented, contentType: "application/json", bodyType: typeof(object), Description = "Report templates implementation pending")]
@@ -178,7 +171,7 @@ public class AnalyticsFunctions
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/report-templates")] HttpRequest req,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Getting report templates - implementation pending");
+        logger.LogInformation("Getting report templates - implementation pending");
 
         // TODO: Implement report templates once reporting system is built
         return new ObjectResult(new { 
@@ -198,7 +191,7 @@ public class AnalyticsFunctions
     /// Execute custom analytics queries
     /// </summary>
     [Function("ExecuteCustomQuery")]
-    [OpenApiOperation(operationId: "ExecuteCustomQuery", tags: new[] { "Analytics" }, Summary = "Execute custom analytics query", Description = "Execute custom analytics queries with validation and security checks")]
+    [OpenApiOperation(operationId: "ExecuteCustomQuery", tags: ["Analytics"], Summary = "Execute custom analytics query", Description = "Execute custom analytics queries with validation and security checks")]
     [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(CustomAnalyticsQueryRequest), Description = "Custom analytics query parameters")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "Query execution results")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid query parameters")]
@@ -207,7 +200,7 @@ public class AnalyticsFunctions
         [HttpTrigger(AuthorizationLevel.Function, "post", Route = "analytics/custom-query")] HttpRequest req,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Executing custom analytics query - implementation pending");
+        logger.LogInformation("Executing custom analytics query - implementation pending");
 
         // TODO: Implement custom analytics once core analytics infrastructure is ready
         return new ObjectResult(new { 

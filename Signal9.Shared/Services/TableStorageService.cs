@@ -31,7 +31,8 @@ public class TableStorageService(TableServiceClient tableServiceClient, ILogger<
         }
     }
 
-    public async Task<IEnumerable<TelemetryData>> GetTelemetryByAgentAsync(string tenantId, string agentId, DateTime? fromDate = null, DateTime? toDate = null)
+    public async Task<IEnumerable<TelemetryData>> GetTelemetryByAgentAsync(Guid tenantId, Guid agentId,
+        DateTime? fromDate = null, DateTime? toDate = null)
     {
         try
         {
@@ -130,13 +131,13 @@ public class TableStorageService(TableServiceClient tableServiceClient, ILogger<
             await tableClient.UpsertEntityAsync(telemetry);
 
             logger.LogDebug("Telemetry data created successfully for agent {AgentId} in tenant {TenantId}", 
-                telemetry.AgentId, telemetry.TenantId);
+                telemetry.AgentId, telemetry.ParentId);
             return telemetry;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error creating telemetry data for agent {AgentId} in tenant {TenantId}", 
-                telemetry.AgentId, telemetry.TenantId);
+                telemetry.AgentId, telemetry.ParentId);
             throw;
         }
     }

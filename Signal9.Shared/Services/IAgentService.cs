@@ -37,7 +37,7 @@ public interface IAgentService
     /// <summary>
     /// Generate agent configuration for registration
     /// </summary>
-    Task<object> GenerateAgentConfigurationAsync(Guid agentId, CancellationToken cancellationToken = default);
+    Task<AgentConfigurationResponse> GenerateAgentConfigurationAsync(Guid agentId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Get agent telemetry data with filtering
@@ -48,20 +48,4 @@ public interface IAgentService
     /// Get agent command history
     /// </summary>
     Task<PagedResponse<AgentCommandDto>> GetAgentCommandsAsync(Guid agentId, int page = 1, int pageSize = 50, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Generate agent configuration
-    /// </summary>
-    Task<AgentConfigurationDto> GenerateAgentConfigurationAsync(Guid agentId, CancellationToken cancellationToken = default);
-}
-
-/// <summary>
-/// Agent configuration response
-/// </summary>
-public record AgentConfigurationDto
-{
-    public string? ServerUrl { get; init; }
-    public string? ApiKey { get; init; }
-    public int HeartbeatIntervalSeconds { get; init; } = 60;
-    public Dictionary<string, object> Settings { get; init; } = [];
 }

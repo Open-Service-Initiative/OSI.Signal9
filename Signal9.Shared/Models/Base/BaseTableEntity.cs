@@ -8,7 +8,7 @@ namespace Signal9.Shared.Models.Base;
 /// Base class for entities stored in Azure Tables
 /// Implements ITableEntity for Azure Tables SDK compatibility
 /// </summary>
-public abstract class BaseTableEntity : ITableEntity, ITenantScopedEntity, ISoftDeletable
+public abstract class BaseTableEntity : ITableEntity, IParentScopedEntity, ISoftDeletable
 {
     /// <summary>
     /// Partition key for Azure Tables - uses TenantId for multi-tenant isolation
@@ -33,7 +33,7 @@ public abstract class BaseTableEntity : ITableEntity, ITenantScopedEntity, ISoft
     public DateTimeOffset? Timestamp { get; set; }
 
     // IEntity implementation
-    public string Id 
+    public Guid Id 
     { 
         get => RowKey; 
         set => RowKey = value; 
@@ -43,7 +43,7 @@ public abstract class BaseTableEntity : ITableEntity, ITenantScopedEntity, ISoft
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     // ITenantScopedEntity implementation
-    public string TenantId 
+    public Guid ParentId 
     { 
         get => PartitionKey; 
         set => PartitionKey = value; 
@@ -62,7 +62,7 @@ public abstract class BaseTableEntity : ITableEntity, ITenantScopedEntity, ISoft
 
     protected BaseTableEntity(string tenantId, string? id = null)
     {
-        TenantId = tenantId;
+        ParentId = tenantId;
         Id = id ?? Guid.NewGuid().ToString();
         CreatedAt = DateTime.UtcNow;
         UpdatedAt = DateTime.UtcNow;

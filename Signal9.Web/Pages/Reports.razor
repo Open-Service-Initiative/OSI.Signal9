@@ -241,23 +241,23 @@
     private DateTime startDate = DateTime.Today.AddDays(-7);
     private DateTime endDate = DateTime.Today;
 
-    private List<ReportModel> recentReports = new();
+    private List<ReportModel> recentReports = [];
 
     protected override async Task OnInitializedAsync()
     {
-        await Task.Run(() => LoadRecentReports());
+        await Task.Run(LoadRecentReports);
     }
 
     private void LoadRecentReports()
     {
-        recentReports = new List<ReportModel>
-        {
-            new() { Name = "Weekly Performance Summary", Category = "Performance", GeneratedAt = DateTime.Now.AddHours(-2), Size = "2.3 MB" },
-            new() { Name = "Security Compliance Report", Category = "Security", GeneratedAt = DateTime.Now.AddDays(-1), Size = "1.8 MB" },
-            new() { Name = "Hardware Inventory", Category = "Inventory", GeneratedAt = DateTime.Now.AddDays(-2), Size = "3.1 MB" },
-            new() { Name = "Monthly Trend Analysis", Category = "Performance", GeneratedAt = DateTime.Now.AddDays(-5), Size = "4.2 MB" },
-            new() { Name = "Vulnerability Assessment", Category = "Security", GeneratedAt = DateTime.Now.AddDays(-7), Size = "1.5 MB" }
-        };
+        recentReports =
+        [
+	        new() { Name = "Weekly Performance Summary", Category = "Performance", GeneratedAt = DateTime.Now.AddHours(-2), Size = "2.3 MB" },
+	        new() { Name = "Security Compliance Report", Category = "Security", GeneratedAt = DateTime.Now.AddDays(-1), Size = "1.8 MB" },
+	        new() { Name = "Hardware Inventory", Category = "Inventory", GeneratedAt = DateTime.Now.AddDays(-2), Size = "3.1 MB" },
+	        new() { Name = "Monthly Trend Analysis", Category = "Performance", GeneratedAt = DateTime.Now.AddDays(-5), Size = "4.2 MB" },
+	        new() { Name = "Vulnerability Assessment", Category = "Security", GeneratedAt = DateTime.Now.AddDays(-7), Size = "1.5 MB" }
+        ];
     }
 
     private async Task SelectCategory(string category)

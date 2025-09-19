@@ -7,14 +7,14 @@ namespace Signal9.Shared.Models.Base;
 /// Base class for entities stored in Azure SQL Database
 /// Optimized for Entity Framework Core with multi-tenant patterns
 /// </summary>
-public abstract class BaseSqlEntity : ITenantScopedEntity, ISoftDeletable
+public abstract class BaseSqlEntity : IParentScopedEntity, ISoftDeletable
 {
     /// <summary>
     /// Primary key for SQL entities
     /// </summary>
     [Key]
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public Guid Id { get; set; }
 
     /// <summary>
     /// Tenant identifier for multi-tenant isolation
@@ -23,21 +23,21 @@ public abstract class BaseSqlEntity : ITenantScopedEntity, ISoftDeletable
     [Required]
     [MaxLength(50)]
     [Column("tenant_id")]
-    public string TenantId { get; set; } = string.Empty;
+    public Guid ParentId { get; set; }
 
     /// <summary>
     /// Timestamp when the entity was created
     /// </summary>
     [Required]
     [Column("created_at")]
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; }
 
     /// <summary>
     /// Timestamp when the entity was last updated
     /// </summary>
     [Required]
     [Column("updated_at")]
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; }
 
     /// <summary>
     /// Indicates if the entity has been soft deleted
@@ -60,15 +60,15 @@ public abstract class BaseSqlEntity : ITenantScopedEntity, ISoftDeletable
 
     protected BaseSqlEntity()
     {
-        Id = Guid.NewGuid().ToString();
+        Id = Guid.NewGuid();
         CreatedAt = DateTime.UtcNow;
         UpdatedAt = DateTime.UtcNow;
     }
 
-    protected BaseSqlEntity(string tenantId)
+    protected BaseSqlEntity(Guid parentId)
     {
-        TenantId = tenantId;
-        Id = Guid.NewGuid().ToString();
+        ParentId = parentId;
+        Id = Guid.NewGuid();
         CreatedAt = DateTime.UtcNow;
         UpdatedAt = DateTime.UtcNow;
     }

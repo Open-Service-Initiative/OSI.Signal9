@@ -27,10 +27,19 @@
     },
     "memory": {
       "type": "sse",
-      "url": "https://central-memory.mcp.bezalu.com/runtime/webhooks/mcp/sse?workspace='TIP-Integration-Hub'",
+      "url": "https://central-memory.mcp.bezalu.com/runtime/webhooks/mcp/sse?workspace='Signal9'",
       "headers": {
         "x-functions-key": "${input:functions_mcp_extension_system_key}"
       }
+    },
+    "Azure-MCP": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "mcr.microsoft.com/azure-sdk/azure-mcp:latest"
+      ]
     }
   }
 }

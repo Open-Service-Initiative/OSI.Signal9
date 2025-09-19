@@ -12,15 +12,8 @@ namespace Signal9.Web.Functions;
 /// <summary>
 /// Modern dashboard functions for comprehensive RMM platform overview and monitoring
 /// </summary>
-public class DashboardFunctions
+public class DashboardFunctions(ILogger<DashboardFunctions> logger)
 {
-    private readonly ILogger<DashboardFunctions> _logger;
-
-    public DashboardFunctions(ILogger<DashboardFunctions> logger)
-    {
-        _logger = logger;
-    }
-
     /// <summary>
     /// Get comprehensive dashboard overview with real-time metrics
     /// </summary>
@@ -28,7 +21,7 @@ public class DashboardFunctions
     public Task<IActionResult> GetDashboardOverviewAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "dashboard/overview")] HttpRequest req)
     {
-        _logger.LogInformation("Getting dashboard overview");
+        logger.LogInformation("Getting dashboard overview");
 
         try
         {
@@ -93,7 +86,7 @@ public class DashboardFunctions
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting dashboard overview");
+            logger.LogError(ex, "Error getting dashboard overview");
             return Task.FromResult<IActionResult>(new ObjectResult(new { error = "Failed to retrieve dashboard overview", details = ex.Message })
             {
                 StatusCode = StatusCodes.Status500InternalServerError
@@ -108,7 +101,7 @@ public class DashboardFunctions
     public Task<IActionResult> GetDashboardStatisticsAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "dashboard/statistics")] HttpRequest req)
     {
-        _logger.LogInformation("Getting dashboard statistics");
+        logger.LogInformation("Getting dashboard statistics");
 
         try
         {
@@ -180,7 +173,7 @@ public class DashboardFunctions
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting dashboard statistics");
+            logger.LogError(ex, "Error getting dashboard statistics");
             return Task.FromResult<IActionResult>(new ObjectResult(new { error = "Failed to retrieve dashboard statistics", details = ex.Message })
             {
                 StatusCode = StatusCodes.Status500InternalServerError
@@ -195,7 +188,7 @@ public class DashboardFunctions
     public Task<IActionResult> NegotiateDashboardConnectionAsync(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "dashboard/negotiate")] HttpRequest req)
     {
-        _logger.LogInformation("Dashboard client requesting SignalR connection negotiation");
+        logger.LogInformation("Dashboard client requesting SignalR connection negotiation");
         
         try
         {
@@ -212,7 +205,7 @@ public class DashboardFunctions
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error negotiating SignalR connection");
+            logger.LogError(ex, "Error negotiating SignalR connection");
             return Task.FromResult<IActionResult>(new ObjectResult(new { error = "Failed to negotiate SignalR connection", details = ex.Message })
             {
                 StatusCode = StatusCodes.Status500InternalServerError

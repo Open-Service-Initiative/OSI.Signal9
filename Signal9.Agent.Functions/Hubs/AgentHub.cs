@@ -12,17 +12,8 @@ namespace Signal9.Agent.Functions.Hubs;
 /// SignalR Hub for real-time agent communication in Signal9 RMM platform
 /// Handles agent registration, telemetry, commands, and heartbeats
 /// </summary>
-public class AgentHub
+public class AgentHub(ILogger<AgentHub> logger, IAgentService agentService)
 {
-    private readonly ILogger<AgentHub> _logger;
-    private readonly IAgentService _agentService;
-
-    public AgentHub(ILogger<AgentHub> logger, IAgentService agentService)
-    {
-        _logger = logger;
-        _agentService = agentService;
-    }
-
     /// <summary>
     /// Handle agent registration via SignalR
     /// </summary>
@@ -32,51 +23,54 @@ public class AgentHub
         string registrationData)
     {
         var connectionId = invocationContext.ConnectionId;
-        _logger.LogInformation("Agent registration received via SignalR from connection {ConnectionId}", connectionId);
+        logger.LogInformation("Agent registration received via SignalR from connection {ConnectionId}", connectionId);
 
         try
         {
             var request = JsonSerializer.Deserialize<AgentRegistrationRequest>(registrationData);
             if (request == null)
             {
-                _logger.LogWarning("Invalid registration data received from connection {ConnectionId}", connectionId);
+                logger.LogWarning("Invalid registration data received from connection {ConnectionId}", connectionId);
                 return new SignalRMessageAction("registrationResponse")
                 {
-                    Arguments = new object[] { new { Success = false, Message = "Invalid registration data" } }
+                    Arguments = [new { Success = false, Message = "Invalid registration data" }]
                 };
             }
 
             // Register agent through service layer
             var agentDto = request.ToAgentDto();
-            var registeredAgent = await _agentService.RegisterAgentAsync(agentDto);
+            var registeredAgent = await agentService.RegisterAgentAsync(agentDto);
 
             // Generate agent configuration
-            var configuration = await _agentService.GenerateAgentConfigurationAsync(registeredAgent.Id);
+            var configuration = await agentService.GenerateAgentConfigurationAsync(registeredAgent.Id);
 
             // Add agent to SignalR group for tenant isolation
             var parentGroup = $"parent-{request.ParentId}";
             var agentGroup = $"agent-{registeredAgent.Id}";
 
-            _logger.LogInformation("Agent {AgentId} registered successfully for parent {ParentId}", 
+            logger.LogInformation("Agent {AgentId} registered successfully for parent {ParentId}", 
                 registeredAgent.Id, request.ParentId);
 
             return new SignalRMessageAction("registrationResponse")
             {
-                Arguments = new object[] { new { 
+                Arguments =
+                [
+                    new { 
                     Success = true, 
                     AgentId = registeredAgent.Id,
                     Configuration = configuration,
                     ParentGroup = parentGroup,
                     AgentGroup = agentGroup
-                } }
+                }
+                ]
             };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during agent registration for connection {ConnectionId}", connectionId);
+            logger.LogError(ex, "Error during agent registration for connection {ConnectionId}", connectionId);
             return new SignalRMessageAction("registrationResponse")
             {
-                Arguments = new object[] { new { Success = false, Message = "Registration failed" } }
+                Arguments = [new { Success = false, Message = "Registration failed" }]
             };
         }
     }
@@ -141,7 +135,7 @@ public class AgentHub
         return new SignalRMessageAction("executeCommand")
         {
             GroupName = $"agent-{agentId}",
-            Arguments = new object[] { command }
+            Arguments = [command]
         };
     }
 

@@ -40,7 +40,7 @@ public interface ITableRepository<TTableEntity> where TTableEntity : BaseTableEn
 /// </summary>
 /// <typeparam name="TEntity">Entity type</typeparam>
 public interface ITenantScopedRepository<TEntity> : IRepository<TEntity> 
-    where TEntity : class, ITenantScopedEntity
+    where TEntity : class, IParentScopedEntity
 {
     Task<IEnumerable<TEntity>> GetByTenantAsync(string tenantId);
     Task<TEntity?> GetByTenantAndIdAsync(string tenantId, string id);

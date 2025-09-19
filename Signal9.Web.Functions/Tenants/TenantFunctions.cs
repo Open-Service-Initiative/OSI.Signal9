@@ -21,19 +21,13 @@ namespace Signal9.Web.Functions.Tenants;
 /// <summary>
 /// Azure Functions for comprehensive tenant management operations
 /// </summary>
-public class TenantFunctions
+public class TenantFunctions(ILogger<TenantFunctions> logger)
 {
-    private readonly ILogger<TenantFunctions> _logger;
-    
     // Temporary in-memory storage until database is implemented
-    private static readonly List<TenantResponse> Tenants = new();
-    private static readonly object LockObject = new();
+    private static readonly List<TenantResponse> Tenants = [];
+    private static readonly Lock LockObject = new();
 
-    public TenantFunctions(ILogger<TenantFunctions> logger)
-    {
-        _logger = logger;
-        // No mock data initialization - start with empty collection
-    }
+    // No mock data initialization - start with empty collection
 
     #region Basic CRUD Operations
 
@@ -46,7 +40,7 @@ public class TenantFunctions
     /// <response code="400">Bad request - invalid parameters</response>
     /// <response code="500">Internal server error</response>
     [Function("GetTenants")]
-    [OpenApiOperation(operationId: "GetTenants", tags: new[] { "Tenants" }, Summary = "Get all tenants", Description = "Retrieve a paginated list of all tenants with comprehensive filtering, searching, and sorting capabilities")]
+    [OpenApiOperation(operationId: "GetTenants", tags: ["Tenants"], Summary = "Get all tenants", Description = "Retrieve a paginated list of all tenants with comprehensive filtering, searching, and sorting capabilities")]
     [OpenApiParameter(name: "page", In = ParameterLocation.Query, Required = false, Type = typeof(int), Description = "Page number (default: 1)")]
     [OpenApiParameter(name: "pageSize", In = ParameterLocation.Query, Required = false, Type = typeof(int), Description = "Page size (default: 20, max: 100)")]
     [OpenApiParameter(name: "includeInactive", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include inactive tenants")]
@@ -66,13 +60,13 @@ public class TenantFunctions
     public Task<IActionResult> GetTenantsAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "tenants")] HttpRequest req)
     {
-        _logger.LogInformation("Getting tenants with filters");
+        logger.LogInformation("Getting tenants with filters");
 
         try
         {
             if (req == null)
             {
-                _logger.LogError("HttpRequest is null");
+                logger.LogError("HttpRequest is null");
                 return Task.FromResult<IActionResult>(new BadRequestObjectResult(new { error = "Request is null" }));
             }
 
@@ -108,22 +102,22 @@ public class TenantFunctions
             // General search parameter
             var search = query.TryGetValue("search", out var searchValues) ? searchValues.FirstOrDefault() : null;
 
-            _logger.LogInformation("Query parameters parsed successfully");
+            logger.LogInformation("Query parameters parsed successfully");
 
             // Get all tenants
             List<TenantResponse> allTenants;
             lock (LockObject)
             {
-                allTenants = Tenants.ToList();
+                allTenants = [.. Tenants];
             }
 
-            _logger.LogInformation("Retrieved {Count} tenants from storage", allTenants.Count);
+            logger.LogInformation("Retrieved {Count} tenants from storage", allTenants.Count);
 
             // Apply comprehensive filtering
             var filteredTenants = ApplyTenantSearchFilters(allTenants, slug, name, email, tenantType, plan, isActive, parentTenantId, search, includeInactive);
-            _logger.LogInformation("Calling ApplyTenantSorting with sortBy={SortBy}, sortOrder={SortOrder}", sortBy, sortOrder);
+            logger.LogInformation("Calling ApplyTenantSorting with sortBy={SortBy}, sortOrder={SortOrder}", sortBy, sortOrder);
             var sortedTenants = ApplyTenantSorting(filteredTenants, sortBy, sortOrder).ToList();
-            _logger.LogInformation("Sorting completed, {Count} tenants after sorting", sortedTenants.Count);
+            logger.LogInformation("Sorting completed, {Count} tenants after sorting", sortedTenants.Count);
             
             var totalCount = sortedTenants.Count;
             
@@ -132,7 +126,7 @@ public class TenantFunctions
                 .Take(pageSize)
                 .ToList();
 
-            _logger.LogInformation("Creating PagedResponse with {Count} items", pagedTenants.Count);
+            logger.LogInformation("Creating PagedResponse with {Count} items", pagedTenants.Count);
 
             var result = new PagedResponse<TenantResponse>
             {
@@ -142,12 +136,12 @@ public class TenantFunctions
                 TotalCount = totalCount
             };
 
-            _logger.LogInformation("PagedResponse created successfully");
+            logger.LogInformation("PagedResponse created successfully");
             return Task.FromResult<IActionResult>(new OkObjectResult(result));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting tenants");
+            logger.LogError(ex, "Error getting tenants");
             return Task.FromResult<IActionResult>(new ObjectResult(new { error = "Failed to retrieve tenants", details = ex.Message })
             {
                 StatusCode = StatusCodes.Status500InternalServerError
@@ -166,7 +160,7 @@ public class TenantFunctions
     /// <response code="404">Tenant not found</response>
     /// <response code="500">Internal server error</response>
     [Function("GetTenant")]
-    [OpenApiOperation(operationId: "GetTenant", tags: new[] { "Tenants" }, Summary = "Get tenant by ID", Description = "Retrieve a specific tenant by its unique identifier")]
+    [OpenApiOperation(operationId: "GetTenant", tags: ["Tenants"], Summary = "Get tenant by ID", Description = "Retrieve a specific tenant by its unique identifier")]
     [OpenApiParameter(name: "tenantId", In = ParameterLocation.Path, Required = true, Type = typeof(string), Description = "The unique identifier of the tenant")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(TenantResponse), Description = "Tenant details")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid tenant ID format")]
@@ -176,7 +170,7 @@ public class TenantFunctions
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "tenants/{tenantId}")] HttpRequest req,
         string tenantId)
     {
-        _logger.LogInformation("Getting tenant {TenantId}", tenantId);
+        logger.LogInformation("Getting tenant {TenantId}", tenantId);
 
         try
         {
@@ -207,7 +201,7 @@ public class TenantFunctions
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting tenant {TenantId}", tenantId);
+            logger.LogError(ex, "Error getting tenant {TenantId}", tenantId);
             return Task.FromResult<IActionResult>(new ObjectResult(new { error = "Failed to retrieve tenant", details = ex.Message })
             {
                 StatusCode = StatusCodes.Status500InternalServerError
@@ -224,7 +218,7 @@ public class TenantFunctions
     /// <response code="400">Validation failed</response>
     /// <response code="500">Internal server error</response>
     [Function("CreateTenant")]
-    [OpenApiOperation(operationId: "CreateTenant", tags: new[] { "Tenants" }, Summary = "Create new tenant", Description = "Create a new tenant with validation and automatic ID generation")]
+    [OpenApiOperation(operationId: "CreateTenant", tags: ["Tenants"], Summary = "Create new tenant", Description = "Create a new tenant with validation and automatic ID generation")]
     [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(CreateTenantRequest), Description = "Tenant creation request")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.Created, contentType: "application/json", bodyType: typeof(TenantResponse), Description = "Tenant created successfully")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Validation failed")]
@@ -232,19 +226,16 @@ public class TenantFunctions
     public async Task<IActionResult> CreateTenantAsync(
         [HttpTrigger(AuthorizationLevel.Function, "post", Route = "tenants")] HttpRequest req)
     {
-        _logger.LogInformation("Creating new tenant");
+        logger.LogInformation("Creating new tenant");
 
         try
         {
             var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-            var createRequest = JsonSerializer.Deserialize<CreateTenantRequest>(requestBody, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            });
+            var createRequest = JsonSerializer.Deserialize<CreateTenantRequest>(requestBody);
 
             // Comprehensive validation
             var validationErrors = ValidateCreateTenantRequest(createRequest);
-            if (validationErrors.Any())
+            if (validationErrors.Count != 0)
             {
                 return new BadRequestObjectResult(new { 
                     error = "Validation failed", 
@@ -294,7 +285,7 @@ public class TenantFunctions
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating tenant");
+            logger.LogError(ex, "Error creating tenant");
             return new ObjectResult(new { error = "Failed to create tenant", details = ex.Message })
             {
                 StatusCode = StatusCodes.Status500InternalServerError
@@ -313,7 +304,7 @@ public class TenantFunctions
     /// <response code="404">Tenant not found</response>
     /// <response code="500">Internal server error</response>
     [Function("UpdateTenant")]
-    [OpenApiOperation(operationId: "UpdateTenant", tags: new[] { "Tenants" }, Summary = "Update tenant", Description = "Update an existing tenant with partial updates support")]
+    [OpenApiOperation(operationId: "UpdateTenant", tags: ["Tenants"], Summary = "Update tenant", Description = "Update an existing tenant with partial updates support")]
     [OpenApiParameter(name: "tenantId", In = ParameterLocation.Path, Required = true, Type = typeof(string), Description = "The unique identifier of the tenant to update")]
     [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(UpdateTenantRequest), Description = "Tenant update request")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(TenantResponse), Description = "Tenant updated successfully")]
@@ -324,7 +315,7 @@ public class TenantFunctions
         [HttpTrigger(AuthorizationLevel.Function, "put", Route = "tenants/{tenantId}")] HttpRequest req,
         string tenantId)
     {
-        _logger.LogInformation("Updating tenant {TenantId}", tenantId);
+        logger.LogInformation("Updating tenant {TenantId}", tenantId);
 
         try
         {
@@ -334,12 +325,9 @@ public class TenantFunctions
             }
 
             var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-            var updateRequest = JsonSerializer.Deserialize<UpdateTenantRequest>(requestBody, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            });
+            var updateRequest = JsonSerializer.Deserialize<UpdateTenantRequest>(requestBody);
 
-            _logger.LogInformation($"Update request - TenantType: {updateRequest?.TenantType}");
+            logger.LogInformation($"Update request - TenantType: {updateRequest?.TenantType}");
 
             if (updateRequest == null)
             {
@@ -361,7 +349,7 @@ public class TenantFunctions
 
             // Validate updates
             var validationErrors = ValidateUpdateTenantRequest(updateRequest, tenant);
-            if (validationErrors.Any())
+            if (validationErrors.Count != 0)
             {
                 return new BadRequestObjectResult(new { 
                     error = "Validation failed", 
@@ -370,10 +358,10 @@ public class TenantFunctions
             }
 
             // Apply updates (only non-null values)
-            _logger.LogInformation($"Before update - TenantType: {tenant.TenantType}");
+            logger.LogInformation($"Before update - TenantType: {tenant.TenantType}");
             ApplyTenantUpdates(tenant, updateRequest);
             tenant.UpdatedAt = DateTime.UtcNow;
-            _logger.LogInformation($"After update - TenantType: {tenant.TenantType}");
+            logger.LogInformation($"After update - TenantType: {tenant.TenantType}");
 
             // Update the tenant in the in-memory list to ensure persistence
             lock (LockObject)
@@ -382,7 +370,7 @@ public class TenantFunctions
                 if (index >= 0)
                 {
                     Tenants[index] = tenant;
-                    _logger.LogInformation($"Updated tenant at index {index} - TenantType: {Tenants[index].TenantType}");
+                    logger.LogInformation($"Updated tenant at index {index} - TenantType: {Tenants[index].TenantType}");
                 }
             }
 
@@ -395,7 +383,7 @@ public class TenantFunctions
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating tenant {TenantId}", tenantId);
+            logger.LogError(ex, "Error updating tenant {TenantId}", tenantId);
             return new ObjectResult(new { error = "Failed to update tenant", details = ex.Message })
             {
                 StatusCode = StatusCodes.Status500InternalServerError
@@ -415,7 +403,7 @@ public class TenantFunctions
     /// <response code="409">Tenant has dependencies</response>
     /// <response code="500">Internal server error</response>
     [Function("DeleteTenant")]
-    [OpenApiOperation(operationId: "DeleteTenant", tags: new[] { "Tenants" }, Summary = "Delete tenant", Description = "Delete a tenant with dependency checking and optional cascade deletion")]
+    [OpenApiOperation(operationId: "DeleteTenant", tags: ["Tenants"], Summary = "Delete tenant", Description = "Delete a tenant with dependency checking and optional cascade deletion")]
     [OpenApiParameter(name: "tenantId", In = ParameterLocation.Path, Required = true, Type = typeof(string), Description = "The unique identifier of the tenant to delete")]
     [OpenApiParameter(name: "force", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Force deletion even if dependencies exist")]
     [OpenApiResponseWithoutBody(statusCode: HttpStatusCode.NoContent, Description = "Tenant deleted successfully")]
@@ -427,7 +415,7 @@ public class TenantFunctions
         [HttpTrigger(AuthorizationLevel.Function, "delete", Route = "tenants/{tenantId}")] HttpRequest req,
         string tenantId)
     {
-        _logger.LogInformation("Deleting tenant {TenantId}", tenantId);
+        logger.LogInformation("Deleting tenant {TenantId}", tenantId);
 
         try
         {
@@ -489,7 +477,7 @@ public class TenantFunctions
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting tenant {TenantId}", tenantId);
+            logger.LogError(ex, "Error deleting tenant {TenantId}", tenantId);
             return Task.FromResult<IActionResult>(new ObjectResult(new { error = "Failed to delete tenant", details = ex.Message })
             {
                 StatusCode = StatusCodes.Status500InternalServerError
@@ -509,7 +497,7 @@ public class TenantFunctions
     /// <response code="200">Returns tenant hierarchy tree</response>
     /// <response code="500">Internal server error</response>
     [Function("GetTenantHierarchy")]
-    [OpenApiOperation(operationId: "GetTenantHierarchy", tags: new[] { "Tenants" }, Summary = "Get tenant hierarchy", Description = "Retrieve the tenant hierarchy as a tree structure")]
+    [OpenApiOperation(operationId: "GetTenantHierarchy", tags: ["Tenants"], Summary = "Get tenant hierarchy", Description = "Retrieve the tenant hierarchy as a tree structure")]
     [OpenApiParameter(name: "rootTenantId", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Root tenant ID to start hierarchy from")]
     [OpenApiParameter(name: "maxDepth", In = ParameterLocation.Query, Required = false, Type = typeof(int), Description = "Maximum depth to traverse (default: 10)")]
     [OpenApiParameter(name: "includeInactive", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include inactive tenants in hierarchy")]
@@ -518,7 +506,7 @@ public class TenantFunctions
     public Task<IActionResult> GetTenantHierarchyAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "tenants/hierarchy")] HttpRequest req)
     {
-        _logger.LogInformation("Getting tenant hierarchy");
+        logger.LogInformation("Getting tenant hierarchy");
 
         try
         {
@@ -535,7 +523,7 @@ public class TenantFunctions
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting tenant hierarchy");
+            logger.LogError(ex, "Error getting tenant hierarchy");
             return Task.FromResult<IActionResult>(new ObjectResult(new { error = "Failed to retrieve hierarchy", details = ex.Message })
             {
                 StatusCode = StatusCodes.Status500InternalServerError
@@ -552,7 +540,7 @@ public class TenantFunctions
     /// <response code="400">Invalid bulk operation request</response>
     /// <response code="500">Internal server error</response>
     [Function("BulkTenantOperations")]
-    [OpenApiOperation(operationId: "BulkTenantOperations", tags: new[] { "Tenants" }, Summary = "Bulk tenant operations", Description = "Perform bulk operations on multiple tenants")]
+    [OpenApiOperation(operationId: "BulkTenantOperations", tags: ["Tenants"], Summary = "Bulk tenant operations", Description = "Perform bulk operations on multiple tenants")]
     [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(BulkTenantOperationRequest), Description = "Bulk operation request")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "Bulk operations completed")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid bulk operation request")]
@@ -560,17 +548,14 @@ public class TenantFunctions
     public async Task<IActionResult> BulkTenantOperationsAsync(
         [HttpTrigger(AuthorizationLevel.Function, "post", Route = "tenants/bulk")] HttpRequest req)
     {
-        _logger.LogInformation("Performing bulk tenant operations");
+        logger.LogInformation("Performing bulk tenant operations");
 
         try
         {
             var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-            var bulkRequest = JsonSerializer.Deserialize<BulkTenantOperationRequest>(requestBody, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            });
+            var bulkRequest = JsonSerializer.Deserialize<BulkTenantOperationRequest>(requestBody);
 
-            if (bulkRequest == null || !bulkRequest.TenantIds.Any())
+            if (bulkRequest == null || bulkRequest.TenantIds.Count == 0)
             {
                 return new BadRequestObjectResult(new { error = "Invalid bulk operation request" });
             }
@@ -602,7 +587,7 @@ public class TenantFunctions
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error performing bulk operations");
+            logger.LogError(ex, "Error performing bulk operations");
             return new ObjectResult(new { error = "Failed to perform bulk operations", details = ex.Message })
             {
                 StatusCode = StatusCodes.Status500InternalServerError
@@ -618,14 +603,14 @@ public class TenantFunctions
     /// <response code="200">Returns tenant statistics</response>
     /// <response code="500">Internal server error</response>
     [Function("GetTenantStatistics")]
-    [OpenApiOperation(operationId: "GetTenantStatistics", tags: new[] { "Tenants" }, Summary = "Get tenant statistics", Description = "Retrieve comprehensive tenant statistics and summary information")]
+    [OpenApiOperation(operationId: "GetTenantStatistics", tags: ["Tenants"], Summary = "Get tenant statistics", Description = "Retrieve comprehensive tenant statistics and summary information")]
     [OpenApiParameter(name: "includeInactive", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include inactive tenants in statistics")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "Tenant statistics")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
     public Task<IActionResult> GetTenantStatisticsAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "tenants/_stats")] HttpRequest req)
     {
-        _logger.LogInformation("Getting tenant statistics");
+        logger.LogInformation("Getting tenant statistics");
 
         try
         {
@@ -635,7 +620,7 @@ public class TenantFunctions
             List<TenantResponse> allTenants;
             lock (LockObject)
             {
-                allTenants = Tenants.ToList();
+                allTenants = [.. Tenants];
             }
 
             var activeTenants = allTenants.Where(t => t.IsActive == true).ToList();
@@ -658,7 +643,7 @@ public class TenantFunctions
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting tenant statistics");
+            logger.LogError(ex, "Error getting tenant statistics");
             return Task.FromResult<IActionResult>(new ObjectResult(new { error = "Failed to get statistics", details = ex.Message })
             {
                 StatusCode = StatusCodes.Status500InternalServerError
@@ -721,11 +706,11 @@ public class TenantFunctions
 
         var ordered = sortBy.ToLower() switch
         {
-            "name" => sortOrder.ToLower() == "desc" ? tenants.OrderByDescending(t => t.Name ?? string.Empty) : tenants.OrderBy(t => t.Name ?? string.Empty),
-            "slug" => sortOrder.ToLower() == "desc" ? tenants.OrderByDescending(t => t.Slug ?? string.Empty) : tenants.OrderBy(t => t.Slug ?? string.Empty),
-            "created" => sortOrder.ToLower() == "desc" ? tenants.OrderByDescending(t => t.CreatedAt) : tenants.OrderBy(t => t.CreatedAt),
-            "updated" => sortOrder.ToLower() == "desc" ? tenants.OrderByDescending(t => t.UpdatedAt ?? DateTime.MinValue) : tenants.OrderBy(t => t.UpdatedAt ?? DateTime.MinValue),
-            "agents" => sortOrder.ToLower() == "desc" ? tenants.OrderByDescending(t => t.AgentCount) : tenants.OrderBy(t => t.AgentCount),
+            "name" => sortOrder.Equals("desc", StringComparison.CurrentCultureIgnoreCase) ? tenants.OrderByDescending(t => t.Name ?? string.Empty) : tenants.OrderBy(t => t.Name ?? string.Empty),
+            "slug" => sortOrder.Equals("desc", StringComparison.CurrentCultureIgnoreCase) ? tenants.OrderByDescending(t => t.Slug ?? string.Empty) : tenants.OrderBy(t => t.Slug ?? string.Empty),
+            "created" => sortOrder.Equals("desc", StringComparison.CurrentCultureIgnoreCase) ? tenants.OrderByDescending(t => t.CreatedAt) : tenants.OrderBy(t => t.CreatedAt),
+            "updated" => sortOrder.Equals("desc", StringComparison.CurrentCultureIgnoreCase) ? tenants.OrderByDescending(t => t.UpdatedAt ?? DateTime.MinValue) : tenants.OrderBy(t => t.UpdatedAt ?? DateTime.MinValue),
+            "agents" => sortOrder.Equals("desc", StringComparison.CurrentCultureIgnoreCase) ? tenants.OrderByDescending(t => t.AgentCount) : tenants.OrderBy(t => t.AgentCount),
             _ => tenants.OrderBy(t => t.Name ?? string.Empty)
         };
 
@@ -773,7 +758,7 @@ public class TenantFunctions
         if (!string.IsNullOrEmpty(request.ContactEmail) && !IsValidEmail(request.ContactEmail))
             errors.Add("Invalid email format");
 
-        if (request.MaxAgents.HasValue && request.MaxAgents < 1)
+        if (request.MaxAgents is < 1)
             errors.Add("MaxAgents must be greater than 0");
 
         return errors;
@@ -924,7 +909,7 @@ public class BulkTenantOperationRequest
     /// <summary>
     /// List of tenant IDs to perform operations on
     /// </summary>
-    public List<Guid> TenantIds { get; set; } = new();
+    public List<Guid> TenantIds { get; set; } = [];
     
     /// <summary>
     /// Operation to perform on the tenants

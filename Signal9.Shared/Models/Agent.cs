@@ -11,8 +11,8 @@ namespace Signal9.Shared.Models;
 /// Stores core agent information with relational integrity
 /// </summary>
 [Table("agents")]
-[Index(nameof(TenantId), nameof(MachineName), IsUnique = true)]
-[Index(nameof(TenantId), nameof(Status))]
+[Index(nameof(ParentId), nameof(MachineName), IsUnique = true)]
+[Index(nameof(ParentId), nameof(Status))]
 public class Agent : BaseSqlEntity, IAgentData
 {
     /// <summary>
@@ -120,7 +120,7 @@ public class Agent : BaseSqlEntity, IAgentData
 
     public Agent() { }
     
-    public Agent(string tenantId) : base(tenantId) { }
+    public Agent(Guid ParentId) { }
 }
 
 /// <summary>

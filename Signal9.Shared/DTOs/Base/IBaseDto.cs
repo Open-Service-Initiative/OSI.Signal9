@@ -5,7 +5,7 @@ namespace Signal9.Shared.DTOs.Base;
 /// <summary>
 /// Base interface for all DTOs in the Signal9 RMM system.
 /// </summary>
-public interface IBaseDto<TId> where TId : notnull
+public interface IBaseDto<out TId> where TId : notnull
 {
     /// <summary>
     /// Gets the unique identifier for this DTO.

@@ -10,7 +10,7 @@ public interface IEntity
     /// <summary>
     /// Unique identifier for the entity
     /// </summary>
-    string Id { get; set; }
+    Guid Id { get; set; }
     
     /// <summary>
     /// Timestamp when the entity was created
@@ -26,12 +26,12 @@ public interface IEntity
 /// <summary>
 /// Base interface for tenant-scoped entities
 /// </summary>
-public interface ITenantScopedEntity : IEntity
+public interface IParentScopedEntity : IEntity
 {
     /// <summary>
     /// Tenant identifier for multi-tenant isolation
     /// </summary>
-    string TenantId { get; set; }
+    Guid ParentId { get; set; }
 }
 
 /// <summary>

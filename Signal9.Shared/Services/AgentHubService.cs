@@ -75,7 +75,7 @@ public class AgentHub(ILogger<AgentHub> logger, IRelationalDataService relationa
     {
         try
         {
-            if (Guid.TryParse(telemetryData.TenantId, out var tenantId))
+            if (Guid.TryParse(telemetryData.ParentId, out var tenantId))
             {
                 var agent = await relationalDataService.GetAgentAsync(tenantId, agentId);
                 if (agent == null)
@@ -89,13 +89,13 @@ public class AgentHub(ILogger<AgentHub> logger, IRelationalDataService relationa
                 await relationalDataService.UpdateAgentAsync(agent);
 
                 // Broadcast to tenant dashboard users
-                await Clients.Group($"tenant-{telemetryData.TenantId}").ReceiveTelemetryUpdate(agentId, telemetryData);
+                await Clients.Group($"tenant-{telemetryData.ParentId}").ReceiveTelemetryUpdate(agentId, telemetryData);
 
                 logger.LogDebug("Received telemetry from agent {AgentId}", agentId);
             }
             else
             {
-                logger.LogWarning("Invalid TenantId format in telemetry from agent {AgentId}: {TenantId}", agentId, telemetryData.TenantId);
+                logger.LogWarning("Invalid TenantId format in telemetry from agent {AgentId}: {TenantId}", agentId, telemetryData.ParentId);
             }
         }
         catch (Exception ex)

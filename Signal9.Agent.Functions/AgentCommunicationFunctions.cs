@@ -41,10 +41,7 @@ public class AgentCommunicationFunctions(ILogger<AgentCommunicationFunctions> lo
         try
         {
             var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-            var registrationData = JsonSerializer.Deserialize<AgentRegistrationRequest>(requestBody, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            });
+            var registrationData = JsonSerializer.Deserialize<AgentRegistrationRequest>(requestBody);
 
             if (registrationData == null)
             {
@@ -92,10 +89,7 @@ public class AgentCommunicationFunctions(ILogger<AgentCommunicationFunctions> lo
         try
         {
             var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-            var telemetryData = JsonSerializer.Deserialize<TelemetryDataDto>(requestBody, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            });
+            var telemetryData = JsonSerializer.Deserialize<TelemetryDataDto>(requestBody);
 
             if (telemetryData == null)
             {
@@ -141,10 +135,7 @@ public class AgentCommunicationFunctions(ILogger<AgentCommunicationFunctions> lo
         try
         {
             var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-            var command = JsonSerializer.Deserialize<AgentCommand>(requestBody, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            });
+            var command = JsonSerializer.Deserialize<AgentCommand>(requestBody);
 
             if (command == null)
             {

@@ -78,12 +78,12 @@ public class Signal9DbContext(DbContextOptions<Signal9DbContext> options) : DbCo
             // Foreign key to Tenant
             entity.HasOne<Tenant>()
                   .WithMany()
-                  .HasForeignKey(a => a.TenantId)
+                  .HasForeignKey(a => a.ParentId)
                   .OnDelete(DeleteBehavior.Cascade);
 
-            // Unique constraint on TenantId + MachineName
-            entity.HasIndex(a => new { a.TenantId, a.MachineName }).IsUnique();
-            entity.HasIndex(a => new { a.TenantId, a.Status });
+            // Unique constraint on ParentId + MachineName
+            entity.HasIndex(a => new { a.ParentId, a.MachineName }).IsUnique();
+            entity.HasIndex(a => new { a.ParentId, a.Status });
         });
     }
 
@@ -103,11 +103,11 @@ public class Signal9DbContext(DbContextOptions<Signal9DbContext> options) : DbCo
             // Foreign key to Tenant
             entity.HasOne<Tenant>()
                   .WithMany()
-                  .HasForeignKey(c => c.TenantId)
+                  .HasForeignKey(c => c.ParentId)
                   .OnDelete(DeleteBehavior.Cascade);
 
             // Index for command queries
-            entity.HasIndex(c => new { c.TenantId, c.AgentId, c.Status });
+            entity.HasIndex(c => new { c.ParentId, c.AgentId, c.Status });
         });
     }
 
@@ -119,8 +119,8 @@ public class Signal9DbContext(DbContextOptions<Signal9DbContext> options) : DbCo
     {
         // Multi-tenant isolation - filters will be applied at the service layer
         // using proper tenant context to ensure data isolation
-        // modelBuilder.Entity<Agent>().HasQueryFilter(a => a.TenantId == CurrentTenantId);
-        // modelBuilder.Entity<AgentCommand>().HasQueryFilter(c => c.TenantId == CurrentTenantId);
+        // modelBuilder.Entity<Agent>().HasQueryFilter(a => a.ParentId == CurrentParentId);
+        // modelBuilder.Entity<AgentCommand>().HasQueryFilter(c => c.ParentId == CurrentParentId);
         // Note: Tenant entity doesn't need a filter as it's the root tenant data
     }
 

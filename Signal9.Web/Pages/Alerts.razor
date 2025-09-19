@@ -299,8 +299,8 @@
     private int infoAlerts = 0;
     private int resolvedAlerts = 0;
 
-    private List<AlertModel> alerts = new();
-    private List<AlertModel> filteredAlerts = new();
+    private List<AlertModel> alerts = [];
+    private List<AlertModel> filteredAlerts = [];
 
     // Filters
     private string searchTerm = string.Empty;
@@ -322,7 +322,7 @@
         {
             isLoading = true;
             // Generate sample data for now
-            await Task.Run(() => GenerateSampleAlerts());
+            await Task.Run(GenerateSampleAlerts);
             CalculateStats();
             ApplyFilters();
         }
@@ -361,11 +361,11 @@
     {
         var titles = new Dictionary<string, string[]>
         {
-            { "Performance", new[] { "High CPU Usage", "Memory Usage Critical", "Disk I/O Bottleneck", "Network Latency High" } },
-            { "Security", new[] { "Failed Login Attempts", "Suspicious File Activity", "Port Scan Detected", "Antivirus Alert" } },
-            { "System", new[] { "Service Stopped", "System Restart Required", "Event Log Full", "Registry Changes" } },
-            { "Network", new[] { "Connection Timeout", "Bandwidth Threshold", "Switch Port Down", "DNS Resolution Failed" } },
-            { "Storage", new[] { "Low Disk Space", "RAID Array Degraded", "Backup Failed", "File Corruption Detected" } }
+            { "Performance", ["High CPU Usage", "Memory Usage Critical", "Disk I/O Bottleneck", "Network Latency High"] },
+            { "Security", ["Failed Login Attempts", "Suspicious File Activity", "Port Scan Detected", "Antivirus Alert"] },
+            { "System", ["Service Stopped", "System Restart Required", "Event Log Full", "Registry Changes"] },
+            { "Network", ["Connection Timeout", "Bandwidth Threshold", "Switch Port Down", "DNS Resolution Failed"] },
+            { "Storage", ["Low Disk Space", "RAID Array Degraded", "Backup Failed", "File Corruption Detected"] }
         };
 
         var category = categories[random.Next(categories.Length)];

@@ -29,7 +29,8 @@ public interface ITableStorageService
     // Telemetry operations using DTOs
     Task<TelemetryData> CreateTelemetryAsync(TelemetryData telemetry);
     Task<IEnumerable<TelemetryData>> BatchCreateTelemetryAsync(IEnumerable<TelemetryData> telemetryData);
-    Task<IEnumerable<TelemetryData>> GetTelemetryByAgentAsync(string tenantId, string agentId, DateTime? fromDate = null, DateTime? toDate = null);
+    Task<IEnumerable<TelemetryData>> GetTelemetryByAgentAsync(Guid tenantId, Guid agentId, DateTime? fromDate = null,
+        DateTime? toDate = null);
     Task<TelemetryData?> GetTelemetryAsync(string tenantId, string rowKey);
     Task CleanupOldTelemetryAsync(string tenantId, DateTime cutoffDate);
     Task<T> UpsertEntityAsync<T>(string tableName, T entity) where T : class, ITableEntity;

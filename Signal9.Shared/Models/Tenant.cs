@@ -91,7 +91,7 @@ public class Tenant : BaseSqlEntity, ITenantData
     public Tenant() : base() 
     {
         // For tenants, TenantId is the same as Id
-        TenantId = Id;
+        ParentId = Id;
     }
     
     public Tenant(string tenantCode, string name, string contactEmail) : base()
@@ -99,7 +99,7 @@ public class Tenant : BaseSqlEntity, ITenantData
         TenantCode = tenantCode;
         Name = name;
         ContactEmail = contactEmail;
-        TenantId = Id; // Self-reference for tenants
+        ParentId = Id; // Self-reference for tenants
         ApiKey = GenerateApiKey();
     }
     
