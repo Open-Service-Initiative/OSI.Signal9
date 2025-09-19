@@ -246,8 +246,7 @@ public class AgentService(Signal9DbContext db, ITableStorageService tables, ILog
 
     public async Task<PagedResponse<AgentCommandDto>> GetAgentCommandsAsync(Guid agentId, int page = 1, int pageSize = 50, CancellationToken cancellationToken = default)
     {
-        var id = agentId.ToString();
-        var query = db.AgentCommands.AsNoTracking().Where(c => c.AgentId == id).OrderByDescending(c => c.ScheduledAt);
+        var query = db.AgentCommands.AsNoTracking().Where(c => c.AgentId == agentId).OrderByDescending(c => c.ScheduledAt);
         var totalCount = await query.CountAsync(cancellationToken);
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 1000);

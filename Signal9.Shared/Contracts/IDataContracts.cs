@@ -30,7 +30,7 @@ public interface IAgentData
 /// </summary>
 public interface ITelemetryData
 {
-    string AgentId { get; }
+    Guid AgentId { get; }
     TelemetryType TelemetryType { get; }
     double? CpuUsagePercent { get; }
     long? MemoryUsageMB { get; }
@@ -50,7 +50,7 @@ public interface ITelemetryData
 /// </summary>
 public interface IAgentCommandData
 {
-    string AgentId { get; }
+    Guid AgentId { get; }
     CommandType CommandType { get; }
     string? Parameters { get; }
     CommandStatus Status { get; }

@@ -20,7 +20,7 @@ public abstract class BaseTableEntity : ITableEntity, IParentScopedEntity, ISoft
     /// Row key for Azure Tables - uses entity ID
     /// </summary>
     [Required]
-    public string RowKey { get; set; } = string.Empty;
+    public required string RowKey { get; set; }
     
     /// <summary>
     /// ETag for optimistic concurrency control
@@ -33,20 +33,20 @@ public abstract class BaseTableEntity : ITableEntity, IParentScopedEntity, ISoft
     public DateTimeOffset? Timestamp { get; set; }
 
     // IEntity implementation
-    public Guid Id 
-    { 
-        get => RowKey; 
-        set => RowKey = value; 
+    public Guid Id
+    {
+        get => Guid.TryParse(RowKey, out var guid) ? guid : Guid.Empty;
+        set => RowKey = value.ToString();
     }
-    
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     // ITenantScopedEntity implementation
-    public Guid ParentId 
-    { 
-        get => PartitionKey; 
-        set => PartitionKey = value; 
+    public Guid ParentId
+    {
+        get => Guid.TryParse(PartitionKey, out var guid) ? guid : Guid.Empty;
+        set => PartitionKey = value.ToString();
     }
 
     // ISoftDeletable implementation
@@ -55,15 +55,15 @@ public abstract class BaseTableEntity : ITableEntity, IParentScopedEntity, ISoft
 
     protected BaseTableEntity()
     {
-        Id = Guid.NewGuid().ToString();
+        Id = Guid.NewGuid();
         CreatedAt = DateTime.UtcNow;
         UpdatedAt = DateTime.UtcNow;
     }
 
     protected BaseTableEntity(string tenantId, string? id = null)
     {
-        ParentId = tenantId;
-        Id = id ?? Guid.NewGuid().ToString();
+        ParentId = Guid.TryParse(tenantId, out var guid) ? guid : Guid.NewGuid();
+        Id = id != null ? Guid.Parse(id) : Guid.NewGuid();
         CreatedAt = DateTime.UtcNow;
         UpdatedAt = DateTime.UtcNow;
     }

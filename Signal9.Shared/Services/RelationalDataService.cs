@@ -11,21 +11,21 @@ namespace Signal9.Shared.Services;
 /// Enhanced relational data service implementing Microsoft's multi-tenant patterns
 /// Provides optimized data access for Azure SQL Database entities
 /// </summary>
-public class RelationalDataService(Signal9DbContext context, ILogger<RelationalDataService> logger, string? currentTenantId = null) : IRelationalDataService
+public class RelationalDataService(Signal9DbContext context, ILogger<RelationalDataService> logger, Guid? currentParentId = null) : IRelationalDataService
 {
-    public async Task<Agent?> GetAgentAsync(Guid tenantId, string agentId)
+    public async Task<Agent?> GetAgentAsync(Guid parentId, Guid agentId)
     {
-        return await GetAgentByIdAsync(tenantId.ToString(), agentId);
+        return await GetAgentByIdAsync(parentId, agentId);
     }
 
     #region Agent Repository Implementation
 
-    public async Task<Agent?> GetAgentByIdAsync(string tenantId, string agentId)
+    public async Task<Agent?> GetAgentByIdAsync(Guid tenantId, Guid agentId)
     {
         try
         {
             return await context.Agents
-                .FirstOrDefaultAsync(a => a.TenantId == tenantId && a.Id == agentId);
+                .FirstOrDefaultAsync(a => a.ParentId == tenantId && a.Id == agentId);
         }
         catch (Exception ex)
         {
@@ -34,49 +34,49 @@ public class RelationalDataService(Signal9DbContext context, ILogger<RelationalD
         }
     }
 
-    public async Task<Agent?> GetAgentByMachineNameAsync(string tenantId, string machineName)
+    public async Task<Agent?> GetAgentByMachineNameAsync(Guid parentId, string machineName)
     {
         try
         {
             return await context.Agents
-                .FirstOrDefaultAsync(a => a.TenantId == tenantId && a.MachineName == machineName);
+                .FirstOrDefaultAsync(a => a.ParentId == parentId && a.MachineName == machineName);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error retrieving agent by machine name {MachineName} for tenant {TenantId}", machineName, tenantId);
+            logger.LogError(ex, "Error retrieving agent by machine name {MachineName} for tenant {TenantId}", machineName, parentId);
             throw;
         }
     }
 
-    public async Task<IEnumerable<Agent>> GetAgentsByStatusAsync(string tenantId, AgentStatus status)
+    public async Task<IEnumerable<Agent>> GetAgentsByStatusAsync(Guid parentId, AgentStatus status)
     {
         try
         {
             return await context.Agents
-                .Where(a => a.TenantId == tenantId && a.Status == status)
+                .Where(a => a.ParentId == parentId && a.Status == status)
                 .OrderBy(a => a.MachineName)
                 .ToListAsync();
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error retrieving agents by status {Status} for tenant {TenantId}", status, tenantId);
+            logger.LogError(ex, "Error retrieving agents by status {Status} for tenant {TenantId}", status, parentId);
             throw;
         }
     }
 
-    public async Task<IEnumerable<Agent>> GetRecentlySeenAgentsAsync(string tenantId, TimeSpan timeSpan)
+    public async Task<IEnumerable<Agent>> GetRecentlySeenAgentsAsync(Guid parentId, TimeSpan timeSpan)
     {
         try
         {
             var cutoffTime = DateTime.UtcNow - timeSpan;
             return await context.Agents
-                .Where(a => a.TenantId == tenantId && a.LastSeen >= cutoffTime)
+                .Where(a => a.ParentId == parentId && a.LastSeen >= cutoffTime)
                 .OrderByDescending(a => a.LastSeen)
                 .ToListAsync();
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error retrieving recently seen agents for tenant {TenantId}", tenantId);
+            logger.LogError(ex, "Error retrieving recently seen agents for tenant {TenantId}", parentId);
             throw;
         }
     }
@@ -86,7 +86,7 @@ public class RelationalDataService(Signal9DbContext context, ILogger<RelationalD
         try
         {
             // Validate tenant isolation
-            if (currentTenantId != null && agent.TenantId != currentTenantId)
+            if (currentParentId != null && agent.ParentId != currentParentId)
             {
                 throw new UnauthorizedAccessException("Cannot create agent for different tenant");
             }
@@ -94,12 +94,12 @@ public class RelationalDataService(Signal9DbContext context, ILogger<RelationalD
             context.Agents.Add(agent);
             await context.SaveChangesAsync();
 
-            logger.LogInformation("Agent {AgentId} created successfully for tenant {TenantId}", agent.Id, agent.TenantId);
+            logger.LogInformation("Agent {AgentId} created successfully for tenant {TenantId}", agent.Id, agent.ParentId);
             return agent;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error creating agent for tenant {TenantId}", agent.TenantId);
+            logger.LogError(ex, "Error creating agent for tenant {TenantId}", agent.ParentId);
             throw;
         }
     }
@@ -109,7 +109,7 @@ public class RelationalDataService(Signal9DbContext context, ILogger<RelationalD
         try
         {
             // Validate tenant isolation
-            if (currentTenantId != null && agent.TenantId != currentTenantId)
+            if (currentParentId != null && agent.ParentId != currentParentId)
             {
                 throw new UnauthorizedAccessException("Cannot update agent for different tenant");
             }
@@ -117,17 +117,17 @@ public class RelationalDataService(Signal9DbContext context, ILogger<RelationalD
             context.Agents.Update(agent);
             await context.SaveChangesAsync();
 
-            logger.LogInformation("Agent {AgentId} updated successfully for tenant {TenantId}", agent.Id, agent.TenantId);
+            logger.LogInformation("Agent {AgentId} updated successfully for tenant {TenantId}", agent.Id, agent.ParentId);
             return agent;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error updating agent {AgentId} for tenant {TenantId}", agent.Id, agent.TenantId);
+            logger.LogError(ex, "Error updating agent {AgentId} for tenant {TenantId}", agent.Id, agent.ParentId);
             throw;
         }
     }
 
-    public async Task UpdateAgentLastSeenAsync(string agentId, DateTime lastSeen)
+    public async Task UpdateAgentLastSeenAsync(Guid agentId, DateTime lastSeen)
     {
         try
         {
@@ -150,49 +150,49 @@ public class RelationalDataService(Signal9DbContext context, ILogger<RelationalD
 
     #region Agent Command Repository Implementation
 
-    public async Task<AgentCommand?> GetCommandByIdAsync(string tenantId, string commandId)
+    public async Task<AgentCommand?> GetCommandByIdAsync(Guid parentId, Guid commandId)
     {
         try
         {
             return await context.AgentCommands
-                .FirstOrDefaultAsync(c => c.TenantId == tenantId && c.Id == commandId);
+                .FirstOrDefaultAsync(c => c.ParentId == parentId && c.Id == commandId);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error retrieving command {CommandId} for tenant {TenantId}", commandId, tenantId);
+            logger.LogError(ex, "Error retrieving command {CommandId} for tenant {TenantId}", commandId, parentId);
             throw;
         }
     }
 
-    public async Task<IEnumerable<AgentCommand>> GetCommandsByAgentIdAsync(string tenantId, string agentId)
+    public async Task<IEnumerable<AgentCommand>> GetCommandsByAgentIdAsync(Guid parentId, Guid agentId)
     {
         try
         {
             return await context.AgentCommands
-                .Where(c => c.TenantId == tenantId && c.AgentId == agentId)
+                .Where(c => c.ParentId == parentId && c.AgentId == agentId)
                 .OrderByDescending(c => c.ScheduledAt)
                 .ToListAsync();
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error retrieving commands for agent {AgentId} in tenant {TenantId}", agentId, tenantId);
+            logger.LogError(ex, "Error retrieving commands for agent {AgentId} in tenant {TenantId}", agentId, parentId);
             throw;
         }
     }
 
-    public async Task<IEnumerable<AgentCommand>> GetPendingCommandsAsync(string tenantId)
+    public async Task<IEnumerable<AgentCommand>> GetPendingCommandsAsync(Guid parentId)
     {
         try
         {
             return await context.AgentCommands
-                .Where(c => c.TenantId == tenantId && c.Status == CommandStatus.Pending)
+                .Where(c => c.ParentId == parentId && c.Status == CommandStatus.Pending)
                 .OrderBy(c => c.Priority)
                 .ThenBy(c => c.ScheduledAt)
                 .ToListAsync();
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error retrieving pending commands for tenant {TenantId}", tenantId);
+            logger.LogError(ex, "Error retrieving pending commands for tenant {TenantId}", parentId);
             throw;
         }
     }
@@ -202,7 +202,7 @@ public class RelationalDataService(Signal9DbContext context, ILogger<RelationalD
         try
         {
             // Validate tenant isolation
-            if (currentTenantId != null && command.TenantId != currentTenantId)
+            if (currentParentId != null && command.ParentId != currentParentId)
             {
                 throw new UnauthorizedAccessException("Cannot create command for different tenant");
             }
@@ -211,18 +211,18 @@ public class RelationalDataService(Signal9DbContext context, ILogger<RelationalD
             await context.SaveChangesAsync();
 
             logger.LogInformation("Command {CommandId} created successfully for agent {AgentId} in tenant {TenantId}", 
-                command.Id, command.AgentId, command.TenantId);
+                command.Id, command.AgentId, command.ParentId);
             return command;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error creating command for agent {AgentId} in tenant {TenantId}", 
-                command.AgentId, command.TenantId);
+                command.AgentId, command.ParentId);
             throw;
         }
     }
 
-    public async Task UpdateCommandStatusAsync(string commandId, CommandStatus status, string? result = null, string? errorMessage = null)
+    public async Task UpdateCommandStatusAsync(Guid commandId, CommandStatus status, string? result = null, string? errorMessage = null)
     {
         try
         {

@@ -15,7 +15,7 @@ public record TelemetryDataDto : BaseDto<Guid>, ITelemetryData
     /// Agent ID that generated this telemetry (same as ParentId for unified hierarchy)
     /// </summary>
     [Required(ErrorMessage = "AgentId is required")]
-    public required string AgentId { get; init; }
+    public required Guid AgentId { get; init; }
     
     /// <summary>
     /// Type of telemetry data

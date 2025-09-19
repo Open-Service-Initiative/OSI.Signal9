@@ -15,7 +15,7 @@ public record AgentCommandDto : BaseDto<Guid>, IAgentCommandData
     /// Target agent ID (same as ParentId for unified hierarchy)
     /// </summary>
     [Required(ErrorMessage = "AgentId is required")]
-    public required string AgentId { get; init; }
+    public required Guid AgentId { get; init; }
     
     /// <summary>
     /// Type of command to execute

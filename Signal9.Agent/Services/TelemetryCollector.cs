@@ -15,9 +15,11 @@ namespace Signal9.Agent.Services;
 public class TelemetryCollector(
     ILogger<TelemetryCollector> logger,
     IOptions<AgentConfiguration> agentConfiguration,
-    ISystemInfoProvider systemInfoProvider) : ITelemetryCollector
+    ISystemInfoProvider systemInfoProvider,
+    Guid agentId) : ITelemetryCollector
 {
     private readonly AgentConfiguration _agentConfiguration = agentConfiguration.Value;
+    private readonly Guid _agentId = agentId;
 
     public async Task<TelemetryDataDto> CollectTelemetryAsync()
     {
@@ -26,18 +28,18 @@ public class TelemetryCollector(
             logger.LogDebug("Collecting telemetry data");
 
             var cpuUsage = await GetCpuUsageAsync();
-            var (usedMb, availableMb) = await GetMemoryInfoAsync();
-            var diskInfo = await GetDiskInfoAsync();
+            var (usedMb, availableMb) = GetMemoryInfo();
+            var diskInfo = GetDiskInfo();
 
             return new TelemetryDataDto
             {
-                AgentId = Environment.MachineName, // Will be set by calling service
+                AgentId = _agentId,
                 TelemetryType = TelemetryType.SystemMetrics,
                 CpuUsagePercent = cpuUsage,
                 MemoryUsageMB = usedMb,
                 AvailableMemoryMB = availableMb,
                 DiskUsage = JsonSerializer.Serialize(diskInfo),
-                ProcessCount = System.Diagnostics.Process.GetProcesses().Length,
+                ProcessCount = Process.GetProcesses().Length,
                 UptimeSeconds = (long)TimeSpan.FromMilliseconds(Environment.TickCount64).TotalSeconds,
                 LoadAverage = Environment.ProcessorCount > 0 ? cpuUsage / 100.0 : 0
             };
@@ -47,7 +49,7 @@ public class TelemetryCollector(
             logger.LogError(ex, "Error collecting telemetry data");
             return new TelemetryDataDto
             {
-                AgentId = Environment.MachineName,
+                AgentId = _agentId,
                 TelemetryType = TelemetryType.SystemMetrics,
                 ErrorMessage = ex.Message
             };
@@ -70,7 +72,7 @@ public class TelemetryCollector(
                 logger.LogError(ex, "Error collecting metric: {Metric}", metric);
                 results.Add(new TelemetryDataDto
                 {
-                    AgentId = Environment.MachineName,
+                    AgentId = _agentId,
                     TelemetryType = TelemetryType.SystemMetrics,
                     ErrorMessage = $"Error collecting {metric}: {ex.Message}"
                 });
@@ -94,7 +96,7 @@ public class TelemetryCollector(
             // Aggregate the metrics into a single TelemetryDataDto
             var aggregated = new TelemetryDataDto
             {
-                AgentId = Environment.MachineName,
+                AgentId = _agentId,
                 TelemetryType = TelemetryType.SystemMetrics,
                 CpuUsagePercent = allMetrics.FirstOrDefault()?.CpuUsagePercent,
                 MemoryUsageMB = allMetrics.FirstOrDefault()?.MemoryUsageMB,
@@ -112,7 +114,7 @@ public class TelemetryCollector(
             logger.LogError(ex, "Error collecting telemetry with specific metrics");
             return new TelemetryDataDto
             {
-                AgentId = Environment.MachineName,
+                AgentId = _agentId,
                 TelemetryType = TelemetryType.SystemMetrics,
                 ErrorMessage = ex.Message
             };
@@ -124,9 +126,9 @@ public class TelemetryCollector(
         return metric.ToLowerInvariant() switch
         {
             "cpu" => await CollectCpuMetricAsync(),
-            "memory" => await CollectMemoryMetricAsync(),
+            "memory" => CollectMemoryMetric(),
             "disk" => await CollectDiskMetricAsync(),
-            "process" => await CollectProcessMetricAsync(),
+            "process" => CollectProcessMetric(),
             "system" => await systemInfoProvider.GetSystemInfoAsync(),
             _ => await CollectTelemetryAsync()
         };
@@ -137,42 +139,42 @@ public class TelemetryCollector(
         var cpuUsage = await GetCpuUsageAsync();
         return new TelemetryDataDto
         {
-            AgentId = Environment.MachineName,
+            AgentId = _agentId,
             TelemetryType = TelemetryType.SystemMetrics,
             CpuUsagePercent = cpuUsage,
             LoadAverage = Environment.ProcessorCount > 0 ? cpuUsage / 100.0 : 0
         };
     }
 
-    private async Task<TelemetryDataDto> CollectMemoryMetricAsync()
+    private TelemetryDataDto CollectMemoryMetric()
     {
-        var (usedMb, availableMb) = await GetMemoryInfoAsync();
+        var (usedMb, availableMb) = GetMemoryInfo();
         return new TelemetryDataDto
         {
-            AgentId = Environment.MachineName,
+            AgentId = _agentId,
             TelemetryType = TelemetryType.SystemMetrics,
             MemoryUsageMB = usedMb,
             AvailableMemoryMB = availableMb
         };
     }
 
-    private async Task<TelemetryDataDto> CollectDiskMetricAsync()
+    private Task<TelemetryDataDto> CollectDiskMetricAsync()
     {
-        var diskInfo = await GetDiskInfoAsync();
-        return new TelemetryDataDto
+        var diskInfo = GetDiskInfo();
+        return Task.FromResult(new TelemetryDataDto
         {
-            AgentId = Environment.MachineName,
+            AgentId = _agentId,
             TelemetryType = TelemetryType.SystemMetrics,
             DiskUsage = JsonSerializer.Serialize(diskInfo)
-        };
+        });
     }
 
-    private async Task<TelemetryDataDto> CollectProcessMetricAsync()
+    private TelemetryDataDto CollectProcessMetric()
     {
         var processes = System.Diagnostics.Process.GetProcesses();
         return new TelemetryDataDto
         {
-            AgentId = Environment.MachineName,
+            AgentId = _agentId,
             TelemetryType = TelemetryType.SystemMetrics,
             ProcessCount = processes.Length,
             CustomMetrics = JsonSerializer.Serialize(processes.Take(10).Select(p => new
@@ -209,14 +211,14 @@ public class TelemetryCollector(
         }
     }
 
-    private async Task<(long UsedMB, long AvailableMB)> GetMemoryInfoAsync()
+    private (long UsedMB, long AvailableMB) GetMemoryInfo()
     {
         try
         {
             var gcMemoryInfo = GC.GetGCMemoryInfo();
             var workingSet = Environment.WorkingSet;
             var availableMemory = gcMemoryInfo.TotalAvailableMemoryBytes;
-            
+
             return (workingSet / 1024 / 1024, availableMemory / 1024 / 1024);
         }
         catch
@@ -225,7 +227,7 @@ public class TelemetryCollector(
         }
     }
 
-    private async Task<object> GetDiskInfoAsync()
+    private object GetDiskInfo()
     {
         try
         {
@@ -239,7 +241,7 @@ public class TelemetryCollector(
                     UsagePercent = (double)(d.TotalSize - d.AvailableFreeSpace) / d.TotalSize * 100
                 })
                 .ToArray();
-            
+
             return drives;
         }
         catch

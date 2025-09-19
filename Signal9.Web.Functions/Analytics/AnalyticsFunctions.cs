@@ -28,14 +28,14 @@ public class AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(DashboardAnalyticsResponse), Description = "Dashboard analytics data")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid parameters")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotImplemented, contentType: "application/json", bodyType: typeof(object), Description = "Analytics implementation pending")]
-    public async Task<IActionResult> GetDashboardAnalyticsAsync(
+    public Task<IActionResult> GetDashboardAnalyticsAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/dashboard")] HttpRequest req,
         CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Getting dashboard analytics - implementation pending");
 
         // TODO: Implement dashboard analytics once core RMM functionality is complete
-        return new ObjectResult(new { 
+        return Task.FromResult<IActionResult>(new ObjectResult(new { 
             message = "Dashboard analytics implementation is planned for a future release",
             status = "not_implemented",
             plannedFeatures = new[] {
@@ -48,7 +48,7 @@ public class AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
         })
         {
             StatusCode = StatusCodes.Status501NotImplemented
-        };
+        });
     }
 
     /// <summary>
@@ -62,7 +62,7 @@ public class AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(TenantAnalyticsResponse), Description = "Tenant analytics data")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid tenant ID format")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotImplemented, contentType: "application/json", bodyType: typeof(object), Description = "Analytics implementation pending")]
-    public async Task<IActionResult> GetTenantAnalyticsAsync(
+    public Task<IActionResult> GetTenantAnalyticsAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/tenants/{parentId:guid}")] HttpRequest req,
         Guid parentId,
         CancellationToken cancellationToken = default)
@@ -70,7 +70,7 @@ public class AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
         logger.LogInformation("Getting tenant analytics for {ParentId} - implementation pending", parentId);
 
         // TODO: Implement tenant analytics once core tenant management is stable
-        return new ObjectResult(new { 
+        return Task.FromResult<IActionResult>(new ObjectResult(new { 
             message = "Tenant analytics implementation is planned for a future release",
             status = "not_implemented",
             tenantId = parentId,
@@ -84,7 +84,7 @@ public class AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
         })
         {
             StatusCode = StatusCodes.Status501NotImplemented
-        };
+        });
     }
 
     /// <summary>
@@ -98,7 +98,7 @@ public class AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(AgentAnalyticsResponse), Description = "Agent analytics data")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid agent ID format")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotImplemented, contentType: "application/json", bodyType: typeof(object), Description = "Analytics implementation pending")]
-    public async Task<IActionResult> GetAgentAnalyticsAsync(
+    public Task<IActionResult> GetAgentAnalyticsAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/agents/{agentId:guid}")] HttpRequest req,
         Guid agentId,
         CancellationToken cancellationToken = default)
@@ -106,7 +106,7 @@ public class AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
         logger.LogInformation("Getting agent analytics for {AgentId} - implementation pending", agentId);
 
         // TODO: Implement agent analytics once telemetry collection is fully operational
-        return new ObjectResult(new { 
+        return Task.FromResult<IActionResult>(new ObjectResult(new { 
             message = "Agent analytics implementation is planned for a future release",
             status = "not_implemented",
             agentId,
@@ -120,7 +120,7 @@ public class AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
         })
         {
             StatusCode = StatusCodes.Status501NotImplemented
-        };
+        });
     }
 
     #endregion
@@ -136,14 +136,14 @@ public class AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(ReportGenerationResponse), Description = "Generated report data")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid report request")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotImplemented, contentType: "application/json", bodyType: typeof(object), Description = "Reporting implementation pending")]
-    public async Task<IActionResult> GenerateReportAsync(
+    public Task<IActionResult> GenerateReportAsync(
         [HttpTrigger(AuthorizationLevel.Function, "post", Route = "analytics/reports")] HttpRequest req,
         CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Generating analytics report - implementation pending");
 
         // TODO: Implement reporting once analytics data collection is established
-        return new ObjectResult(new { 
+        return Task.FromResult<IActionResult>(new ObjectResult(new { 
             message = "Report generation implementation is planned for a future release",
             status = "not_implemented",
             plannedFeatures = new[] {
@@ -156,7 +156,7 @@ public class AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
         })
         {
             StatusCode = StatusCodes.Status501NotImplemented
-        };
+        });
     }
 
     /// <summary>
@@ -167,20 +167,20 @@ public class AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
     [OpenApiParameter(name: "category", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Filter by category (performance, security, usage, compliance)")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(List<ReportTemplateResponse>), Description = "List of available report templates")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotImplemented, contentType: "application/json", bodyType: typeof(object), Description = "Report templates implementation pending")]
-    public async Task<IActionResult> GetReportTemplatesAsync(
+    public Task<IActionResult> GetReportTemplatesAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/report-templates")] HttpRequest req,
         CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Getting report templates - implementation pending");
 
         // TODO: Implement report templates once reporting system is built
-        return new ObjectResult(new { 
+        return Task.FromResult<IActionResult>(new ObjectResult(new { 
             message = "Report templates implementation is planned for a future release",
             status = "not_implemented"
         })
         {
             StatusCode = StatusCodes.Status501NotImplemented
-        };
+        });
     }
 
     #endregion
@@ -196,20 +196,20 @@ public class AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "Query execution results")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid query parameters")]
     [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotImplemented, contentType: "application/json", bodyType: typeof(object), Description = "Custom analytics implementation pending")]
-    public async Task<IActionResult> ExecuteCustomQueryAsync(
+    public Task<IActionResult> ExecuteCustomQueryAsync(
         [HttpTrigger(AuthorizationLevel.Function, "post", Route = "analytics/custom-query")] HttpRequest req,
         CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Executing custom analytics query - implementation pending");
 
         // TODO: Implement custom analytics once core analytics infrastructure is ready
-        return new ObjectResult(new { 
+        return Task.FromResult<IActionResult>(new ObjectResult(new { 
             message = "Custom analytics implementation is planned for a future release",
             status = "not_implemented"
         })
         {
             StatusCode = StatusCodes.Status501NotImplemented
-        };
+        });
     }
 
     #endregion

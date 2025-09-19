@@ -302,12 +302,13 @@
     private void ApplyFilters()
     {
         filteredTenants = tenants.Where(t =>
+            t.Name != null &&
             (string.IsNullOrEmpty(searchTerm) || 
              t.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
              (t.Slug?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) == true) ||
              (!string.IsNullOrEmpty(t.Description) && t.Description.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))) &&
             (string.IsNullOrEmpty(filterType) || t.TenantType == filterType) &&
-            (string.IsNullOrEmpty(filterActive) || t.IsActive.ToString().Equals(filterActive, StringComparison.OrdinalIgnoreCase)) &&
+            (string.IsNullOrEmpty(filterActive) || (t.IsActive?.ToString() ?? string.Empty).Equals(filterActive, StringComparison.OrdinalIgnoreCase)) &&
             (string.IsNullOrEmpty(filterPlan) || t.Plan.ToString() == filterPlan)
         ).ToList();
     }

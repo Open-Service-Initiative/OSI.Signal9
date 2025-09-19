@@ -57,7 +57,7 @@ public record CommandRequest : BaseDto<Guid>
 {
     [Required(ErrorMessage = "AgentId is required")]
     [StringLength(50, MinimumLength = 1, ErrorMessage = "AgentId must be between 1 and 50 characters")]
-    public required string AgentId { get; init; }
+    public required Guid AgentId { get; init; }
 
     public required CommandType CommandType { get; init; }
 

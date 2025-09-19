@@ -16,21 +16,21 @@ public class AgentHub(ILogger<AgentHub> logger, IRelationalDataService relationa
     /// <summary>
     /// Called when an agent connects to the hub
     /// </summary>
-    public async Task RegisterAgent(string agentId, Guid tenantId)
+    public async Task RegisterAgent(Guid agentId, Guid parentId)
     {
         try
         {
             // Verify agent exists and belongs to tenant
-            var agent = await relationalDataService.GetAgentAsync(tenantId, agentId);
+            var agent = await relationalDataService.GetAgentAsync(parentId, agentId);
             if (agent == null)
             {
-                logger.LogWarning("Invalid agent registration attempt: AgentId={AgentId}, TenantId={TenantId}", agentId, tenantId);
+                logger.LogWarning("Invalid agent registration attempt: AgentId={AgentId}, TenantId={TenantId}", agentId, parentId);
                 await Clients.Caller.ReceiveError("Invalid agent credentials");
                 return;
             }
 
             // Add to tenant group for broadcasting
-            await Groups.AddToGroupAsync(Context.ConnectionId, $"tenant-{tenantId}");
+            await Groups.AddToGroupAsync(Context.ConnectionId, $"tenant-{parentId}");
             
             // Add to agent-specific group for direct commands
             await Groups.AddToGroupAsync(Context.ConnectionId, $"agent-{agentId}");
@@ -41,9 +41,9 @@ public class AgentHub(ILogger<AgentHub> logger, IRelationalDataService relationa
             await relationalDataService.UpdateAgentAsync(agent);
 
             // Notify other users in tenant about agent coming online
-            await Clients.Group($"tenant-{tenantId}").ReceiveAgentStatusUpdate(agentId, "Online");
+            await Clients.Group($"tenant-{parentId}").ReceiveAgentStatusUpdate(agentId, "Online");
 
-            logger.LogInformation("Agent {AgentId} registered for tenant {TenantId}", agentId, tenantId);
+            logger.LogInformation("Agent {AgentId} registered for tenant {TenantId}", agentId, parentId);
         }
         catch (Exception ex)
         {
@@ -71,13 +71,13 @@ public class AgentHub(ILogger<AgentHub> logger, IRelationalDataService relationa
     /// <summary>
     /// Send telemetry data from agent
     /// </summary>
-    public async Task SendTelemetry(string agentId, TelemetryData telemetryData)
+    public async Task SendTelemetry(Guid agentId, TelemetryData telemetryData)
     {
         try
         {
-            if (Guid.TryParse(telemetryData.ParentId, out var tenantId))
+            if (Guid.Empty != telemetryData.ParentId)
             {
-                var agent = await relationalDataService.GetAgentAsync(tenantId, agentId);
+                var agent = await relationalDataService.GetAgentAsync(telemetryData.ParentId, agentId);
                 if (agent == null)
                 {
                     logger.LogWarning("Telemetry from unknown agent {AgentId}", agentId);
@@ -136,12 +136,12 @@ public class AgentHubService(IHubContext<AgentHub, IAgentClient> hubContext, ILo
         }
     }
 
-    public async Task NotifyAgentStatusChangeAsync(Guid tenantId, string agentId, string status)
+    public async Task NotifyAgentStatusChangeAsync(Guid parentId, Guid agentId, string status)
     {
         try
         {
-            await hubContext.Clients.Group($"tenant-{tenantId}").ReceiveAgentStatusUpdate(agentId, status);
-            logger.LogDebug("Notified tenant {TenantId} of agent {AgentId} status change to {Status}", tenantId, agentId, status);
+            await hubContext.Clients.Group($"tenant-{parentId}").ReceiveAgentStatusUpdate(agentId, status);
+            logger.LogDebug("Notified tenant {TenantId} of agent {AgentId} status change to {Status}", parentId, agentId, status);
         }
         catch (Exception ex)
         {
@@ -150,12 +150,12 @@ public class AgentHubService(IHubContext<AgentHub, IAgentClient> hubContext, ILo
         }
     }
 
-    public async Task NotifyTelemetryUpdateAsync(Guid tenantId, string agentId, TelemetryData telemetryData)
+    public async Task NotifyTelemetryUpdateAsync(Guid parentId, Guid agentId, TelemetryData telemetryData)
     {
         try
         {
-            await hubContext.Clients.Group($"tenant-{tenantId}").ReceiveTelemetryUpdate(agentId, telemetryData);
-            logger.LogDebug("Notified tenant {TenantId} of telemetry update from agent {AgentId}", tenantId, agentId);
+            await hubContext.Clients.Group($"tenant-{parentId}").ReceiveTelemetryUpdate(agentId, telemetryData);
+            logger.LogDebug("Notified tenant {TenantId} of telemetry update from agent {AgentId}", parentId, agentId);
         }
         catch (Exception ex)
         {
@@ -199,7 +199,7 @@ public class AgentHubService(IHubContext<AgentHub, IAgentClient> hubContext, ILo
 public interface IAgentClient
 {
     Task ReceiveCommand(object command);
-    Task ReceiveAgentStatusUpdate(string agentId, string status);
-    Task ReceiveTelemetryUpdate(string agentId, TelemetryData telemetryData);
+    Task ReceiveAgentStatusUpdate(Guid agentId, string status);
+    Task ReceiveTelemetryUpdate(Guid agentId, TelemetryData telemetryData);
     Task ReceiveError(string message);
 }

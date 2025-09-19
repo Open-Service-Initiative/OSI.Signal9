@@ -11,13 +11,13 @@ namespace Signal9.Shared.Interfaces;
 public interface IRelationalDataService
 {
     // Agent operations using entities
-    Task<Agent?> GetAgentByIdAsync(string tenantId, string agentId);
-    Task<IEnumerable<Agent>> GetAgentsByStatusAsync(string tenantId, AgentStatus status);
+    Task<Agent?> GetAgentByIdAsync(Guid parentId, Guid agentId);
+    Task<IEnumerable<Agent>> GetAgentsByStatusAsync(Guid parentId, AgentStatus status);
     Task<Agent> CreateAgentAsync(Agent agent);
     Task<Agent> UpdateAgentAsync(Agent agent);
     
     // Bridge method for SignalR hub compatibility
-    Task<Agent?> GetAgentAsync(Guid tenantId, string agentId);
+    Task<Agent?> GetAgentAsync(Guid parentId, Guid agentId);
 }
 
 /// <summary>
@@ -42,8 +42,8 @@ public interface ITableStorageService
 public interface IAgentHubService
 {
     Task SendCommandToAgentAsync(string agentId, object command);
-    Task NotifyAgentStatusChangeAsync(Guid tenantId, string agentId, string status);
-    Task NotifyTelemetryUpdateAsync(Guid tenantId, string agentId, TelemetryData telemetryData);
+    Task NotifyAgentStatusChangeAsync(Guid parentId, Guid agentId, string status);
+    Task NotifyTelemetryUpdateAsync(Guid parentId, Guid agentId, TelemetryData telemetryData);
     Task JoinTenantGroupAsync(string connectionId, Guid tenantId);
     Task LeaveTenantGroupAsync(string connectionId, Guid tenantId);
 }

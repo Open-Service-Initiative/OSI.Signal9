@@ -11,8 +11,8 @@ namespace Signal9.Shared.Models;
 /// Stores commands to be executed by agents with proper tracking
 /// </summary>
 [Table("agent_commands")]
-[Index(nameof(TenantId), nameof(AgentId), nameof(Status))]
-[Index(nameof(TenantId), nameof(CommandType))]
+[Index(nameof(ParentId), nameof(AgentId), nameof(Status))]
+[Index(nameof(ParentId), nameof(CommandType))]
 public class AgentCommand : BaseSqlEntity, IAgentCommandData
 {
     /// <summary>
@@ -21,7 +21,7 @@ public class AgentCommand : BaseSqlEntity, IAgentCommandData
     [Required]
     [MaxLength(50)]
     [Column("agent_id")]
-    public string AgentId { get; set; } = string.Empty;
+    public Guid AgentId { get; set; }
     
     /// <summary>
     /// Type of command to execute
@@ -93,8 +93,8 @@ public class AgentCommand : BaseSqlEntity, IAgentCommandData
 
     public AgentCommand() : base() { }
     
-    public AgentCommand(string tenantId, string agentId, CommandType commandType) 
-        : base(tenantId)
+    public AgentCommand(Guid parentId, Guid agentId, CommandType commandType) 
+        : base(parentId)
     {
         AgentId = agentId;
         CommandType = commandType;

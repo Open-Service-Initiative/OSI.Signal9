@@ -15,7 +15,7 @@ public class TelemetryData : BaseTableEntity, ITelemetryData
     /// Agent ID that generated this telemetry
     /// </summary>
     [Required]
-    public string AgentId { get; set; } = string.Empty;
+    public Guid AgentId { get; set; }
     
     /// <summary>
     /// Type of telemetry data
@@ -82,16 +82,14 @@ public class TelemetryData : BaseTableEntity, ITelemetryData
     {
         // Create time-based RowKey for efficient time-series queries
         // Format: {AgentId}_{ReverseTicks} for reverse chronological order
-        Id = $"{AgentId}_{DateTime.MaxValue.Ticks - DateTime.UtcNow.Ticks:D19}";
+        RowKey = $"{AgentId}_{DateTime.MaxValue.Ticks - DateTime.UtcNow.Ticks:D19}";
     }
     
-    public TelemetryData(string tenantId, string agentId, TelemetryType telemetryType) 
-        : base(tenantId)
+    public TelemetryData(Guid parentId, Guid agentId, TelemetryType telemetryType) 
     {
-        AgentId = agentId;
         TelemetryType = telemetryType;
         // Create time-based RowKey for efficient time-series queries
-        Id = $"{agentId}_{DateTime.MaxValue.Ticks - DateTime.UtcNow.Ticks:D19}";
+        RowKey = $"{agentId}_{DateTime.MaxValue.Ticks - DateTime.UtcNow.Ticks:D19}";
     }
 }
 
