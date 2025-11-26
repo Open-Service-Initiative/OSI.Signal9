@@ -10,14 +10,7 @@ using System.Text.Json;
 var builder = FunctionsApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
-
-// Configure JSON serialization for the Functions Worker
-builder.Services.Configure<JsonSerializerOptions>(options =>
-{
-    options.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-    options.WriteIndented = true;
-    options.PropertyNameCaseInsensitive = true;
-});
+builder.ConfigureFunctionsWebApplication();
 
 // Configure Entity Framework
 var connectionString = Environment.GetEnvironmentVariable("DefaultConnection");

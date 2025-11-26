@@ -10,7 +10,6 @@ using System.Reflection;
 using SystemWeb = System.Web;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Signal9.Shared.DTOs.Base;
 
 namespace Signal9.Web.Functions.System;
 
@@ -29,14 +28,12 @@ public class SystemFunctions(ILogger<SystemFunctions> logger)
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "system/health")] HttpRequest req)
     {
         logger.LogInformation("Getting system health status");
-
+ 
         try
         {
             var query = req.Query;
-            var includeDetailsStr = query.TryGetValue("includeDetails", out var includeDetailsValues) ? includeDetailsValues.FirstOrDefault() : null;
-            var includeDetails = bool.TryParse(includeDetailsStr, out var details) && details;
-            var includeMetricsStr = query.TryGetValue("includeMetrics", out var includeMetricsValues) ? includeMetricsValues.FirstOrDefault() : null;
-            var includeMetrics = bool.TryParse(includeMetricsStr, out var metrics) && metrics;
+            var includeDetails = bool.TryParse(query["includeDetails"].FirstOrDefault(), out var details) && details;
+            var includeMetrics = bool.TryParse(query["includeMetrics"].FirstOrDefault(), out var metrics) && metrics;
 
             // TODO: Implement actual health checks
             var healthStatus = new
@@ -68,12 +65,11 @@ public class SystemFunctions(ILogger<SystemFunctions> logger)
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "system/info")] HttpRequest req)
     {
         logger.LogInformation("Getting system information");
-
+ 
         try
         {
             var query = req.Query;
-            var includeSensitiveStr = query.TryGetValue("includeSensitive", out var includeSensitiveValues) ? includeSensitiveValues.FirstOrDefault() : null;
-            var includeSensitive = bool.TryParse(includeSensitiveStr, out var sensitive) && sensitive;
+            var includeSensitive = bool.TryParse(query["includeSensitive"].FirstOrDefault(), out var sensitive) && sensitive;
 
             var systemInfo = new
             {
@@ -109,13 +105,12 @@ public class SystemFunctions(ILogger<SystemFunctions> logger)
         [HttpTrigger(AuthorizationLevel.Function, "post", Route = "system/maintenance")] HttpRequest req)
     {
         logger.LogInformation("Triggering system maintenance");
-
+ 
         try
         {
             var query = req.Query;
-            var operation = query.TryGetValue("operation", out var operationValues) ? operationValues.FirstOrDefault() : null;
-            var forceStr = query.TryGetValue("force", out var forceValues) ? forceValues.FirstOrDefault() : null;
-            var force = bool.TryParse(forceStr, out var f) && f;
+            var operation = query["operation"].FirstOrDefault();
+            var force = bool.TryParse(query["force"].FirstOrDefault(), out var forceParsed) && forceParsed;
 
             if (string.IsNullOrEmpty(operation))
             {
@@ -125,9 +120,7 @@ public class SystemFunctions(ILogger<SystemFunctions> logger)
             var validOperations = new[] { "cleanup", "optimize", "healthcheck", "all" };
             if (!validOperations.Contains(operation.ToLower()))
             {
-                return Task.FromResult<IActionResult>(new BadRequestObjectResult(new { 
-                    error = "Invalid operation", validOperations 
-                }));
+                return Task.FromResult<IActionResult>(new BadRequestObjectResult(new { error = "Invalid operation", validOperations }));
             }
 
             // TODO: Implement actual maintenance operations

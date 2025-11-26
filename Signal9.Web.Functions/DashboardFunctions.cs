@@ -1,11 +1,10 @@
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
-using System.Net;
-using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Signal9.Shared.DTOs.Base;
+using Microsoft.Extensions.Logging;
+using Signal9.Web.Functions;
 
 namespace Signal9.Web.Functions;
 
@@ -19,20 +18,18 @@ public class DashboardFunctions(ILogger<DashboardFunctions> logger)
     /// </summary>
     [Function("GetDashboardOverview")]
     public Task<IActionResult> GetDashboardOverviewAsync(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "dashboard/overview")] HttpRequest req)
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "dashboard/overview")] HttpRequest req,
+        [FromQuery] string tenantId,
+        [FromQuery] bool includeActivity = false,
+        [FromQuery] int activityLimit = 10
+        )
     {
         logger.LogInformation("Getting dashboard overview");
 
         try
         {
-            var query = req.Query;
-            
+
             // Parse query parameters
-            var tenantId = query.TryGetValue("tenantId", out var tenantIdValues) ? tenantIdValues.FirstOrDefault() : null;
-            var includeActivityStr = query.TryGetValue("includeActivity", out var includeActivityValues) ? includeActivityValues.FirstOrDefault() : null;
-            var includeActivity = !bool.TryParse(includeActivityStr, out var activity) || activity; // Default to true
-            var activityLimitStr = query.TryGetValue("activityLimit", out var activityLimitValues) ? activityLimitValues.FirstOrDefault() : null;
-            var activityLimit = int.TryParse(activityLimitStr, out var limit) ? Math.Max(1, Math.Min(50, limit)) : 10;
 
             // Validate tenant ID if provided
             if (!string.IsNullOrEmpty(tenantId) && !Guid.TryParse(tenantId, out _))
@@ -99,20 +96,16 @@ public class DashboardFunctions(ILogger<DashboardFunctions> logger)
     /// </summary>
     [Function("GetDashboardStatistics")]
     public Task<IActionResult> GetDashboardStatisticsAsync(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "dashboard/statistics")] HttpRequest req)
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "dashboard/statistics")] HttpRequest req,
+        [FromQuery] string tenantId,
+        [FromQuery] string timeRange = "24h",
+        [FromQuery] bool includeHistorical = false
+        )
     {
         logger.LogInformation("Getting dashboard statistics");
 
         try
         {
-            var query = req.Query;
-            
-            // Parse query parameters
-            var tenantId = query.TryGetValue("tenantId", out var tenantIdValues) ? tenantIdValues.FirstOrDefault() : null;
-            var timeRange = query.TryGetValue("timeRange", out var timeRangeValues) ? timeRangeValues.FirstOrDefault() : "24h";
-            var includeHistoricalStr = query.TryGetValue("includeHistorical", out var includeHistoricalValues) ? includeHistoricalValues.FirstOrDefault() : null;
-            var includeHistorical = bool.TryParse(includeHistoricalStr, out var historical) && historical;
-
             // Validate tenant ID if provided
             if (!string.IsNullOrEmpty(tenantId) && !Guid.TryParse(tenantId, out _))
             {

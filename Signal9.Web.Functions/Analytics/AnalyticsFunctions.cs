@@ -2,10 +2,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
-using Signal9.Shared.DTOs.Analytics;
-using System.Net;
-using Microsoft.Azure.WebJobs.Extensions.OpenApi.Core.Attributes;
-using Microsoft.OpenApi.Models;
 
 namespace Signal9.Web.Functions.Analytics;
 
@@ -21,13 +17,6 @@ public class AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
     /// Get comprehensive dashboard analytics data
     /// </summary>
     [Function("GetDashboardAnalytics")]
-    [OpenApiOperation(operationId: "GetDashboardAnalytics", tags: ["Analytics"], Summary = "Get dashboard analytics", Description = "Retrieve comprehensive dashboard analytics data with time range filtering and tenant scope")]
-    [OpenApiParameter(name: "timeRange", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Time range filter (1h, 24h, 7d, 30d, 90d) - default: 7d")]
-    [OpenApiParameter(name: "parentId", In = ParameterLocation.Query, Required = false, Type = typeof(Guid), Description = "Filter by parent tenant ID")]
-    [OpenApiParameter(name: "includeDetails", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include detailed breakdown data")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(DashboardAnalyticsResponse), Description = "Dashboard analytics data")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid parameters")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotImplemented, contentType: "application/json", bodyType: typeof(object), Description = "Analytics implementation pending")]
     public Task<IActionResult> GetDashboardAnalyticsAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/dashboard")] HttpRequest req,
         CancellationToken cancellationToken = default)
@@ -55,13 +44,6 @@ public class AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
     /// Get detailed tenant analytics
     /// </summary>
     [Function("GetTenantAnalytics")]
-    [OpenApiOperation(operationId: "GetTenantAnalytics", tags: ["Analytics"], Summary = "Get tenant analytics", Description = "Retrieve comprehensive analytics data for a specific tenant")]
-    [OpenApiParameter(name: "parentId", In = ParameterLocation.Path, Required = true, Type = typeof(Guid), Description = "The unique identifier of the tenant")]
-    [OpenApiParameter(name: "timeRange", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Time range filter (1h, 24h, 7d, 30d, 90d) - default: 30d")]
-    [OpenApiParameter(name: "includeChildren", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include child tenant data in analytics")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(TenantAnalyticsResponse), Description = "Tenant analytics data")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid tenant ID format")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotImplemented, contentType: "application/json", bodyType: typeof(object), Description = "Analytics implementation pending")]
     public Task<IActionResult> GetTenantAnalyticsAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/tenants/{parentId:guid}")] HttpRequest req,
         Guid parentId,
@@ -91,13 +73,6 @@ public class AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
     /// Get detailed agent analytics
     /// </summary>
     [Function("GetAgentAnalytics")]
-    [OpenApiOperation(operationId: "GetAgentAnalytics", tags: ["Analytics"], Summary = "Get agent analytics", Description = "Retrieve comprehensive analytics data for a specific agent")]
-    [OpenApiParameter(name: "agentId", In = ParameterLocation.Path, Required = true, Type = typeof(Guid), Description = "The unique identifier of the agent")]
-    [OpenApiParameter(name: "timeRange", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Time range filter (1h, 24h, 7d, 30d, 90d) - default: 7d")]
-    [OpenApiParameter(name: "includeDetailedMetrics", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include detailed performance metrics")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(AgentAnalyticsResponse), Description = "Agent analytics data")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid agent ID format")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotImplemented, contentType: "application/json", bodyType: typeof(object), Description = "Analytics implementation pending")]
     public Task<IActionResult> GetAgentAnalyticsAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/agents/{agentId:guid}")] HttpRequest req,
         Guid agentId,
@@ -131,11 +106,6 @@ public class AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
     /// Generate comprehensive system reports
     /// </summary>
     [Function("GenerateReport")]
-    [OpenApiOperation(operationId: "GenerateReport", tags: ["Analytics"], Summary = "Generate report", Description = "Generate comprehensive analytics reports")]
-    [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(ReportGenerationRequest), Description = "Report generation parameters")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(ReportGenerationResponse), Description = "Generated report data")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid report request")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotImplemented, contentType: "application/json", bodyType: typeof(object), Description = "Reporting implementation pending")]
     public Task<IActionResult> GenerateReportAsync(
         [HttpTrigger(AuthorizationLevel.Function, "post", Route = "analytics/reports")] HttpRequest req,
         CancellationToken cancellationToken = default)
@@ -146,13 +116,14 @@ public class AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
         return Task.FromResult<IActionResult>(new ObjectResult(new { 
             message = "Report generation implementation is planned for a future release",
             status = "not_implemented",
-            plannedFeatures = new[] {
+            plannedFeatures = (string[])
+            [
                 "Performance reports",
                 "Security audit reports", 
                 "Usage reports",
                 "Compliance reports",
                 "Custom report templates"
-            }
+            ]
         })
         {
             StatusCode = StatusCodes.Status501NotImplemented
@@ -163,10 +134,6 @@ public class AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
     /// Get available report templates
     /// </summary>
     [Function("GetReportTemplates")]
-    [OpenApiOperation(operationId: "GetReportTemplates", tags: ["Analytics"], Summary = "Get report templates", Description = "Retrieve available report templates")]
-    [OpenApiParameter(name: "category", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Filter by category (performance, security, usage, compliance)")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(List<ReportTemplateResponse>), Description = "List of available report templates")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotImplemented, contentType: "application/json", bodyType: typeof(object), Description = "Report templates implementation pending")]
     public Task<IActionResult> GetReportTemplatesAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "analytics/report-templates")] HttpRequest req,
         CancellationToken cancellationToken = default)
@@ -191,11 +158,6 @@ public class AnalyticsFunctions(ILogger<AnalyticsFunctions> logger)
     /// Execute custom analytics queries
     /// </summary>
     [Function("ExecuteCustomQuery")]
-    [OpenApiOperation(operationId: "ExecuteCustomQuery", tags: ["Analytics"], Summary = "Execute custom analytics query", Description = "Execute custom analytics queries with validation and security checks")]
-    [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(CustomAnalyticsQueryRequest), Description = "Custom analytics query parameters")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(object), Description = "Query execution results")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid query parameters")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotImplemented, contentType: "application/json", bodyType: typeof(object), Description = "Custom analytics implementation pending")]
     public Task<IActionResult> ExecuteCustomQueryAsync(
         [HttpTrigger(AuthorizationLevel.Function, "post", Route = "analytics/custom-query")] HttpRequest req,
         CancellationToken cancellationToken = default)

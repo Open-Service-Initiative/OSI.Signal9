@@ -27,20 +27,6 @@ public class AgentFunctions(
     /// Get agents with advanced filtering, sorting, and pagination
     /// </summary>
     [Function("GetAgents")]
-    [OpenApiOperation(operationId: "GetAgents", tags: ["Agents"], Summary = "Get all agents", Description = "Retrieve a paginated list of agents with advanced filtering, sorting, and search capabilities")]
-    [OpenApiParameter(name: "parentId", In = ParameterLocation.Query, Required = false, Type = typeof(Guid), Description = "Filter by parent tenant ID")]
-    [OpenApiParameter(name: "status", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Filter by agent status (Online, Offline, Error)")]
-    [OpenApiParameter(name: "platform", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Filter by platform (Windows, Linux, macOS)")]
-    [OpenApiParameter(name: "search", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Search term for machine name, IP address, or description")]
-    [OpenApiParameter(name: "isOnline", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Filter by online status")]
-    [OpenApiParameter(name: "page", In = ParameterLocation.Query, Required = false, Type = typeof(int), Description = "Page number (default: 1)")]
-    [OpenApiParameter(name: "pageSize", In = ParameterLocation.Query, Required = false, Type = typeof(int), Description = "Page size (default: 20, max: 100)")]
-    [OpenApiParameter(name: "sortBy", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Sort field (default: MachineName)")]
-    [OpenApiParameter(name: "sortOrder", In = ParameterLocation.Query, Required = false, Type = typeof(string), Description = "Sort order: asc or desc (default: asc)")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(Signal9.Shared.DTOs.Base.PagedResponse<AgentResponse>), Description = "Paginated list of agents")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Validation failed")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.Unauthorized, contentType: "application/json", bodyType: typeof(object), Description = "Invalid tenant access")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
     public async Task<IActionResult> GetAgentsAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "agents")] HttpRequest req,
         CancellationToken cancellationToken = default)
@@ -96,13 +82,6 @@ public class AgentFunctions(
     /// Get a specific agent by ID with detailed information
     /// </summary>
     [Function("GetAgent")]
-    [OpenApiOperation(operationId: "GetAgent", tags: ["Agents"], Summary = "Get agent by ID", Description = "Retrieve a specific agent by its unique identifier with optional detailed metrics and telemetry")]
-    [OpenApiParameter(name: "agentId", In = ParameterLocation.Path, Required = true, Type = typeof(Guid), Description = "The unique identifier of the agent")]
-    [OpenApiParameter(name: "includeMetrics", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include agent performance metrics (default: false)")]
-    [OpenApiParameter(name: "includeTelemetry", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Include recent telemetry data (default: false)")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(AgentResponse), Description = "Agent details")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotFound, contentType: "application/json", bodyType: typeof(object), Description = "Agent not found")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
     public async Task<IActionResult> GetAgentAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "agents/{agentId:guid}")] HttpRequest req,
         Guid agentId,
@@ -149,12 +128,6 @@ public class AgentFunctions(
     /// Register a new agent in the Signal9 RMM system
     /// </summary>
     [Function("RegisterAgent")]
-    [OpenApiOperation(operationId: "RegisterAgent", tags: ["Agents"], Summary = "Register new agent", Description = "Register a new agent with the system using tenant code and agent details")]
-    [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(AgentRegistrationRequest), Description = "Agent registration details")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.Created, contentType: "application/json", bodyType: typeof(AgentResponse), Description = "Agent registered successfully")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid registration data")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotFound, contentType: "application/json", bodyType: typeof(object), Description = "Tenant not found")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
     public async Task<IActionResult> RegisterAgentAsync(
         [HttpTrigger(AuthorizationLevel.Function, "post", Route = "agents/register")] HttpRequest req,
         CancellationToken cancellationToken = default)
@@ -223,13 +196,6 @@ public class AgentFunctions(
     /// Update agent information
     /// </summary>
     [Function("UpdateAgent")]
-    [OpenApiOperation(operationId: "UpdateAgent", tags: ["Agents"], Summary = "Update agent", Description = "Update agent information including configuration, tags, and metadata")]
-    [OpenApiParameter(name: "agentId", In = ParameterLocation.Path, Required = true, Type = typeof(Guid), Description = "The unique identifier of the agent to update")]
-    [OpenApiRequestBody(contentType: "application/json", bodyType: typeof(AgentUpdateRequest), Description = "Agent update details")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.OK, contentType: "application/json", bodyType: typeof(AgentResponse), Description = "Agent updated successfully")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.BadRequest, contentType: "application/json", bodyType: typeof(object), Description = "Invalid update data")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotFound, contentType: "application/json", bodyType: typeof(object), Description = "Agent not found")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
     public async Task<IActionResult> UpdateAgentAsync(
         [HttpTrigger(AuthorizationLevel.Function, "put", Route = "agents/{agentId:guid}")] HttpRequest req,
         Guid agentId,
@@ -289,12 +255,6 @@ public class AgentFunctions(
     /// Delete/unregister an agent
     /// </summary>
     [Function("DeleteAgent")]
-    [OpenApiOperation(operationId: "DeleteAgent", tags: ["Agents"], Summary = "Delete agent", Description = "Delete/unregister an agent from the system with optional data preservation")]
-    [OpenApiParameter(name: "agentId", In = ParameterLocation.Path, Required = true, Type = typeof(Guid), Description = "The unique identifier of the agent to delete")]
-    [OpenApiParameter(name: "preserveData", In = ParameterLocation.Query, Required = false, Type = typeof(bool), Description = "Preserve historical data after deletion (default: false)")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.NoContent, contentType: "application/json", bodyType: typeof(void), Description = "Agent deleted successfully")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.NotFound, contentType: "application/json", bodyType: typeof(object), Description = "Agent not found")]
-    [OpenApiResponseWithBody(statusCode: HttpStatusCode.InternalServerError, contentType: "application/json", bodyType: typeof(object), Description = "Internal server error")]
     public async Task<IActionResult> DeleteAgentAsync(
         [HttpTrigger(AuthorizationLevel.Function, "delete", Route = "agents/{agentId:guid}")] HttpRequest req,
         Guid agentId,

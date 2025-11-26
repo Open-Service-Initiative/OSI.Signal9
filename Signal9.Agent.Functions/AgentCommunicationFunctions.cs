@@ -1,5 +1,3 @@
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
@@ -7,7 +5,6 @@ using Signal9.Shared.DTOs;
 using Signal9.Shared.Models;
 using System.Net;
 using System.Text.Json;
-using System.ComponentModel.DataAnnotations;
 
 namespace Signal9.Agent.Functions;
 
