@@ -6,8 +6,8 @@ using Microsoft.EntityFrameworkCore;
 using Signal9.Shared.Data;
 
 var builder = FunctionsApplication.CreateBuilder(args);
-builder.ConfigureFunctionsWebApplication();
 builder.AddServiceDefaults();
+builder.ConfigureFunctionsWebApplication();
 
 var connectionString = Environment.GetEnvironmentVariable("DefaultConnection");
 if (string.IsNullOrEmpty(connectionString))

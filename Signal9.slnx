@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".mcp.json" />
+  </Folder>
+  <Project Path="AppHost/AppHost.csproj" />
+  <Project Path="ServiceDefaults/ServiceDefaults.csproj" />
+  <Project Path="Signal9.Agent.Functions/Signal9.Agent.Functions.csproj" />
+  <Project Path="Signal9.Agent/Signal9.Agent.csproj" />
+  <Project Path="Signal9.Shared/Signal9.Shared.csproj" />
+  <Project Path="Signal9.Web.Functions/Signal9.Web.Functions.csproj" />
+  <Project Path="Signal9.Web/Signal9.Web.csproj" />
+</Solution>
