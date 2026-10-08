@@ -10,8 +10,8 @@ using System.Text;
 using Signal9.Shared.DTOs.Core;
 
 namespace Signal9.Agent.Services;    /// <summary>
-    /// Main agent service that handles communication with the Agent Functions and SignalR service
-    /// </summary>
+                                     /// Main agent service that handles communication with the Agent Functions and SignalR service
+                                     /// </summary>
 public class AgentService(
     ILogger<AgentService> logger,
     IOptions<AgentConfiguration> config,
@@ -32,98 +32,36 @@ public class AgentService(
     {
         logger.LogInformation("Agent service starting with ID: {AgentId}", _agentId);
 
-        // Start command processing task
-        var commandProcessingTask = ProcessCommandsAsync(stoppingToken);
-
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 // Register agent with Agent Functions
-                await RegisterWithAgentFunctions().ConfigureAwait(false);
-                
-                // Connect to SignalR hub
-                await ConnectToSignalRHub().ConfigureAwait(false);
-                
-                // Start heartbeat and telemetry timers
+                await RegisterWithAgentFunctions();
+
+                // Connect to SignalR for real-time communication
+                await ConnectToSignalR();
+
+                // Start periodic tasks
                 StartTimers();
-                
-                // Wait for connection to close or cancellation
-                await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
+
+                // Keep the service running while connected
+                while (_signalRConnection?.State == HubConnectionState.Connected && !stoppingToken.IsCancellationRequested)
+                {
+                    await Task.Delay(1000, stoppingToken);
+                }
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error in agent service execution");
                 _reconnectAttempts++;
-                
+
+                // Exponential backoff for reconnection attempts
                 var delaySeconds = Math.Min(Math.Pow(2, _reconnectAttempts), 300); // Max 5 minutes
                 var delay = TimeSpan.FromSeconds(delaySeconds);
                 logger.LogInformation("Reconnecting in {Delay} seconds (attempt {Attempt})", delay.TotalSeconds, _reconnectAttempts);
                 await Task.Delay(delay, stoppingToken);
             }
-        }
-
-        await commandProcessingTask.ConfigureAwait(false);
-    }
-
-    private async Task ProcessCommandsAsync(CancellationToken cancellationToken)
-    {
-        await foreach (var command in _commandReader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
-        {
-            try
-            {
-                await ProcessCommandAsync(command).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error processing command {CommandType}", command.Type);
-            }
-        }
-    }
-
-    private async Task ProcessCommandAsync(AgentCommand command)
-    {
-        _logger.LogInformation("Processing command: {CommandType}", command.Type);
-        
-        switch (command.Type)
-        {
-            case "GetSystemInfo":
-                var systemInfo = await _systemInfoProvider.GetSystemInfoAsync().ConfigureAwait(false);
-                await SendCommandResponse(command.Id, systemInfo).ConfigureAwait(false);
-                break;
-                
-            case "GetPerformanceMetrics":
-                var metrics = await _systemInfoProvider.GetPerformanceMetricsAsync().ConfigureAwait(false);
-                await SendCommandResponse(command.Id, metrics).ConfigureAwait(false);
-                break;
-                
-            case "RestartAgent":
-                _logger.LogInformation("Restart command received");
-                Environment.Exit(0);
-                break;
-                
-            default:
-                _logger.LogWarning("Unknown command type: {CommandType}", command.Type);
-                break;
-        }
-    }
-
-    private async Task SendCommandResponse(string commandId, object response)
-    {
-        try
-        {
-            if (_signalRConnection?.State == HubConnectionState.Connected)
-            {
-                await _signalRConnection.SendAsync("CommandResponse", commandId, response).ConfigureAwait(false);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error sending command response");
         }
     }
 
@@ -160,11 +98,11 @@ public class AgentService(
             };
 
             var json = JsonSerializer.Serialize(registrationData, _jsonOptions);
-            
+
             // Send registration via SignalR instead of HTTP
             await _signalRConnection.InvokeAsync("register", json);
             logger.LogInformation("Agent {AgentId} registration sent via SignalR", _agentId);
-            
+
             _reconnectAttempts = 0; // Reset reconnect attempts on successful registration
         }
         catch (Exception ex)
@@ -174,14 +112,14 @@ public class AgentService(
         }
     }
 
-    private async Task ConnectToSignalRHub()
+    private async Task ConnectToSignalR()
     {
         try
         {
             _signalRConnection = new HubConnectionBuilder()
-                .WithUrl($"{_config.AgentFunctionsUrl}/api")
-                .WithAutomaticReconnect()
-                .Build();
+            .WithUrl($"{_config.AgentFunctionsUrl}/api")
+            .WithAutomaticReconnect()
+            .Build();
 
             // Set up event handlers using Enhanced DTOs for API boundaries
             _signalRConnection.On<AgentCommandDto>("ExecuteCommand", ExecuteCommandAsync);
@@ -223,13 +161,13 @@ public class AgentService(
     private void StartTimers()
     {
         // Start heartbeat timer - capture instance for fire-and-forget
-        _heartbeatTimer = new Timer(_ => 
+        _heartbeatTimer = new Timer(_ =>
         {
             Task.Run(SendHeartbeatAsync);
         }, null, TimeSpan.Zero, TimeSpan.FromSeconds(30));
 
         // Start telemetry timer - capture instance for fire-and-forget
-        _telemetryTimer = new Timer(_ => 
+        _telemetryTimer = new Timer(_ =>
         {
             Task.Run(SendTelemetryAsync);
         }, null, TimeSpan.FromSeconds(10), TimeSpan.FromMinutes(1));
@@ -248,7 +186,7 @@ public class AgentService(
                 content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
 
                 var heartbeatUrl = $"{_config.AgentFunctionsUrl}/api/agents/{_agentId}/heartbeat";
-                await _httpClient.PostAsync(heartbeatUrl, content).ConfigureAwait(false);
+                await _httpClient.PostAsync(heartbeatUrl, content);
             }
         }
         catch (Exception ex)
@@ -269,7 +207,7 @@ public class AgentService(
             content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
 
             var telemetryUrl = $"{_config.AgentFunctionsUrl}/api/ReceiveTelemetry";
-            var response = await _httpClient.PostAsync(telemetryUrl, content).ConfigureAwait(false);
+            var response = await _httpClient.PostAsync(telemetryUrl, content);
 
             if (response.IsSuccessStatusCode)
             {
@@ -277,7 +215,7 @@ public class AgentService(
             }
             else
             {
-                logger.LogWarning("Failed to send telemetry for agent {AgentId}. Status: {StatusCode}", 
+                logger.LogWarning("Failed to send telemetry for agent {AgentId}. Status: {StatusCode}",
                     _agentId, response.StatusCode);
             }
         }
@@ -320,7 +258,7 @@ public class AgentService(
                     break;
             }
 
-            logger.LogInformation("Command {CommandType} executed successfully with result: {Result}", 
+            logger.LogInformation("Command {CommandType} executed successfully with result: {Result}",
                 command.CommandType, result);
         }
         catch (Exception ex)
@@ -330,7 +268,7 @@ public class AgentService(
     }
 
     // Method definitions removed due to compilation conflicts
-    
+
     private async Task UpdateConfigurationAsync(object configuration)
     {
         logger.LogInformation("Updating configuration for agent {AgentId}", _agentId);
@@ -340,7 +278,7 @@ public class AgentService(
 
     private async Task CollectTelemetryAsync(string[] metrics)
     {
-        logger.LogInformation("Collecting specific telemetry metrics for agent {AgentId}: {Metrics}", 
+        logger.LogInformation("Collecting specific telemetry metrics for agent {AgentId}: {Metrics}",
             _agentId, string.Join(", ", metrics));
         await SendTelemetryAsync();
     }

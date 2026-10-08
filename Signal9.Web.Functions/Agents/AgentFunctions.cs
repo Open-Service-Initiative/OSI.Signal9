@@ -42,17 +42,17 @@ public class AgentFunctions(
             var parentId = request.ParentId is Guid pid ? pid : Guid.Empty;
             if (!ValidateParentAccess(parentId))
             {
-                return new UnauthorizedObjectResult(new { error = "Invalid parent tenant access" });
+                return new UnauthorizedObjectResult(new { error = "Invalid parent access" });
             }
 
             // Execute query with filtering and pagination
             var agents = await agentService.GetAgentsAsync(request, cancellationToken);
 
             // Transform to response DTOs
-            var agentResponses = agents.Items.Select(agent => 
+            var agentResponses = agents.Items.Select(agent =>
                 AgentResponse.FromAgentDto(agent)).ToList();
 
-            var pagedResponse = new Signal9.Shared.DTOs.Base.PagedResponse<AgentResponse>
+            var pagedResponse = new Shared.DTOs.Base.PagedResponse<AgentResponse>
             {
                 Id = Guid.NewGuid(),
                 Items = agentResponses,
@@ -164,7 +164,14 @@ public class AgentFunctions(
             var configuration = await agentService.GenerateAgentConfigurationAsync(registeredAgent.Id, cancellationToken);
 
             // Create comprehensive response
-            var response = registeredAgent.CreateAgentResponse();
+            var response = new AgentRegistrationResponse
+            {
+                ParentId = registeredAgent.ParentId,  // Fixed: was TenantId
+                Agent = registeredAgent.CreateAgentResponse(),
+                Configuration = configuration,
+                RegistrationStatus = "Success",
+                Message = "Agent registered successfully"
+            };
 
             return new CreatedResult($"/api/agents/{registeredAgent.Id}", response);
         }

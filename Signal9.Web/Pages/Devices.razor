@@ -490,11 +490,11 @@
                     TenantCode = "default", // TODO: Get from context
                     MachineName = deviceForm.MachineName!,
                     OperatingSystem = deviceForm.OperatingSystem!,
-                    OSVersion = "Unknown", // Add required property
-                    Architecture = deviceForm.Architecture ?? "x64",
-                    IpAddress = deviceForm.IpAddress,
+                    OSVersion = "Unknown",  // Fixed: Required property was missing
+                    IpAddress = deviceForm.IpAddress!,
+                    Architecture = deviceForm.Architecture ?? "Unknown",
                     Version = "1.0.0",
-                    ParentId = Guid.NewGuid() // Changed from TenantId to ParentId
+                    ParentId = Guid.NewGuid() // Fixed: was TenantId, now ParentId for unified hierarchy
                 };
 
                 await DashboardService.CreateDeviceAsync(createRequest);

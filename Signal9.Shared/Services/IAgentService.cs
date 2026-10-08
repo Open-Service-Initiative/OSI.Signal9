@@ -10,9 +10,14 @@ namespace Signal9.Shared.Services;
 public interface IAgentService
 {
     /// <summary>
-    /// Get all agents with paging and filtering
+    /// Get all agents with advanced filtering and paging
     /// </summary>
     Task<PagedResponse<AgentDto>> GetAgentsAsync(AgentQueryRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Get all agents with simple paging (legacy support)
+    /// </summary>
+    Task<PagedResponse<object>> GetAgentsAsync(int page = 1, int pageSize = 50, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Get agent by ID with optional includes

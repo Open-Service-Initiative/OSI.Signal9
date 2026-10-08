@@ -7,6 +7,9 @@
       "type": "mssql",
       "connectionId": "ConnectionStrings:DatabaseConnection",
       "dynamicId": null
+    "storage1": {
+      "type": "storage",
+      "connectionId": "StorageConnection"
     }
   }
 }
