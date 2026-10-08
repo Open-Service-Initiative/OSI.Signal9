@@ -33,7 +33,6 @@ public static class ServiceCollectionExtensions
 
         // Register core services
         services.AddSingleton<ITableStorageService, TableStorageService>();
-        services.AddScoped<IAgentHubService, AgentHubService>();
         
         // TODO: Add back other services when interfaces are fixed
         // services.AddScoped<IRelationalDataService, RelationalDataService>();

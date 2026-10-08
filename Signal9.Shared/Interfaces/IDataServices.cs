@@ -35,15 +35,3 @@ public interface ITableStorageService
     Task CleanupOldTelemetryAsync(string tenantId, DateTime cutoffDate);
     Task<T> UpsertEntityAsync<T>(string tableName, T entity) where T : class, ITableEntity;
 }
-
-/// <summary>
-/// Interface for SignalR hub operations for real-time agent communication.
-/// </summary>
-public interface IAgentHubService
-{
-    Task SendCommandToAgentAsync(string agentId, object command);
-    Task NotifyAgentStatusChangeAsync(Guid parentId, Guid agentId, string status);
-    Task NotifyTelemetryUpdateAsync(Guid parentId, Guid agentId, TelemetryData telemetryData);
-    Task JoinTenantGroupAsync(string connectionId, Guid tenantId);
-    Task LeaveTenantGroupAsync(string connectionId, Guid tenantId);
-}
