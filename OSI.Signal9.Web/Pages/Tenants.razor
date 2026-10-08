@@ -1,0 +1,293 @@
+@page "/tenants"
+@using System.ComponentModel.DataAnnotations
+@inject Signal9ApiClient Api
+@inject IJSRuntime JS
+
+<PageTitle>Tenants - Signal9 RMM</PageTitle>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1>Tenants</h1>
+            <p class="text-muted mb-0">Organizations you manage. Agents enroll into a tenant using its code.</p>
+        </div>
+        <button class="btn btn-primary" @onclick="New"><i class="bi bi-plus-lg me-1"></i> New tenant</button>
+    </div>
+
+    <ErrorAlert @bind-Message="error" />
+
+    <div class="card">
+        <div class="card-body">
+            @if (tenants is null)
+            {
+                <div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>
+            }
+            else if (tenants.Count == 0)
+            {
+                <p class="text-muted mb-0">No tenants yet. Create one to start enrolling devices.</p>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr><th>Name</th><th>Code</th><th>Parent</th><th>Plan</th><th>Agents</th><th>Status</th><th>Contact</th><th class="text-end">Actions</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var tenant in tenants)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="fw-semibold">@tenant.Name</div>
+                                        <small class="text-muted">@tenant.Description</small>
+                                    </td>
+                                    <td><code>@tenant.Code</code></td>
+                                    <td>@NameOf(tenant.ParentTenantId)</td>
+                                    <td>@tenant.Plan</td>
+                                    <td>@tenant.AgentCount / @tenant.MaxAgents</td>
+                                    <td><span class="badge @(tenant.Status == TenantStatus.Active ? "bg-success" : "bg-secondary")">@tenant.Status</span></td>
+                                    <td>@tenant.ContactEmail</td>
+                                    <td class="text-end text-nowrap">
+                                        <button class="btn btn-sm btn-outline-primary" title="Edit" @onclick="() => Edit(tenant)"><i class="bi bi-pencil"></i></button>
+                                        <button class="btn btn-sm btn-outline-danger" title="Delete" @onclick="() => DeleteAsync(tenant)"><i class="bi bi-trash"></i></button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@if (showEditor)
+{
+    <div class="modal show d-block" tabindex="-1" role="dialog" aria-modal="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <EditForm Model="form" OnValidSubmit="SaveAsync">
+                    <DataAnnotationsValidator />
+                    <div class="modal-header">
+                        <h5 class="modal-title">@(editing is null ? "New tenant" : $"Edit {editing.Name}")</h5>
+                        <button type="button" class="btn-close" aria-label="Close" @onclick="CloseEditor"></button>
+                    </div>
+                    <div class="modal-body">
+                        <ErrorAlert @bind-Message="formError" />
+                        <div class="row g-3">
+                            <div class="col-md-8">
+                                <label class="form-label" for="name">Name</label>
+                                <InputText id="name" class="form-control" @bind-Value="form.Name" />
+                                <ValidationMessage For="() => form.Name" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label" for="code">Code</label>
+                                <InputText id="code" class="form-control" @bind-Value="form.Code" disabled="@(editing is not null)" />
+                                <ValidationMessage For="() => form.Code" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label" for="description">Description</label>
+                                <InputTextArea id="description" class="form-control" rows="2" @bind-Value="form.Description" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="email">Contact email</label>
+                                <InputText id="email" type="email" class="form-control" @bind-Value="form.ContactEmail" />
+                                <ValidationMessage For="() => form.ContactEmail" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="phone">Contact phone</label>
+                                <InputText id="phone" type="tel" class="form-control" @bind-Value="form.ContactPhone" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label" for="plan">Plan</label>
+                                <InputSelect id="plan" class="form-select" @bind-Value="form.Plan">
+                                    @foreach (var plan in Enum.GetValues<SubscriptionPlan>())
+                                    {
+                                        <option value="@plan">@plan</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label" for="maxAgents">Max agents</label>
+                                <InputNumber id="maxAgents" class="form-control" @bind-Value="form.MaxAgents" />
+                                <ValidationMessage For="() => form.MaxAgents" />
+                            </div>
+                            <div class="col-md-4">
+                                @if (editing is null)
+                                {
+                                    <label class="form-label" for="parent">Parent tenant</label>
+                                    <InputSelect id="parent" class="form-select" @bind-Value="form.ParentTenantId">
+                                        <option value="">None</option>
+                                        @foreach (var parent in tenants!.Where(t => t.ParentTenantId is null))
+                                        {
+                                            <option value="@parent.Id">@parent.Name</option>
+                                        }
+                                    </InputSelect>
+                                }
+                                else
+                                {
+                                    <label class="form-label" for="tenantStatus">Status</label>
+                                    <InputSelect id="tenantStatus" class="form-select" @bind-Value="form.Status">
+                                        @foreach (var status in Enum.GetValues<TenantStatus>())
+                                        {
+                                            <option value="@status">@status</option>
+                                        }
+                                    </InputSelect>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseEditor">Cancel</button>
+                        <button type="submit" class="btn btn-primary" disabled="@isSaving">Save</button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop show"></div>
+}
+
+@code {
+    private List<TenantDto>? tenants;
+    private string? error;
+
+    private bool showEditor;
+    private TenantDto? editing;
+    private TenantForm form = new();
+    private string? formError;
+    private bool isSaving;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            tenants = (await Api.GetTenantsAsync()).Items.ToList();
+        }
+        catch (Exception ex)
+        {
+            error = $"Could not load tenants: {ex.Message}";
+            tenants ??= [];
+        }
+    }
+
+    private string? NameOf(Guid? tenantId) => tenantId is null ? null : tenants?.FirstOrDefault(t => t.Id == tenantId)?.Name;
+
+    private void New()
+    {
+        editing = null;
+        form = new TenantForm();
+        formError = null;
+        showEditor = true;
+    }
+
+    private void Edit(TenantDto tenant)
+    {
+        editing = tenant;
+        form = new TenantForm
+        {
+            Code = tenant.Code,
+            Name = tenant.Name,
+            Description = tenant.Description,
+            ContactEmail = tenant.ContactEmail,
+            ContactPhone = tenant.ContactPhone,
+            Plan = tenant.Plan,
+            MaxAgents = tenant.MaxAgents,
+            Status = tenant.Status,
+        };
+        formError = null;
+        showEditor = true;
+    }
+
+    private void CloseEditor() => showEditor = false;
+
+    private async Task SaveAsync()
+    {
+        isSaving = true;
+        try
+        {
+            if (editing is null)
+            {
+                await Api.CreateTenantAsync(new CreateTenantRequest
+                {
+                    Code = form.Code.Trim().ToLowerInvariant(),
+                    Name = form.Name,
+                    Description = form.Description,
+                    ContactEmail = form.ContactEmail,
+                    ContactPhone = NullIfBlank(form.ContactPhone),
+                    ParentTenantId = form.ParentTenantId,
+                    Plan = form.Plan,
+                    MaxAgents = form.MaxAgents,
+                });
+            }
+            else
+            {
+                await Api.UpdateTenantAsync(editing.Id, new UpdateTenantRequest
+                {
+                    Name = form.Name,
+                    Description = form.Description,
+                    ContactEmail = form.ContactEmail,
+                    ContactPhone = NullIfBlank(form.ContactPhone),
+                    Plan = form.Plan,
+                    MaxAgents = form.MaxAgents,
+                    Status = form.Status,
+                });
+            }
+            showEditor = false;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            formError = ex.Message;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task DeleteAsync(TenantDto tenant)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete tenant {tenant.Name}?"))
+            return;
+        try
+        {
+            await Api.DeleteTenantAsync(tenant.Id);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            error = $"Could not delete {tenant.Name}: {ex.Message}";
+        }
+    }
+
+    private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    private sealed class TenantForm
+    {
+        [Required, StringLength(32, MinimumLength = 2), RegularExpression("^[a-zA-Z0-9][a-zA-Z0-9-]*$", ErrorMessage = "Use letters, digits and hyphens.")]
+        public string Code { get; set; } = string.Empty;
+
+        [Required, StringLength(200)]
+        public string Name { get; set; } = string.Empty;
+
+        [StringLength(1000)]
+        public string? Description { get; set; }
+
+        [Required, EmailAddress]
+        public string ContactEmail { get; set; } = string.Empty;
+
+        public string? ContactPhone { get; set; }
+
+        public Guid? ParentTenantId { get; set; }
+
+        public SubscriptionPlan Plan { get; set; } = SubscriptionPlan.Basic;
+
+        [Range(1, 100_000)]
+        public int MaxAgents { get; set; } = 25;
+
+        public TenantStatus Status { get; set; } = TenantStatus.Active;
+    }
+}

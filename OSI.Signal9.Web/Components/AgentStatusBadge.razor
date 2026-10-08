@@ -1,0 +1,19 @@
+<span class="badge @Color"><i class="bi @Icon me-1"></i>@Status</span>
+
+@code {
+    [Parameter, EditorRequired] public AgentStatus Status { get; set; }
+
+    private string Color => Status switch
+    {
+        AgentStatus.Online => "bg-success",
+        AgentStatus.Maintenance => "bg-warning text-dark",
+        _ => "bg-danger",
+    };
+
+    private string Icon => Status switch
+    {
+        AgentStatus.Online => "bi-check-circle",
+        AgentStatus.Maintenance => "bi-wrench",
+        _ => "bi-x-circle",
+    };
+}
