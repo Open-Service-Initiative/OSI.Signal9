@@ -1,199 +1,64 @@
-# Signal9 RMM Agent System
+# Signal9
 
-A comprehensive Remote Monitoring and Management (RMM) system built on .NET 9 with SignalR for real-time communication between agents and the central hub.
+Remote monitoring and management (RMM) for MSPs. Pre-alpha: not ready for production use. Authentication is not implemented yet.
 
-## Architecture Overview
+## Projects
 
-Signal9 is designed as a modern, cloud-native RMM solution with the following components:
+| Project | What it is |
+| --- | --- |
+| `OSI.Signal9.API` | ASP.NET Core REST API and SignalR hubs. EF Core on Azure SQL. Deployed to Azure Container Apps. |
+| `OSI.Signal9.Web` | Blazor WebAssembly dashboard. Deployed to Azure Static Web Apps. |
+| `OSI.Signal9.Agent` | Windows Service installed on managed machines. |
+| `OSI.Signal9.Contracts` | Request/response types shared by the API, Web and Agent. |
+| `OSI.Signal9.AppHost` | Aspire orchestration for local development. |
+| `OSI.Signal9.ServiceDefaults` | Aspire defaults: OpenTelemetry, health checks, resilience. |
+| `OSI.Signal9.API.Tests` | Integration tests for the API. |
 
-### Core Components
+## Running locally
 
-- **Signal9.Agent** - Console application that runs on client machines to collect telemetry and execute commands
-- **Signal9.Hub** - SignalR hub service for real-time communication with agents
-- **Signal9.WebPortal** - Web-based management interface for monitoring and controlling agents
-- **Signal9.Functions** - Azure Functions for backend data processing and API operations
-- **Signal9.Shared** - Common models, interfaces, and utilities shared across components
+Prerequisites: .NET 10 SDK and Docker (for the SQL Server container).
 
-### Azure Services
-
-- **Azure Container Apps** - Hosting for Hub and Web Portal
-- **Azure Functions** - Serverless backend processing
-- **Azure SignalR Service** - Managed SignalR for scalable real-time communication
-- **Azure SQL Database** - Relational data (agents, users, configurations)
-- **Azure Cosmos DB** - Non-relational data (telemetry, logs, events)
-- **Azure Service Bus** - Message queuing for commands and events
-- **Azure Key Vault** - Secrets and configuration management
-- **Azure Application Insights** - Monitoring and diagnostics
-- **Azure Container Registry** - Container image storage
-
-## Features
-
-### Agent Capabilities
-- Real-time system monitoring (CPU, memory, disk, network)
-- Remote command execution
-- Event log collection
-- System information reporting
-- Automatic reconnection with exponential backoff
-- Configurable telemetry collection intervals
-
-### Hub & Management
-- Real-time agent status monitoring
-- Command dispatching to agents
-- Telemetry data aggregation
-- Multi-tenant support
-- Role-based access control
-- Scalable architecture with Azure SignalR
-
-### Security
-- Managed Identity authentication
-- Encrypted communication
-- Secure secret storage in Key Vault
-- Network-level security with Virtual Networks
-
-## Getting Started
-
-### Prerequisites
-
-- .NET 9 SDK
-- Azure CLI
-- Azure Developer CLI (azd)
-- Docker (for containerization)
-- Visual Studio 2022 or VS Code
-
-### Local Development
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd Signal9
-   ```
-
-2. **Restore dependencies**
-   ```bash
-   dotnet restore
-   ```
-
-3. **Build the solution**
-   ```bash
-   dotnet build
-   ```
-
-4. **Run the Hub locally**
-   ```bash
-   cd src/Signal9.Hub
-   dotnet run
-   ```
-
-5. **Run the Agent locally**
-   ```bash
-   cd src/Signal9.Agent
-   dotnet run
-   ```
-
-### Azure Deployment
-
-1. **Initialize Azure Developer CLI**
-   ```bash
-   azd init
-   ```
-
-2. **Deploy to Azure**
-   ```bash
-   azd up
-   ```
-
-3. **Configure SQL password when prompted**
-
-## Configuration
-
-### Agent Configuration (appsettings.json)
-
-```json
-{
-  "AgentConfiguration": {
-    "HubUrl": "https://your-hub-url/agentHub",
-    "TenantCode": "your-tenant",
-    "GroupName": "default",
-    "HeartbeatInterval": 30,
-    "TelemetryInterval": 60,
-    "ReconnectDelay": 5,
-    "MaxReconnectAttempts": 10
-  }
-}
+```sh
+dotnet run --project OSI.Signal9.AppHost
 ```
 
-### Hub Configuration
+This starts SQL Server, the API (`https://localhost:7201`, migrations applied on startup) and the dashboard (`https://localhost:7001`). The OpenAPI document is at `https://localhost:7201/openapi/v1.json`, and `OSI.Signal9.API/OSI.Signal9.API.http` has sample requests.
 
-The hub automatically configures itself using Azure services when deployed to Azure:
-- SignalR connection from Azure SignalR Service
-- Key Vault for secrets
-- Application Insights for monitoring
+To enroll a machine, create a tenant in the dashboard, then run the agent with its code:
 
-## Project Structure
-
+```sh
+dotnet run --project OSI.Signal9.Agent -- --Agent:TenantCode=<code>
 ```
-Signal9/
-├── src/
-│   ├── Signal9.Agent/          # RMM Agent console application
-│   ├── Signal9.Hub/            # SignalR Hub web service
-│   ├── Signal9.WebPortal/      # Management web application
-│   ├── Signal9.Functions/      # Azure Functions
-│   └── Signal9.Shared/         # Shared libraries
-├── infra/                      # Bicep infrastructure templates
-├── tests/                      # Unit and integration tests
-├── docs/                       # Documentation
-├── azure.yaml                  # Azure Developer CLI configuration
-└── Signal9.sln                 # Solution file
-```
+
+## API
+
+| Resource | Methods |
+| --- | --- |
+| `/api/tenants` | `GET` (paged), `POST` |
+| `/api/tenants/{tenantId}` | `GET`, `PUT`, `DELETE` |
+| `/api/agents` | `GET` (paged; `tenantId`, `status`, `group`, `search` filters), `POST` (agent enrollment) |
+| `/api/agents/{agentId}` | `GET`, `PUT` (group, tags, maintenance), `DELETE` |
+| `/api/agents/{agentId}/heartbeat` | `PUT` |
+| `/api/agents/{agentId}/telemetry` | `GET` (paged; `from`, `to`), `POST` |
+| `/api/agents/{agentId}/telemetry/{sampleId}` | `GET` |
+| `/api/agents/{agentId}/commands` | `GET` (paged; `status`), `POST` |
+| `/api/agents/{agentId}/commands/{commandId}` | `GET` |
+| `/api/agents/{agentId}/commands/{commandId}/result` | `PUT` (agent reports the outcome) |
+| `/api/agents/{agentId}/commands/{commandId}/cancellation` | `PUT` |
+
+Hubs: `/hubs/agents` (commands pushed to agents) and `/hubs/dashboard` (live updates for the dashboard).
 
 ## Development
 
-### Adding New Telemetry Metrics
+```sh
+dotnet build OSI.Signal9.slnx
+dotnet test --solution OSI.Signal9.slnx
+dotnet tool restore
+dotnet ef migrations add <Name> --project OSI.Signal9.API --output-dir Data/Migrations
+```
 
-1. Update `TelemetryDto` in `Signal9.Shared/DTOs/AgentDTOs.cs`
-2. Implement collection logic in `TelemetryCollector.cs`
-3. Update the hub to handle new metrics
-
-### Adding New Agent Commands
-
-1. Define command type in `AgentCommand.cs`
-2. Implement execution logic in `AgentService.ExecuteCommandAsync`
-3. Add command dispatching in the hub or web portal
-
-### Database Migrations
-
-Entity Framework migrations are handled automatically during deployment.
-
-## Monitoring
-
-- **Application Insights** - Performance monitoring and diagnostics
-- **Azure Monitor** - Infrastructure monitoring
-- **Log Analytics** - Centralized logging
-- **Azure Alerts** - Proactive notifications
-
-## Security Considerations
-
-- All inter-service communication uses Managed Identity
-- Secrets are stored in Azure Key Vault
-- Network traffic is encrypted with TLS
-- SQL connections use Azure AD authentication
-- RBAC controls access to Azure resources
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+Package versions are managed centrally in `Directory.Packages.props`. CI treats warnings, including vulnerable packages, as errors.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Support
-
-For issues and questions:
-- Create an issue in the repository
-- Review the documentation in the `/docs` folder
-- Check Azure Monitor logs for runtime issues
+See [LICENSE](LICENSE).
