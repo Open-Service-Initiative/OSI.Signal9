@@ -1,15 +1,25 @@
+@using Microsoft.AspNetCore.SignalR.Client
 @inject DashboardHubConnection Hub
 @implements IDisposable
 
-<span class="badge @(Hub.IsConnected ? "bg-success" : "bg-secondary")" title="Live updates from the API">
-    <i class="bi @(Hub.IsConnected ? "bi-wifi" : "bi-wifi-off")"></i> @(Hub.IsConnected ? "Live" : "Offline")
-</span>
+@switch (Hub.State)
+{
+    case HubConnectionState.Connected:
+        <span class="badge bg-success" title="Receiving live updates from the API"><i class="bi bi-wifi"></i> Live</span>
+        break;
+    case HubConnectionState.Connecting or HubConnectionState.Reconnecting:
+        <span class="badge bg-warning text-dark" title="Connecting to the API for live updates"><i class="bi bi-arrow-repeat"></i> Connecting</span>
+        break;
+    default:
+        <span class="badge bg-secondary" title="Not receiving live updates; retrying in the background"><i class="bi bi-wifi-off"></i> Offline</span>
+        break;
+}
 
 @code {
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         Hub.OnStateChanged += Refresh;
-        await Hub.StartAsync();
+        _ = Hub.StartAsync();
     }
 
     private Task Refresh() => InvokeAsync(StateHasChanged);

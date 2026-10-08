@@ -18,10 +18,10 @@
                 </div>
                 <div>
                     <button class="btn btn-primary" @onclick="ShowCreateModal">
-                        <span class="material-icons me-2" style="font-size: 18px;">add</span> Create Alert
+                        <i class="bi bi-plus-lg me-2"></i> Create Alert
                     </button>
                     <button class="btn btn-outline-secondary ms-2" @onclick="RefreshData">
-                        <span class="material-icons me-2" style="font-size: 18px;">refresh</span> Refresh
+                        <i class="bi bi-arrow-clockwise me-2"></i> Refresh
                     </button>
                 </div>
             </div>
@@ -186,17 +186,17 @@
                                                     @if (alert.Status == "Active")
                                                     {
                                                         <button class="btn btn-warning btn-sm" @onclick="() => AcknowledgeAlert(alert)" title="Acknowledge Alert">
-                                                            <span class="material-icons" style="font-size: 16px;">check</span>
+                                                            <i class="bi bi-check-lg"></i>
                                                         </button>
                                                     }
                                                     @if (alert.Status != "Resolved")
                                                     {
                                                         <button class="btn btn-success btn-sm" @onclick="() => ResolveAlert(alert)" title="Resolve Alert">
-                                                            <span class="material-icons" style="font-size: 16px;">check_circle</span>
+                                                            <i class="bi bi-check-circle"></i>
                                                         </button>
                                                     }
                                                     <button class="btn btn-info btn-sm" @onclick="() => ViewAlertDetails(alert)" title="View Details">
-                                                        <span class="material-icons" style="font-size: 16px;">visibility</span>
+                                                        <i class="bi bi-eye"></i>
                                                     </button>
                                                 </div>
                                             </td>
