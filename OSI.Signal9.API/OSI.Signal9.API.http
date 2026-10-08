@@ -1,0 +1,30 @@
+@api = https://localhost:7201
+
+### Create a tenant
+POST {{api}}/api/tenants
+Content-Type: application/json
+
+{
+  "code": "contoso",
+  "name": "Contoso",
+  "contactEmail": "it@contoso.example",
+  "maxAgents": 25
+}
+
+### List tenants
+GET {{api}}/api/tenants?page=1&pageSize=25
+
+### Enroll an agent
+POST {{api}}/api/agents
+Content-Type: application/json
+
+{
+  "tenantCode": "contoso",
+  "machineName": "CONTOSO-PC01",
+  "operatingSystem": "Windows 11 Pro",
+  "processorCores": 8,
+  "totalMemoryMb": 16384
+}
+
+### List online agents
+GET {{api}}/api/agents?status=Online

@@ -1,83 +1,9 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+# azd deploys the Aspire AppHost: the API to Azure Container Apps and Azure SQL.
+# The Blazor app is deployed separately to Azure Static Web Apps (see swa-cli.config.json).
 name: signal9
-metadata:
-  template: signal9@0.0.1-beta
-
 services:
-  web-functions:
-    project: ./Signal9.Web.Functions
-    language: csharp
-    host: function
-    hooks:
-      prebuild:
-        windows:
-          shell: pwsh
-          run: |
-            echo "Building Signal9 Web Functions..."
-            dotnet restore
-            dotnet build --configuration Release
-        posix:
-          shell: sh
-          run: |
-            echo "Building Signal9 Web Functions..."
-            dotnet restore
-            dotnet build --configuration Release
-
-  agent-functions:
-    project: ./Signal9.Agent.Functions
-    language: csharp
-    host: function
-    hooks:
-      prebuild:
-        windows:
-          shell: pwsh
-          run: |
-            echo "Building Signal9 Agent Functions..."
-            dotnet restore
-            dotnet build --configuration Release
-        posix:
-          shell: sh
-          run: |
-            echo "Building Signal9 Agent Functions..."
-            dotnet restore
-            dotnet build --configuration Release
-      
-  web:
-    project: ./Signal9.Web
-    language: csharp
-    host: staticwebapp
-    hooks:
-      prebuild:
-        windows:
-          shell: pwsh
-          run: |
-            echo "Building Signal9 Web..."
-            dotnet restore
-            dotnet build --configuration Release
-        posix:
-          shell: sh
-          run: |
-            echo "Building Signal9 Web..."
-            dotnet restore
-            dotnet build --configuration Release
-
-resources:
-  cosmos:
-    type: db.cosmos
-    containers:
-      - name: signal9
-        partitionKeys: 
-          - /id
-
-  key-vault:
-    type: keyvault
-
-infra:
-  provider: bicep
-  path: ./infra
-  parameters:
-    sqlAdminPassword:
-      type: string
-      secret: true
-
-pipeline:
-  provider: github
+  app:
+    language: dotnet
+    project: ./OSI.Signal9.AppHost/OSI.Signal9.AppHost.csproj
+    host: containerapp

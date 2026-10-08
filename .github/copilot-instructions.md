@@ -46,87 +46,36 @@ As a large language model, you have access to a variety of tools that can assist
 
 ## Architecture Overview
 
-Signal9 is a **serverless-first RMM (Remote Monitoring and Management)** platform built with .NET 9, Azure Functions, and Blazor Server. The platform follows a **multi-tenant SaaS architecture** with strict tenant isolation.
+Signal9 is a multi-tenant RMM platform. See README.md for the project layout.
 
-### Core Components
-- **Signal9.Web** - Blazor Server portal (port 7001) for management UI
-- **Signal9.Web.Functions** - CRUD API backend (port 7072) for web portal
-- **Signal9.Agent.Functions** - Agent communication API (port 7071) for telemetry/commands  
-- **Signal9.Agent** - Client-side agent deployed on managed machines
-- **Signal9.Shared** - Common DTOs, models, and interfaces
+- `OSI.Signal9.API`: ASP.NET Core controller API (strict REST) plus SignalR hubs, EF Core on Azure SQL. Hosted on Azure Container Apps.
+- `OSI.Signal9.Web`: Blazor WebAssembly dashboard, hosted on Azure Static Web Apps.
+- `OSI.Signal9.Agent`: Windows Service on managed machines. Enrolls, heartbeats, sends telemetry, runs commands.
+- `OSI.Signal9.Contracts`: DTOs, enums and hub interfaces shared by all three. No server-side dependencies (it ships in the WASM bundle).
+- `OSI.Signal9.AppHost` / `OSI.Signal9.ServiceDefaults`: Aspire orchestration for local development and deployment.
 
-### Key Architectural Patterns
+## API Conventions
 
-**Multi-Tenant Data Isolation**: Every DTO inherits from `TenantScopedDto` which includes `TenantId`. Never query data without tenant filtering.
+- Resource-oriented routes under `/api`, plural nouns, nested only for ownership (`/api/agents/{agentId}/commands`).
+- GET 200, POST 201 with a `Location` header (`CreatedAtRoute`), PUT replaces and returns 200, DELETE returns 204.
+- State changes that aren't CRUD are modeled as sub-resources (`PUT .../commands/{id}/result`, `PUT .../cancellation`), not verbs in the URL.
+- Errors are `application/problem+json`: 400 validation, 404 missing, 409 state conflicts. Never return 200 for a failure.
+- Collections take `?page=&pageSize=` (max 100) and return `PagedResult<T>`. Don't name an action parameter `page`; it breaks query binding.
+- Validate requests with data annotations on the contract types; validation attributes on positional records go on the constructor parameters.
+- Enums are serialized as strings everywhere via `Signal9Json`.
+- Inject `TimeProvider`; never call `DateTime.UtcNow` directly, so tests can control time.
 
-**DTO-First Design**: All API contracts are defined in `Signal9.Shared/DTOs/` with comprehensive validation attributes. DTOs use records for immutability and inheritance hierarchy starting from `BaseDto`.
+## Data
 
-**Function App Separation**: Web functions handle user/dashboard operations while Agent functions handle telemetry collection and command execution. This separation enables independent scaling.
+- EF Core with SQL Server. Change the model, then add a migration: `dotnet ef migrations add <Name> --project OSI.Signal9.API --output-dir Data/Migrations`.
+- Store UTC `DateTime` in entities; expose `DateTimeOffset` in contracts.
+- Agent status is derived (maintenance flag + last heartbeat), not stored.
 
-## Development Workflow
+## Testing
 
-### Build & Test Commands
-- Solution build: `dotnet build` or VS Code task `build-solution`
-- Testing: `dotnet test --logger trx --collect:"XPlat Code Coverage"`
+- `OSI.Signal9.API.Tests` hosts the API in memory against SQLite with a `FakeTimeProvider`. Add a test for every new endpoint covering its status codes.
+- Run with `dotnet test --solution OSI.Signal9.slnx`.
 
-## Critical Development Patterns
+## Not Built Yet
 
-### DTO Architecture Rules
-1. **Always inherit from `TenantScopedDto`** for tenant-specific data
-2. **Use validation attributes** extensively - see existing DTOs in `AgentDTOs.cs`, and `ValidationRules.md`
-3. **Records over classes** for DTOs to ensure immutability
-4. **Required properties** use `required` keyword, not nullable types
-
-### Function Development
-- **HTTP triggers use `AuthorizationLevel.Function`** for security
-- **Route patterns**: Web functions use `/api/{resource}`, Agent functions use `/api/agents/{action}`
-- **Error handling**: Return proper HTTP status codes with structured error responses
-- **Logging**: Use `ILogger<T>` extensively for Application Insights integration
-
-### Multi-Tenant Considerations
-- **Never query without TenantId filtering** - this is enforced by `TenantScopedDto`
-- **Tenant authentication** via `TenantCode` in agent registration flows
-- **Tag-based organization** within tenants for device grouping
-
-### SignalR Integration
-Agent communication uses SignalR through `IAgentHub` and `IAgentClient` interfaces. Hub methods handle agent registration, telemetry, and command execution.
-
-## File Organization Conventions
-
-### DTO Structure
-```
-Signal9.Shared/DTOs/
-├── Base/           # BaseDto, TenantScopedDto
-├── AgentDTOs.cs    # Agent registration, telemetry
-├── TenantAgentDTOs.cs  # Cross-tenant operations
-├── {Domain}/       # Domain-specific DTOs (Analytics, Security, etc.)
-```
-
-### Function Organization
-- **One function class per domain** (e.g., `TenantsFunctions`, `AgentsFunctions`)
-- **OpenAPI documentation** via attributes for API discoverability
-- **Consistent naming**: `{Action}{Resource}Async` methods
-
-### Configuration Patterns
-- **Local development**: Uses `local.settings.json` with `UseDevelopmentStorage=true`
-- **Azure deployment**: Key Vault integration for secrets, Managed Identity for auth
-- **Environment-specific**: `appsettings.{Environment}.json` pattern
-
-## Common Implementation Tasks
-
-### Adding New Telemetry Metrics
-1. Update `TelemetryData` DTO in `AgentDTOs.cs`
-2. Implement collection in `Signal9.Agent/Services/TelemetryCollector.cs`
-3. Add processing logic in Agent Functions
-
-### Adding New API Endpoints
-1. Create DTO in appropriate domain folder
-2. Add function method with proper attributes and validation
-3. Follow existing patterns for error handling and response formatting
-
-### Agent Command Implementation
-1. Define command type in shared models
-2. Implement execution in `AgentService.ExecuteCommandAsync`
-3. Add SignalR hub method for command dispatch
-
-Remember: This platform emphasizes **serverless scalability** and **strict multi-tenancy** - always consider these factors in any code changes.
+Authentication (Entra ID for users, enrollment secrets and credentials for agents), tenant isolation per user, and remote script execution. Look for `TODO(auth)` markers. Do not add commands that execute arbitrary code until agents are authenticated and commands are signed.
