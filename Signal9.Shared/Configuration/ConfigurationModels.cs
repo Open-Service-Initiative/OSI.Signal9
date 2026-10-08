@@ -1,51 +1,6 @@
 namespace Signal9.Shared.Configuration;
 
 /// <summary>
-/// Configuration for Azure services
-/// </summary>
-public class AzureConfiguration
-{
-    public string? KeyVaultUrl { get; set; }
-    public string? ApplicationInsightsConnectionString { get; set; }
-    public CosmosDbConfiguration CosmosDb { get; set; } = new();
-    public SqlDatabaseConfiguration SqlDatabase { get; set; } = new();
-    public ServiceBusConfiguration ServiceBus { get; set; } = new();
-    public SignalRConfiguration SignalR { get; set; } = new();
-}
-
-public class CosmosDbConfiguration
-{
-    public string? ConnectionString { get; set; }
-    public string? DatabaseName { get; set; } = "Signal9";
-    public string TelemetryContainer { get; set; } = "telemetry";
-    public string LogsContainer { get; set; } = "logs";
-    public string EventsContainer { get; set; } = "events";
-}
-
-public class SqlDatabaseConfiguration
-{
-    public string? ConnectionString { get; set; }
-    public bool EnableSensitiveDataLogging { get; set; } = false;
-    public int CommandTimeout { get; set; } = 30;
-}
-
-public class ServiceBusConfiguration
-{
-    public string? ConnectionString { get; set; }
-    public string CommandQueue { get; set; } = "agent-commands";
-    public string TelemetryTopic { get; set; } = "telemetry";
-    public string EventsTopic { get; set; } = "events";
-}
-
-public class SignalRConfiguration
-{
-    public string? ConnectionString { get; set; }
-    public string HubName { get; set; } = "AgentHub";
-    public int KeepAliveInterval { get; set; } = 15;
-    public int ClientTimeoutInterval { get; set; } = 30;
-}
-
-/// <summary>
 /// Configuration for agent behavior
 /// </summary>
 public class AgentConfiguration
