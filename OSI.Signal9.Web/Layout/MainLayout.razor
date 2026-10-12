@@ -1,0 +1,25 @@
+@inherits LayoutComponentBase
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            <div class="top-row-left">
+                <div class="navbar-brand">
+                    <i class="bi bi-lightning-charge-fill text-primary"></i>
+                    Signal9 RMM Portal
+                </div>
+            </div>
+            <div class="top-row-right">
+                <LiveStatus />
+            </div>
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
