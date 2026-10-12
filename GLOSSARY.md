@@ -28,6 +28,10 @@ _Avoid_: Move, re-parent, migration
 A person known to Signal9, belonging to exactly one tenant, whether or not they can sign in yet. Being a user grants no access by itself.
 _Avoid_: Account, member, login, end user and contact (as separate kinds of person)
 
+**Role**:
+A named set of things its holder may do, granted to a user only through a role assignment. Signal9 ships built-in roles that can't be changed.
+_Avoid_: Permission set, group, profile
+
 **Role assignment**:
 A grant of one role to one user at one tenant (the assigned tenant), covering that tenant and its descendants. The only source of a user's access, apart from being a Superadministrator.
 _Avoid_: Permission, membership, grant, home tenant (say "assigned tenant")
@@ -65,6 +69,10 @@ _Avoid_: Connector, plugin, API access
 **Device**:
 A managed machine. Owns its telemetry and command history across reinstalls of the agent.
 _Avoid_: Computer, endpoint, machine, asset
+
+**Device transfer**:
+Moving a device to a different tenant. Its agent, telemetry and command history go with it.
+_Avoid_: Move, re-assign
 
 **Agent**:
 One enrolled installation of the Signal9 agent software on a device, holding its own credential. A device has at most one active agent.
