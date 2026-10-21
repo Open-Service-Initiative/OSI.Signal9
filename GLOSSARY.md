@@ -2,6 +2,16 @@
 
 Remote monitoring and management of machines, organized under a hierarchy of tenants that can model anything from a single enterprise to a consultant overseeing several MSPs.
 
+## Deployment
+
+**Deployment**:
+One running installation of Signal9, with its own tenant trees, users and keys.
+_Avoid_: Installation, environment
+
+**Operator**:
+The organization that runs a deployment and owns its infrastructure and Entra app registration. An organization, unlike a Superadministrator, who is a person; an operator's own MSP is usually also a tenant in its deployment.
+_Avoid_: Host, provider, vendor
+
 ## Tenancy
 
 **Tenant**:
@@ -70,6 +80,14 @@ _Avoid_: Connector, plugin, API access
 A managed machine. Owns its telemetry and command history across reinstalls of the agent.
 _Avoid_: Computer, endpoint, machine, asset
 
+**Device status**:
+Whether a device is Online or Offline, judged by its active agent checking in. A device with no active agent is Offline.
+_Avoid_: Connectivity, health, state
+
+**Maintenance mode**:
+A toggle on a device marking planned downtime, during which it raises no alerts. Belongs to the device, so it survives agent reinstalls.
+_Avoid_: Maintenance status, snooze
+
 **Device transfer**:
 Moving a device to a different tenant. Its agent, telemetry and command history go with it.
 _Avoid_: Move, re-assign
@@ -82,9 +100,25 @@ _Avoid_: Client, sensor
 Deciding which device a newly enrolled agent belongs to: an existing device, or a new one. Ambiguous cases wait for a person to decide.
 _Avoid_: Matching, pairing, onboarding
 
+**Agent package**:
+A signed build of the agent software for one operating system and install format, published by OSI with each release. One generic package serves every deployment.
+_Avoid_: Installer build, MSI (unless you mean that format), binary
+
+**Install parameters**:
+The deployment address and enrollment token given to an agent package at install time, by command line, prompt or managed configuration.
+_Avoid_: Install config, setup keys
+
 **Enrollment token**:
 A revocable secret, issued for one tenant, that lets new agents enroll into it. Reusable and non-expiring unless it is given a use limit or an expiry.
 _Avoid_: Tenant code, install key, registration key
+
+**Agent status**:
+Whether an agent may receive commands: Active, or the first that applies of Revoked, Awaiting approval and Update required, all of which block commands.
+_Avoid_: Command block, health, agent state
+
+**Uninstall PIN**:
+An optional secret set on a tenant, and inherited by its descendants, that must be supplied to remove the agent from a device.
+_Avoid_: Uninstall password, tamper code
 
 **Agent approval**:
 A person confirming that a newly enrolled agent may receive commands. Needed only where the agent's tenant, or one of its ancestors, holds new agents for approval.

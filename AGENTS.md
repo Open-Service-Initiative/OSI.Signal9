@@ -2,6 +2,15 @@
 
 Signal9 is a multi-tenant RMM platform. See `README.md` for the project layout, `GLOSSARY.md` for domain vocabulary, and `docs/adr/` for the architecture decisions the codebase is moving towards. Where today's code disagrees with an ADR, the ADR is the target.
 
+## Principles
+
+These are Open Service Initiative tenets. Hold every change to them:
+
+- **API-first.** The public API is the product. Every dashboard capability must also be reachable through the API, by a third-party API application.
+- **TDD.** Write the failing test first. See Testing below.
+- **KISS.** Prefer the simplest design that meets the requirement.
+- **Linear git history.** Rebase or squash; never merge commits.
+
 ## Projects
 
 - `OSI.Signal9.API`: ASP.NET Core controller API plus SignalR hubs, using EF Core on SQL Server.
