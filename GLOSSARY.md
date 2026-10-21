@@ -127,3 +127,25 @@ _Avoid_: Uninstall password, tamper code
 **Agent approval**:
 A person confirming that a newly enrolled agent may receive commands. Needed only where the agent's tenant, or one of its ancestors, holds new agents for approval.
 _Avoid_: Quarantine, pending, authorization
+
+## Remote work
+
+**Command**:
+A built-in RMM action for one agent, such as rebooting, restarting a service, updating the agent or uninstalling it. Runs at most once, and ends in one of these statuses: Succeeded, Failed, Timed out, Cancelled, Expired (never claimed in time) or Abandoned (claimed, but no result came back).
+_Avoid_: Action, task, job, instruction
+
+**Script**:
+Code saved in Signal9 at an owning tenant, in PowerShell or CMD, with its own default timeout.
+_Avoid_: Snippet, automation, task
+
+**Sharing**:
+A script's setting for who may see and run it: people at its owning tenant only (the default), who may still run it on devices in descendants, or also people at descendant tenants, who may run but not edit it.
+_Avoid_: Access scope (scopes are permissions), visibility
+
+**Script execution**:
+One run of a saved script or of ad-hoc code on one device, recording the exact content that ran. Follows the same lifecycle and statuses as a command.
+_Avoid_: Script run, job, deployment
+
+**Terminal session**:
+An interactive shell on a device, audited with a full transcript. Like ad-hoc code, it is arbitrary execution and needs its own permission.
+_Avoid_: Remote shell, console
