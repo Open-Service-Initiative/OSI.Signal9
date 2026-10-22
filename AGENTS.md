@@ -13,7 +13,7 @@ These are Open Service Initiative tenets. Hold every change to them:
 
 ## Projects
 
-- `OSI.Signal9.API`: ASP.NET Core controller API plus SignalR hubs, using EF Core on SQL Server.
+- `OSI.Signal9.API`: ASP.NET Core controller API plus SignalR hubs, using EF Core. The code still uses SQL Server; the target is PostgreSQL (ADR-0011).
 - `OSI.Signal9.Web`: Blazor WebAssembly dashboard.
 - `OSI.Signal9.Agent`: Windows Service on managed devices. It enrolls, sends heartbeats and telemetry, and runs commands.
 - `OSI.Signal9.Contracts`: DTOs, enums and hub interfaces shared by the other projects. It has no server-side dependencies, because it ships in the WASM bundle.

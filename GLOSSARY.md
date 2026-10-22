@@ -149,3 +149,29 @@ _Avoid_: Script run, job, deployment
 **Terminal session**:
 An interactive shell on a device, audited with a full transcript. Like ad-hoc code, it is arbitrary execution and needs its own permission.
 _Avoid_: Remote shell, console
+
+## Monitoring
+
+**Telemetry**:
+A device's performance measurements over time, such as CPU, memory, disk and network. The agent samples them locally and sends one record a minute with each metric's minimum, average and maximum.
+_Avoid_: Metrics (for the stored history), performance data, stats
+
+**Rollup**:
+Telemetry summarised over an hour or a day as each metric's average, minimum, maximum and sample count. Kept far longer than one-minute data.
+_Avoid_: Aggregate, summary, downsample
+
+**Monitor**:
+A condition set at a tenant that applies to every device in it and its descendants, such as CPU above a threshold for some minutes or a service not running. A descendant can turn off a monitor it inherits. Evaluated by the agent, except Offline, which the server evaluates.
+_Avoid_: Check, alert rule, threshold, policy
+
+**Alert**:
+A problem raised when a device meets a monitor's condition. A device has at most one open alert per monitor; it is Open, Acknowledged or Resolved, and its severity can rise and fall while it stays open.
+_Avoid_: Incident, notification, ticket, event
+
+**Severity**:
+How serious an alert is: Critical, Warning or Informational. A monitor sets a threshold for each severity, so one alert moves between them as the condition changes.
+_Avoid_: Priority, level
+
+**Webhook**:
+A destination set at a tenant, and inherited, that receives alert events as signed HTTP requests, in Generic, Teams or Slack format.
+_Avoid_: Notification channel, hook, callback, integration (that is a Signal9 connector)
