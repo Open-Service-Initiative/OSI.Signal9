@@ -8,7 +8,7 @@ Measured on synthetic data, packing takes 28.6 bytes per device-minute, against 
 
 ## Considered Options
 
-- **One-minute data for 90 days, using the same codec.** Rejected: about $118 a month of disk at 100k devices (Premium SSD, 1 TiB), finer and longer than any competitor's documented default, and disk on Flexible Server can't shrink once grown. (The earlier ~$470 figure came from an older, uncompressed layout, not from the 90-day choice alone.)
+- **One-minute data for 90 days, using the same codec.** Rejected: about $118 a month of disk at 100k devices (Premium SSD, 1 TiB), finer and longer than any competitor's documented default, and disk on Flexible Server can't shrink once grown. (The earlier ~$470 figure came from an older layout of lz4-compressed float arrays per device-hour, not from the 90-day choice alone.)
 - **Days 15–90 of one-minute data as one blob per device-day in Blob Storage.** Deferred, not rejected: about $80 a month at 100k devices, and the bytes are identical to the packed rows, so it can be added behind the same store if customers ask for longer minute data.
 - **Parquet as the storage format, or a lake queried by DuckDB.** Rejected: Parquet measured about 40% larger than our codec on the realistic data, needs a second encoder with a native dependency, and costs two round trips per point read. DuckDB.NET has one maintainer, and its engine would need a new host. An optional Parquet export of rollups for BI tools may come later.
 - **PostgreSQL's compressed arrays instead of our own codec.** Rejected: measured at about 4× the size. Delta and varint encoding exploits slowly changing series in a way general-purpose compression of raw floats doesn't.
