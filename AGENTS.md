@@ -21,14 +21,29 @@ These are Open Service Initiative tenets. Hold every change to them:
 
 ## API conventions
 
-- Routes are resource-oriented under `/api`, with plural nouns, and nest only to show ownership (`/api/agents/{agentId}/commands`).
-- Status codes:
-  - GET returns 200.
-  - POST returns 201 with a `Location` header (`CreatedAtRoute`).
-  - PUT replaces the resource and returns 200.
-  - DELETE returns 204.
-- State changes that aren't CRUD are modelled as sub-resources (`PUT .../commands/{id}/result`, `PUT .../cancellation`), not as verbs in the URL.
-- Errors are `application/problem+json`: 400 for validation, 404 when missing, 409 for state conflicts. Never return 200 for a failure.
+These follow Google's AIP-122, AIP-159 and AIP-216 and Microsoft's Azure REST API guidelines. Where today's code differs, the conventions are the target.
+
+### URLs
+
+- Everything is under `/api/v1/` (major version only, #76). Collections are plural nouns.
+- **One canonical URL per resource**, nested under its deepest *permanent* owner: `/devices/{deviceId}/alerts/{alertId}`, `/tenants/{tenantId}/scripts/{scriptId}`.
+- Resources that can move or may have no owner are top-level: `/tenants/{id}` (tenant transfer), `/devices/{id}` (device transfer), `/agents/{id}` (an agent may await identification).
+- **Views:** a collection of device-owned items can also be listed from the tenant, for example `/tenants/{tenantId}/alerts`. Tenant views take `includeDescendants` (default `true`), are read-only, and return each item's canonical URL. Changes always go to the canonical URL.
+- Agents use their own `/agents/{agentId}/...` URLs only for what they send or claim themselves.
+- Responses always use canonical URLs, whatever URL was called.
+
+### Methods and status codes
+
+- GET returns 200.
+- POST to a collection creates and returns 201 with a `Location` header (`CreatedAtRoute`).
+- **PATCH** with `application/merge-patch+json` (RFC 7396) updates fields and returns 200. PUT only replaces a whole resource or a genuine sub-resource (an agent's command result), and is idempotent.
+- DELETE returns 204.
+- **Lifecycle transitions are actions, not field edits.** Status fields are read-only. Transitions are `POST {canonical-url}:{verb}` (`:acknowledge`, `:resolve`, `:cancel`, `:claim`), return 200, and return 409 if the transition isn't allowed from the current state. Don't model actions as sub-resources (`/cancellation`).
+- Return an `ETag`, honour `If-Match`, and return 412 when it doesn't match.
+- Errors are `application/problem+json`: 400 for validation, 404 when missing, 409 for state conflicts, 412 for failed preconditions. Never return 200 for a failure.
+
+### Payloads
+
 - Collections take `?page=&pageSize=` (maximum 100) and return `PagedResult<T>`. Don't name an action parameter `page`; it breaks query binding.
 - Validate requests with data annotations on the contract types. On positional records, validation attributes go on the constructor parameters.
 - Enums are serialized as strings everywhere, through `Signal9Json`.

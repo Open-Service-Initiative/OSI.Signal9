@@ -81,8 +81,16 @@ _Avoid_: Connector, plugin, API access
 ## Machines
 
 **Device**:
-A managed machine. Owns its telemetry and command history across reinstalls of the agent.
+A managed machine. Owns its telemetry and command history across reinstalls of the agent. Deleting a device erases everything identifying about it, but leaves an anonymous record so its alerts and history still resolve.
 _Avoid_: Computer, endpoint, machine, asset
+
+**Hardware inventory**:
+A device's current hardware, component by component: system, motherboard, CPUs, memory modules, disks, network adapters, GPUs, monitors, TPM and battery, with models, serials and MACs. Only the current state is kept.
+_Avoid_: Asset record, audit, specs
+
+**Hardware change**:
+A recorded difference between a device's previous and new hardware inventory, such as a memory module removed or a disk serial changed. Kept for a limited time.
+_Avoid_: Inventory history, asset change
 
 **Device status**:
 Whether a device is Online or Offline, judged by its active agent checking in. A device with no active agent is Offline.
@@ -175,3 +183,13 @@ _Avoid_: Priority, level
 **Webhook**:
 A destination set at a tenant, and inherited, that receives alert events as signed HTTP requests, in Generic, Teams or Slack format.
 _Avoid_: Notification channel, hook, callback, integration (that is a Signal9 connector)
+
+## Reporting
+
+**Report**:
+A fixed, named view of data for a tenant (with or without its descendants) or one device over a period, made of sections. A section the reader lacks permission for is shown as unavailable rather than failing the whole report.
+_Avoid_: Dashboard, export, analytics
+
+**Report schedule**:
+A report sent by email on a recurring basis, owned either by a user, whose access it runs with, or by its tenant, so it survives people leaving.
+_Avoid_: Subscription, scheduled report, recurring report
