@@ -21,7 +21,7 @@ These are Open Service Initiative tenets. Hold every change to them:
 
 ## API conventions
 
-These follow Google's AIP-122, AIP-159 and AIP-216 and Microsoft's Azure REST API guidelines. Where today's code differs, the conventions are the target.
+These rules are Signal9's own, drawn from Google's AIP-122, AIP-159 and AIP-216 and Microsoft's Azure REST API guidelines; they don't claim full conformance with any of them. Local choices include: tenant views instead of AIP-159's wildcard parents, 409 (not AIP-216's 400) for a transition the current state doesn't allow, and kebab-case path segments. Where today's code differs, these conventions are the target.
 
 ### URLs
 
@@ -29,7 +29,7 @@ These follow Google's AIP-122, AIP-159 and AIP-216 and Microsoft's Azure REST AP
 - **One canonical URL per resource**, nested under its deepest *permanent* owner: `/devices/{deviceId}/alerts/{alertId}`, `/tenants/{tenantId}/scripts/{scriptId}`.
 - Resources that can move or may have no owner are top-level: `/tenants/{id}` (tenant transfer), `/devices/{id}` (device transfer), `/agents/{id}` (an agent may await identification).
 - **Views:** a collection of device-owned items can also be listed from the tenant, for example `/tenants/{tenantId}/alerts`. Tenant views take `includeDescendants` (default `true`), are read-only, and return each item's canonical URL. Changes always go to the canonical URL.
-- Agents use their own `/agents/{agentId}/...` URLs only for what they send or claim themselves.
+- Agents use their own `/agents/{agentId}/...` URLs only for what they send themselves (telemetry, monitor states, hardware) and for listing their own pending work. Each listed item carries its canonical URL, and agents claim and report on it there (`:claim`, `/result`).
 - Responses always use canonical URLs, whatever URL was called.
 
 ### Methods and status codes

@@ -7,7 +7,7 @@ SQL Server's editions were the deciding problem for self-hosters. Developer edit
 ## Considered Options
 
 - **Stay on SQL Server and Azure SQL.** Rejected: self-hosters must pick between an unlicensed, a capped and a paid edition, and Azure SQL costs more for the same load.
-- **MySQL.** Rejected: its EF Core provider has no EF Core 10 release, and Aspire has no Azure MySQL integration.
+- **MySQL.** Rejected: Pomelo, the most widely used provider, has no EF Core 10 release; Oracle's `MySql.EntityFrameworkCore` supports EF Core 10, but Aspire has no Azure MySQL integration, and Azure Database for MySQL brings no advantage over PostgreSQL here.
 - **A separate time-series database (TimescaleDB, ClickHouse, Azure Data Explorer) for telemetry.** Rejected. Azure's TimescaleDB is the Apache-2 edition, without compression or continuous aggregates. ClickHouse can't run reliably on Container Apps, whose only persistent volumes are network file shares. Azure Data Explorer has no free self-hosted equivalent. RMM vendors whose backends are public all use a plain relational database (ADR-0012).
 - **Azure HorizonDB.** Rejected for now: it is in preview.
 

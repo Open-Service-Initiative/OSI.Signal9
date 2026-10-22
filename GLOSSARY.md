@@ -169,7 +169,7 @@ Telemetry summarised over an hour or a day as each metric's average, minimum, ma
 _Avoid_: Aggregate, summary, downsample
 
 **Monitor**:
-A condition set at a tenant that applies to every device in it and its descendants, such as CPU above a threshold for some minutes or a service not running. A descendant can turn off a monitor it inherits. Evaluated by the agent, except Offline, which the server evaluates.
+A condition set at a tenant that applies to every device in it and its descendants, such as CPU above a threshold for some minutes or a service not running. A descendant can turn off a monitor it inherits. Evaluated by the agent, except Offline and Hardware change, which the server evaluates.
 _Avoid_: Check, alert rule, threshold, policy
 
 **Alert**:
