@@ -28,7 +28,8 @@ jobs:
             const title = context.payload.pull_request.title || '';
             const pattern = /^(feat|fix|docs|style|refactor|perf|test|chore|ci|build|revert)(\(.+\))?!?: .+/i;
             // GitHub's own revert button titles a PR 'Revert "<original title>"'; accept that form too.
-            const valid = pattern.test(title) || /^Revert ".+"$/.test(title);
+            const isConventional = (t) => pattern.test(t) || /^Revert ".+"$/.test(t);
+            const valid = isConventional(title);
 
             // Find a previous comment from this workflow so we update instead of piling up.
             const comments = await github.paginate(github.rest.issues.listComments, {
@@ -60,8 +61,14 @@ jobs:
               });
 
               // We closed this PR for a bad title, so reopen it now that it is corrected.
+              // Only on an edit that turned an invalid title into a valid one, so a later
+              // human closure isn't undone by an unrelated edit.
               const pr = context.payload.pull_request;
-              if (pr.state === 'closed' && !pr.merged) {
+              const previousTitle = context.payload.changes?.title?.from;
+              const titleWasFixed = context.payload.action === 'edited'
+                && typeof previousTitle === 'string'
+                && !isConventional(previousTitle);
+              if (titleWasFixed && pr.state === 'closed' && !pr.merged) {
                 await github.rest.pulls.update({
                   ...context.repo,
                   pull_number: context.issue.number,
