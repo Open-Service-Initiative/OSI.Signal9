@@ -81,8 +81,16 @@ _Avoid_: Connector, plugin, API access
 ## Machines
 
 **Device**:
-A managed machine. Owns its telemetry and command history across reinstalls of the agent.
+A managed machine. Owns its telemetry and command history across reinstalls of the agent. Deleting a device erases everything identifying about it, but leaves an anonymous record so its alerts and history still resolve.
 _Avoid_: Computer, endpoint, machine, asset
+
+**Hardware inventory**:
+A device's current hardware, component by component: system, motherboard, CPUs, memory modules, disks, network adapters, GPUs, monitors, TPM and battery, with models, serials and MACs. Only the current state is kept.
+_Avoid_: Asset record, audit, specs
+
+**Hardware change**:
+A recorded difference between a device's previous and new hardware inventory, such as a memory module removed or a disk serial changed. Kept for a limited time.
+_Avoid_: Inventory history, asset change
 
 **Device status**:
 Whether a device is Online or Offline, judged by its active agent checking in. A device with no active agent is Offline.
@@ -149,3 +157,39 @@ _Avoid_: Script run, job, deployment
 **Terminal session**:
 An interactive shell on a device, audited with a full transcript. Like ad-hoc code, it is arbitrary execution and needs its own permission.
 _Avoid_: Remote shell, console
+
+## Monitoring
+
+**Telemetry**:
+A device's performance measurements over time, such as CPU, memory, disk and network. The agent samples them locally and sends one record a minute with each metric's minimum, average and maximum.
+_Avoid_: Metrics (for the stored history), performance data, stats
+
+**Rollup**:
+Telemetry summarised over an hour or a day as each metric's average, minimum, maximum and sample count. Kept far longer than one-minute data.
+_Avoid_: Aggregate, summary, downsample
+
+**Monitor**:
+A condition set at a tenant that applies to every device in it and its descendants, such as CPU above a threshold for some minutes or a service not running. A descendant can turn off a monitor it inherits. Evaluated by the agent, except Offline and Hardware change, which the server evaluates.
+_Avoid_: Check, alert rule, threshold, policy
+
+**Alert**:
+A problem raised when a device meets a monitor's condition. A device has at most one open alert per monitor; it is Open, Acknowledged or Resolved, and its severity can rise and fall while it stays open.
+_Avoid_: Incident, notification, ticket, event
+
+**Severity**:
+How serious an alert is: Critical, Warning or Informational. A monitor sets a threshold for each severity, so one alert moves between them as the condition changes.
+_Avoid_: Priority, level
+
+**Webhook**:
+A destination set at a tenant, and inherited, that receives alert events as signed HTTP requests, in Generic, Teams or Slack format.
+_Avoid_: Notification channel, hook, callback, integration (that is a Signal9 connector)
+
+## Reporting
+
+**Report**:
+A fixed, named view of data for a tenant (with or without its descendants) or one device over a period, made of sections. A section the reader lacks permission for is shown as unavailable rather than failing the whole report.
+_Avoid_: Dashboard, export, analytics
+
+**Report schedule**:
+A report sent by email on a recurring basis, owned either by a user, whose access it runs with, or by its tenant, so it survives people leaving.
+_Avoid_: Subscription, scheduled report, recurring report

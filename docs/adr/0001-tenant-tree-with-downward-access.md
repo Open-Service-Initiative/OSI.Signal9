@@ -11,3 +11,5 @@ Tenants nest to any depth (capped by configuration, 20 by default). Access grant
 ## Consequences
 
 Each tenant's parent pointer is the source of truth. A closure table (ancestor, descendant, depth) is derived from it and is only ever written by a single tree service, in the same transaction. That service runs one change at a time and checks for cycles and the depth cap. The central tenant filter is keyed on the caller's few assigned tenants, not on every tenant they can see. A test rebuilds the closure table from the parent pointers to catch drift.
+
+The decision stands after the move to PostgreSQL (ADR-0011). PostgreSQL's `ltree` is rejected for the same reasons as a materialized path.

@@ -13,7 +13,7 @@ These are Open Service Initiative tenets. Hold every change to them:
 
 ## Projects
 
-- `OSI.Signal9.API`: ASP.NET Core controller API plus SignalR hubs, using EF Core on SQL Server.
+- `OSI.Signal9.API`: ASP.NET Core controller API plus SignalR hubs, using EF Core. The code still uses SQL Server; the target is PostgreSQL (ADR-0011).
 - `OSI.Signal9.Web`: Blazor WebAssembly dashboard.
 - `OSI.Signal9.Agent`: Windows Service on managed devices. It enrolls, sends heartbeats and telemetry, and runs commands.
 - `OSI.Signal9.Contracts`: DTOs, enums and hub interfaces shared by the other projects. It has no server-side dependencies, because it ships in the WASM bundle.
@@ -21,14 +21,29 @@ These are Open Service Initiative tenets. Hold every change to them:
 
 ## API conventions
 
-- Routes are resource-oriented under `/api`, with plural nouns, and nest only to show ownership (`/api/agents/{agentId}/commands`).
-- Status codes:
-  - GET returns 200.
-  - POST returns 201 with a `Location` header (`CreatedAtRoute`).
-  - PUT replaces the resource and returns 200.
-  - DELETE returns 204.
-- State changes that aren't CRUD are modelled as sub-resources (`PUT .../commands/{id}/result`, `PUT .../cancellation`), not as verbs in the URL.
-- Errors are `application/problem+json`: 400 for validation, 404 when missing, 409 for state conflicts. Never return 200 for a failure.
+These rules are Signal9's own, drawn from Google's AIP-122, AIP-159 and AIP-216 and Microsoft's Azure REST API guidelines; they don't claim full conformance with any of them. Local choices include: tenant views instead of AIP-159's wildcard parents, 409 (not AIP-216's 400) for a transition the current state doesn't allow, and kebab-case path segments. Where today's code differs, these conventions are the target.
+
+### URLs
+
+- Everything is under `/api/v1/` (major version only, #76). Collections are plural nouns.
+- **One canonical URL per resource**, nested under its deepest *permanent* owner: `/devices/{deviceId}/alerts/{alertId}`, `/tenants/{tenantId}/scripts/{scriptId}`.
+- Resources that can move or may have no owner are top-level: `/tenants/{id}` (tenant transfer), `/devices/{id}` (device transfer), `/agents/{id}` (an agent may await identification).
+- **Views:** a collection of device-owned items can also be listed from the tenant, for example `/tenants/{tenantId}/alerts`. Tenant views take `includeDescendants` (default `true`), are read-only, and return each item's canonical URL. Changes always go to the canonical URL.
+- Agents use their own `/agents/{agentId}/...` URLs only for what they send themselves (telemetry, monitor states, hardware) and for listing their own pending work. Each listed item carries its canonical URL, and agents claim and report on it there (`:claim`, `/result`).
+- Responses always use canonical URLs, whatever URL was called.
+
+### Methods and status codes
+
+- GET returns 200.
+- POST to a collection creates and returns 201 with a `Location` header (`CreatedAtRoute`).
+- **PATCH** with `application/merge-patch+json` (RFC 7396) updates fields and returns 200. PUT only replaces a whole resource or a genuine sub-resource (an agent's command result), and is idempotent.
+- DELETE returns 204.
+- **Lifecycle transitions are actions, not field edits.** Status fields are read-only. Transitions are `POST {canonical-url}:{verb}` (`:acknowledge`, `:resolve`, `:cancel`, `:claim`), return 200, and return 409 if the transition isn't allowed from the current state. Don't model actions as sub-resources (`/cancellation`).
+- Return an `ETag`, honour `If-Match`, and return 412 when it doesn't match.
+- Errors are `application/problem+json`: 400 for validation, 404 when missing, 409 for state conflicts, 412 for failed preconditions. Never return 200 for a failure.
+
+### Payloads
+
 - Collections take `?page=&pageSize=` (maximum 100) and return `PagedResult<T>`. Don't name an action parameter `page`; it breaks query binding.
 - Validate requests with data annotations on the contract types. On positional records, validation attributes go on the constructor parameters.
 - Enums are serialized as strings everywhere, through `Signal9Json`.

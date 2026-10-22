@@ -16,7 +16,7 @@ Roles are stored as data, not code. The built-in roles (Administrator, Technicia
 ## Consequences
 
 Scopes are split by risk so that roles, custom ones especially, can be granular:
-- running code on a device is separate from predefined commands (`commands.execute`) and always needs a recent MFA. Saved scripts need `scripts.execute`; arbitrary code, whether ad-hoc or in a terminal session, needs `terminal.execute`;
+- running code on a device is separate from predefined commands (`commands.execute`) and needs a recent MFA from a person (or, for an application acting as itself, a grant an Administrator approved with MFA; script monitors are approved with MFA once). Saved scripts need `scripts.execute`; arbitrary code, whether ad-hoc or in a terminal session, needs `terminal.execute`;
 - changing a device's or tenant's owner (`.transfer`) and deleting things whose history would be lost (`.delete`) are separate from editing them (`.write`);
 - defining roles (`roles.*`) is separate from assigning them (`roleassignments.*`).
 
