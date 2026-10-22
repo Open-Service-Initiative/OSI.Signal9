@@ -13,7 +13,7 @@ updates:
       opentelemetry:
         patterns: ["OpenTelemetry*"]
       testing:
-        patterns: ["xunit*", "Microsoft.NET.Test.Sdk"]
+        patterns: ["MSTest*"]
 
   - package-ecosystem: github-actions
     directory: /
