@@ -12,7 +12,7 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **Close**: `gh issue close <number> --comment "..."`
 
-Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
+`.claude/settings.json` sets `GH_REPO`, so `gh` targets this repo from any directory, including a scratchpad. Before uploading an edited body with `--body-file`, check the file isn't empty: a failed `gh issue view` leaves an empty file, and uploading it blanks the issue.
 
 ## Pull requests as a triage surface
 
