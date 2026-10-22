@@ -39,8 +39,17 @@ _Avoid_: Move, re-parent, migration
 ## Access
 
 **User**:
-A person known to Signal9, belonging to exactly one tenant, whether or not they can sign in yet. Being a user grants no access by itself.
+A person known to Signal9, belonging to exactly one tenant (their owning tenant), whether or not they can sign in yet. Being a user grants no access by itself.
 _Avoid_: Account, member, login, end user and contact (as separate kinds of person)
+
+**Owning tenant**:
+The tenant an object (a user, device, script, schedule and so on) directly belongs to. Whoever controls it controls the object: deleting the tenant deletes what it holds, including users along with all their role assignments. For a user it grants no access; that comes only from role assignments.
+_Synonym_: home tenant
+_Avoid_: Organisation (as a synonym)
+
+**User transfer**:
+Moving a user to a different owning tenant. Their role assignments, and so their access, stay as they are.
+_Avoid_: Move, re-home
 
 **Role**:
 A named set of things its holder may do, granted to a user only through a role assignment. Signal9 ships built-in roles that can't be changed.
@@ -48,7 +57,7 @@ _Avoid_: Permission set, group, profile
 
 **Role assignment**:
 A grant of one role to one user at one tenant (the assigned tenant), covering that tenant and its descendants. The only source of a user's access, apart from being a Superadministrator.
-_Avoid_: Permission, membership, grant, home tenant (say "assigned tenant")
+_Avoid_: Permission, membership, grant, home tenant (that means owning tenant; here, say "assigned tenant")
 
 **Superadministrator**:
 A user with full authority over the whole deployment, above every tenant tree. Not a role assignment.

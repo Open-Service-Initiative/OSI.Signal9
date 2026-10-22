@@ -27,7 +27,7 @@ These rules are Signal9's own, drawn from Google's AIP-122, AIP-159 and AIP-216 
 
 - Everything is under `/api/v1/` (major version only, #76). Collections are plural nouns.
 - **One canonical URL per resource**, nested under its deepest *permanent* owner: `/devices/{deviceId}/alerts/{alertId}`, `/tenants/{tenantId}/scripts/{scriptId}`.
-- Resources that can move or may have no owner are top-level: `/tenants/{id}` (tenant transfer), `/devices/{id}` (device transfer), `/agents/{id}` (an agent may await identification).
+- Resources that can move or may have no owner are top-level: `/tenants/{id}` (tenant transfer), `/devices/{id}` (device transfer), `/users/{id}` (user transfer), `/agents/{id}` (an agent may await identification).
 - **Views:** a collection of device-owned items can also be listed from the tenant, for example `/tenants/{tenantId}/alerts`. Tenant views take `includeDescendants` (default `true`), are read-only, and return each item's canonical URL. Changes always go to the canonical URL.
 - Agents use their own `/agents/{agentId}/...` URLs only for what they send themselves (telemetry, monitor states, hardware) and for listing their own pending work. Each listed item carries its canonical URL, and agents claim and report on it there (`:claim`, `/result`).
 - Responses always use canonical URLs, whatever URL was called.
