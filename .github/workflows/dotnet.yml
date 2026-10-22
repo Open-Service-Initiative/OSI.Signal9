@@ -3,31 +3,132 @@ name: Build and test
 on:
   push:
     branches: [main, dev]
+    paths:
+      - '**/*.cs'
+      - '**/*.razor'
+      - '**/*.csproj'
+      - '**/*.slnx'
+      - 'dotnet-tools.json'
+      - 'global.json'
+      - 'Directory.*'
+      - 'NuGet.config'
+      - '.github/workflows/dotnet.yml'
+  # Every pull request runs this workflow so the Test check always reports.
+  # The `changes` job skips Test when no code path changed; a job skipped by its `if`
+  # reports success, so docs-only pull requests aren't blocked.
   pull_request:
     branches: [main, dev]
 
 permissions:
   contents: read
+  pull-requests: write
+  actions: read
 
 jobs:
-  build:
+  changes:
     runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Detect code changes
+        id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Pushes are already limited by the push `paths` filter above.
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Keep in sync with the push `paths` filter above.
+          code_paths='\.(cs|razor|csproj|slnx)$|^dotnet-tools\.json$|^global\.json$|^Directory\.[^/]+$|^NuGet\.config$|^\.github/workflows/dotnet\.yml$'
+          # The files API lists at most 3000 files; a larger PR always runs the suites.
+          changed=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.changed_files')
+          files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[] | .filename, (.previous_filename // empty)')
+          if (( changed >= 3000 )) || grep -Eq "$code_paths" <<< "$files"; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No code paths changed; Test is skipped."
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  Test:
+    needs: changes
+    # Fail closed: if change detection fails, its output is empty and the suites still run.
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
       - name: Restore
         run: dotnet restore OSI.Signal9.slnx
 
+      - name: Restore local tools
+        run: dotnet tool restore
+
+      - name: Check formatting
+        run: dotnet format OSI.Signal9.slnx --verify-no-changes --no-restore
+
       - name: Build
+        id: build
         run: dotnet build OSI.Signal9.slnx --no-restore --configuration Release
 
       - name: Test
-        run: dotnet test --solution OSI.Signal9.slnx --no-build --configuration Release
+        id: test
+        if: ${{ always() && steps.build.outcome == 'success' }}
+        continue-on-error: true
+        run: dotnet test --solution OSI.Signal9.slnx --no-build --configuration Release --report-trx --results-directory TestResults
+
+      - name: Create CTRF reports
+        id: create-ctrf
+        if: always()
+        run: |
+          mkdir -p ctrf
+          shopt -s nullglob
+          # One report per test project; the suite name is the project name from the TRX file.
+          for trx in TestResults/*.trx; do
+            name=$(basename "$trx" .trx)
+            suite=${name%%_net*}
+            dotnet tool run DotnetCtrfJsonReporter -p "$trx" -f "$name.json" -d ctrf
+            jq --arg suite "$suite" '.results.tests |= map(.suite = $suite)' "ctrf/$name.json" > "ctrf/$name.json.tmp"
+            mv "ctrf/$name.json.tmp" "ctrf/$name.json"
+          done
+
+      - name: Publish test report
+        id: ctrf
+        if: ${{ always() && hashFiles('ctrf/*.json') != '' }}
+        uses: ctrf-io/github-test-reporter@v1
+        with:
+          report-path: './ctrf/*.json'
+          custom-report: true
+          template-path: '.github/ctrf/test-suite-summary.hbs'
+          group-by: suite
+          always-group-by: true
+          pull-request: true
+          summary: true
+          annotate: true
+          update-comment: true
+          overwrite-comment: true
+          always-latest-comment: true
+          comment-tag: '${{ github.workflow }}-${{ github.job }}'
+          upload-artifact: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check for vulnerable packages
+        id: vulnerable
+        if: ${{ always() && steps.build.outcome == 'success' }}
         run: dotnet package list --project OSI.Signal9.slnx --vulnerable --include-transitive
+
+      - name: Fail if any step failed
+        if: ${{ always() && (steps.build.outcome != 'success' || steps.test.outcome != 'success' || steps.create-ctrf.outcome != 'success' || (steps.ctrf.outcome != 'success' && steps.ctrf.outcome != 'skipped') || steps.vulnerable.outcome != 'success') }}
+        run: exit 1

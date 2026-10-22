@@ -5,6 +5,9 @@ updates:
     schedule:
       interval: weekly
     target-branch: dev
+    commit-message:
+      prefix: chore
+      include: scope
     groups:
       aspire:
         patterns: ["Aspire.*"]
@@ -20,3 +23,6 @@ updates:
     schedule:
       interval: monthly
     target-branch: dev
+    commit-message:
+      prefix: chore
+      include: scope

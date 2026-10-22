@@ -8,6 +8,13 @@
         "dotnet-ef"
       ],
       "rollForward": false
+    },
+    "dotnetctrfjsonreporter": {
+      "version": "0.0.8",
+      "commands": [
+        "DotnetCtrfJsonReporter"
+      ],
+      "rollForward": true
     }
   }
 }
