@@ -14,7 +14,7 @@ SQL Server's editions were the deciding problem for self-hosters. Developer edit
 ## Consequences
 
 - Only the migration service's identity is an Entra administrator of the server. It creates non-admin roles for the hosts (`pgaadauth_create_principal_with_oid`) and grants them data access, overriding Aspire's default of making every referencing app an administrator. Self-hosted, each host has its own PostgreSQL role.
-- The AppHost chooses `AddAzurePostgresFlexibleServer` for azd and `AddPostgres` for Compose, because `RunAsContainer` does nothing at publish time.
+- The AppHost chooses `AddAzurePostgresFlexibleServer` for Azure and `AddPostgres` for Compose, because `RunAsContainer` does nothing at publish time.
 - Storage on Flexible Server can grow but never shrink, so telemetry is sized deliberately (ADR-0012).
 - The tenant tree's single-writer lock becomes `pg_advisory_xact_lock`. The test fixture uses a PostgreSQL container.
 - ADR-0001's reasons still hold on PostgreSQL. `ltree` is rejected for the same reasons as materialized paths.

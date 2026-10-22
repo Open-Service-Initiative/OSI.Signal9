@@ -1,9 +1,0 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
-# azd deploys the Aspire AppHost: the API to Azure Container Apps and Azure SQL.
-# The Blazor app is deployed separately to Azure Static Web Apps (see swa-cli.config.json).
-name: signal9
-services:
-  app:
-    language: dotnet
-    project: ./OSI.Signal9.AppHost/OSI.Signal9.AppHost.csproj
-    host: containerapp
