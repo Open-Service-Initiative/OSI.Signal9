@@ -59,6 +59,10 @@ dotnet ef migrations add <Name> --project OSI.Signal9.API --output-dir Data/Migr
 
 Package versions are managed centrally in `Directory.Packages.props`. CI treats warnings, including vulnerable packages, as errors.
 
+## Acknowledgements
+
+- [CyberDrain/CIPP](https://github.com/KelvinTegelaar/CIPP) (AGPL-3.0): our PR title check is adapted from theirs. Gratefully stolen.
+
 ## License
 
 See [LICENSE](LICENSE).

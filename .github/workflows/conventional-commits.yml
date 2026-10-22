@@ -1,3 +1,6 @@
+# Adapted from CyberDrain/CIPP (.github/workflows/Conventional_Commits.yml, commit c058808),
+# AGPL-3.0. Modified for Signal9, 2026-10-22: revert titles, a single updating comment,
+# and closing/reopening the PR on an invalid/fixed title.
 name: Conventional Commits Check
 
 on:
