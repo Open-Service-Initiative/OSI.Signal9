@@ -57,11 +57,11 @@ public sealed class KeyStorageTests : IDisposable
     [TestMethod]
     public async Task Tokens_from_a_fresh_auth_instance_validate_on_api_with_the_stored_keys()
     {
-        await _factory.SeedClientAsync("reporting-app");
-        await _factory.RequestTokenAsync("reporting-app");
+        await _factory.SeedClientAsync("reporting-app", "tenants.read");
+        await _factory.RequestTokenAsync("reporting-app", "tenants.read");
         await using var fresh = new Signal9AuthFactory(_factory.ConnectionString, _factory.Time);
         using var auth = fresh.CreateClient();
-        var response = await auth.PostAsync("connect/token", Signal9ApiFactory.ClientCredentials("reporting-app"), Ct);
+        var response = await auth.PostAsync("connect/token", Signal9ApiFactory.ClientCredentials("reporting-app", "tenants.read"), Ct);
         var token = (await response.Content.ReadFromJsonAsync<AccessToken>(Ct))!;
 
         using var api = _factory.CreateAnonymousClient();

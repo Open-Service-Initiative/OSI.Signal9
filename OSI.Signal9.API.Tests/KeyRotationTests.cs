@@ -66,11 +66,11 @@ public sealed class KeyRotationTests : IDisposable
     [TestMethod]
     public async Task A_running_api_accepts_tokens_from_a_key_that_activated_after_it_started()
     {
-        await _factory.SeedClientAsync("reporting-app");
-        Assert.AreEqual(HttpStatusCode.OK, await CallApiAsync((await _factory.RequestTokenAsync("reporting-app")).Value));
+        await _factory.SeedClientAsync("reporting-app", "tenants.read");
+        Assert.AreEqual(HttpStatusCode.OK, await CallApiAsync((await _factory.RequestTokenAsync("reporting-app", "tenants.read")).Value));
 
         AdvanceTo(Start.AddDays(90));
-        var token = (await _factory.RequestTokenAsync("reporting-app")).Value;
+        var token = (await _factory.RequestTokenAsync("reporting-app", "tenants.read")).Value;
 
         Assert.AreEqual(Start.AddDays(90).UtcDateTime, KeysOf(token).Signing.NotBefore.ToUniversalTime());
         Assert.AreEqual(HttpStatusCode.OK, await CallApiAsync(token));
@@ -79,10 +79,10 @@ public sealed class KeyRotationTests : IDisposable
     [TestMethod]
     public async Task A_retired_key_still_validates_unexpired_tokens()
     {
-        await _factory.SeedClientAsync("reporting-app");
-        await CallApiAsync((await _factory.RequestTokenAsync("reporting-app")).Value);
+        await _factory.SeedClientAsync("reporting-app", "tenants.read");
+        await CallApiAsync((await _factory.RequestTokenAsync("reporting-app", "tenants.read")).Value);
         AdvanceTo(Start.AddDays(90).AddMinutes(-5));
-        var token = (await _factory.RequestTokenAsync("reporting-app")).Value;
+        var token = (await _factory.RequestTokenAsync("reporting-app", "tenants.read")).Value;
 
         AdvanceTo(Start.AddDays(90).AddMinutes(1));
 

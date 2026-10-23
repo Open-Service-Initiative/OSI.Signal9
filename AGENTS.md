@@ -42,7 +42,12 @@ These rules are Signal9's own, drawn from Google's AIP-122, AIP-159 and AIP-216 
 - DELETE returns 204.
 - **Lifecycle transitions are actions, not field edits.** Status fields are read-only. Transitions are `POST {canonical-url}:{verb}` (`:acknowledge`, `:resolve`, `:cancel`, `:claim`), return 200, and return 409 if the transition isn't allowed from the current state. Don't model actions as sub-resources (`/cancellation`).
 - Return an `ETag`, honour `If-Match`, and return 412 when it doesn't match.
-- Errors are `application/problem+json`: 400 for validation, 404 when missing, 409 for state conflicts, 412 for failed preconditions. Never return 200 for a failure.
+- Errors are `application/problem+json`: 400 for validation, 401 without a valid access token, 403 when the token lacks the scope (with RFC 6750's `insufficient_scope` challenge), 404 when missing, 409 for state conflicts, 412 for failed preconditions. Never return 200 for a failure.
+
+### Scopes
+
+- Every action and hub requires a scope from the catalogue (`OSI.Signal9.Server/Identity/Scopes.cs`) with `[RequireScope(Scopes.Devices.Read)]` on the action, or is explicitly `[AllowAnonymous]`. An architecture test fails the build otherwise, and the OpenAPI document shows each operation's scopes.
+- Scopes are `{noun}.{verb}` with one of five verbs: `read`, `write`, `delete`, `transfer`, `execute` (ADR-0010). Add new ones to the catalogue, never ad hoc.
 
 ### Payloads
 

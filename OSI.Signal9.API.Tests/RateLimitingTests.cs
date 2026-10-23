@@ -118,8 +118,8 @@ public sealed class RateLimitingTests
     {
         using var factory = new Signal9ApiFactory(settings: Limit("Api", 2));
         using var callerA = factory.CreateClient();
-        await factory.SeedClientAsync("caller-b");
-        var tokenB = await factory.RequestTokenAsync("caller-b");
+        await factory.SeedClientAsync("caller-b", "tenants.read");
+        var tokenB = await factory.RequestTokenAsync("caller-b", "tenants.read");
         using var callerB = factory.CreateAnonymousClient();
         callerB.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokenB.Value);
 

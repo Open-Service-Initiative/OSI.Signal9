@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using OSI.Signal9.API.Authorization;
+using OSI.Signal9.Server.Identity;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using OSI.Signal9.Server.Data;
@@ -16,7 +18,6 @@ namespace OSI.Signal9.API.Agents;
 /// <summary>
 /// Agents: installations of the agent software, each on one device.
 /// </summary>
-// TODO(auth): Register and heartbeat are called by agents, GetAgent by people; they need different policies.
 [ApiController]
 [Route("api/v1/agents")]
 public sealed class AgentsController(
@@ -25,6 +26,7 @@ public sealed class AgentsController(
     TimeProvider time,
     IHubContext<DashboardHub, IDashboardHubClient> dashboard) : ControllerBase
 {
+    [RequireScope(Scopes.Devices.Read)]
     [HttpGet("{agentId:guid}", Name = nameof(GetAgent))]
     [OptimisticConcurrency]
     [ProducesResponseType<AgentDto>(StatusCodes.Status200OK)]
@@ -41,6 +43,7 @@ public sealed class AgentsController(
     /// active agent of the tenant's device with the same machine name, replacing its previous agent, or of a new device.
     /// </summary>
     // TODO(enrollment): replaced by enrollment tokens (#128) and identification (#131), which never match machine names.
+    [RequireScope(Scopes.Agent)]
     [HttpPost]
     [OptimisticConcurrency]
     [Consumes("application/json")]
@@ -135,6 +138,7 @@ public sealed class AgentsController(
     /// time it (re)connects and when a heartbeat says work is waiting, then reports each result at the command's URL.
     /// A replaced agent gets 409.
     /// </summary>
+    [RequireScope(Scopes.Agent)]
     [HttpGet("{agentId:guid}/pending-commands")]
     [ProducesResponseType<PagedResult<CommandDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -156,6 +160,7 @@ public sealed class AgentsController(
     /// Records that the agent is alive and tells it whether work is waiting. Sent by the agent on a fixed interval.
     /// A replaced agent gets 409.
     /// </summary>
+    [RequireScope(Scopes.Agent)]
     [HttpPut("{agentId:guid}/heartbeat")]
     [OptimisticConcurrency(Representation = false)]
     [Consumes("application/json")]

@@ -19,7 +19,9 @@ public static class PostgresContainer
     [AssemblyInitialize]
     public static async Task StartAsync(TestContext testContext)
     {
-        _container = new PostgreSqlBuilder("postgres:18").Build();
+        // Every test boots auth and api with their own connection pools; Postgres's default of 100 runs out under
+        // parallel tests ("53300: too many clients").
+        _container = new PostgreSqlBuilder("postgres:18").WithCommand("-c", "max_connections=500").Build();
         await _container.StartAsync(testContext.CancellationToken);
 
         await ExecuteAsync($"CREATE DATABASE {TemplateDatabase}", testContext.CancellationToken);

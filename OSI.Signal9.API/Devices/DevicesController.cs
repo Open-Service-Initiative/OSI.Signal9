@@ -1,5 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using OSI.Signal9.API.Authorization;
+using OSI.Signal9.Server.Identity;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using OSI.Signal9.Server.Data;
@@ -22,6 +24,7 @@ public sealed class DevicesController(
     IHubContext<DashboardHub, IDashboardHubClient> dashboard) : ControllerBase
 {
     /// <summary>Lists devices across tenants, with optional filters.</summary>
+    [RequireScope(Scopes.Devices.Read)]
     [HttpGet]
     [ProducesResponseType<PagedResult<DeviceDto>>(StatusCodes.Status200OK)]
     public async Task<PagedResult<DeviceDto>> List(
@@ -48,6 +51,7 @@ public sealed class DevicesController(
             .ToPagedResultAsync(paging, d => d.ToDto(presence), cancellationToken);
     }
 
+    [RequireScope(Scopes.Devices.Read)]
     [HttpGet("{deviceId:guid}", Name = nameof(GetDevice))]
     [OptimisticConcurrency]
     [ProducesResponseType<DeviceDto>(StatusCodes.Status200OK)]
@@ -63,6 +67,7 @@ public sealed class DevicesController(
     /// Updates a device's group, tags and maintenance mode with a JSON merge patch (RFC 7396).
     /// Status is read-only: it comes from the active agent's check-ins.
     /// </summary>
+    [RequireScope(Scopes.Devices.Write)]
     [HttpPatch("{deviceId:guid}")]
     [OptimisticConcurrency]
     [Consumes(MergePatch.MediaType)]
@@ -109,6 +114,7 @@ public sealed class DevicesController(
 
     /// <summary>Deletes a device along with its agents, commands and telemetry.</summary>
     // TODO(#89): deletion becomes anonymised erasure that keeps an anonymous record for alerts and history.
+    [RequireScope(Scopes.Devices.Delete)]
     [HttpDelete("{deviceId:guid}")]
     [OptimisticConcurrency]
     [ProducesResponseType(StatusCodes.Status204NoContent)]

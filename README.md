@@ -1,6 +1,6 @@
 # Signal9
 
-Remote monitoring and management (RMM) for MSPs. Pre-alpha: not ready for production use. Authentication is being built (#63): the API now requires an access token, which the dashboard and agent don't send yet.
+Remote monitoring and management (RMM) for MSPs. Pre-alpha: not ready for production use. Authentication is being built (#63): every API endpoint now requires an access token carrying its scope, which the dashboard and agent don't send yet.
 
 ## Projects
 

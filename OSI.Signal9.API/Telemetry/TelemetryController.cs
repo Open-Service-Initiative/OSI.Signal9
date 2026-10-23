@@ -1,5 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
+using OSI.Signal9.API.Authorization;
+using OSI.Signal9.Server.Identity;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using OSI.Signal9.API.Agents;
@@ -26,6 +28,7 @@ public sealed class TelemetryController(
     IHubContext<DashboardHub, IDashboardHubClient> dashboard) : ControllerBase
 {
     /// <summary>Lists a device's telemetry samples, newest first, across all the agents it has had.</summary>
+    [RequireScope(Scopes.Telemetry.Read)]
     [HttpGet("devices/{deviceId:guid}/telemetry")]
     [ProducesResponseType<PagedResult<TelemetrySampleDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -46,6 +49,7 @@ public sealed class TelemetryController(
             .ToPagedResultAsync(query, s => s.ToDto(), cancellationToken);
     }
 
+    [RequireScope(Scopes.Telemetry.Read)]
     [HttpGet("devices/{deviceId:guid}/telemetry/{sampleId:guid}", Name = nameof(GetSample))]
     [OptimisticConcurrency]
     [ProducesResponseType<TelemetrySampleDto>(StatusCodes.Status200OK)]
@@ -61,6 +65,7 @@ public sealed class TelemetryController(
     /// Stores a telemetry sample sent by an agent on its device. Also counts as a heartbeat.
     /// The sample's canonical URL is under the device.
     /// </summary>
+    [RequireScope(Scopes.Agent)]
     [HttpPost("agents/{agentId:guid}/telemetry")]
     [OptimisticConcurrency]
     [Consumes("application/json")]

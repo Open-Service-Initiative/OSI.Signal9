@@ -1,4 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using OSI.Signal9.API.Authorization;
+using OSI.Signal9.Server.Identity;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using OSI.Signal9.Server.Data;
@@ -28,6 +31,7 @@ public sealed class CommandsController(
     IHubContext<DashboardHub, IDashboardHubClient> dashboard) : ControllerBase
 {
     /// <summary>Lists a device's commands, newest first. Agents fetch their work from their own pending-commands list.</summary>
+    [RequireScope(Scopes.Commands.Read)]
     [HttpGet]
     [ProducesResponseType<PagedResult<CommandDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -46,6 +50,7 @@ public sealed class CommandsController(
             .ToPagedResultAsync(query, c => c.ToDto(), cancellationToken);
     }
 
+    [RequireScope(Scopes.Commands.Read)]
     [HttpGet("{commandId:guid}", Name = nameof(GetCommand))]
     [OptimisticConcurrency]
     [ProducesResponseType<CommandDto>(StatusCodes.Status200OK)]
@@ -57,6 +62,8 @@ public sealed class CommandsController(
     }
 
     /// <summary>Queues a command and rings the doorbell of the device's active agent, which then fetches it.</summary>
+    [RequireScope(Scopes.Commands.Execute)]
+    [EndpointDescription($"{nameof(CommandType.RunScript)} runs ad-hoc code, so it also requires {Scopes.Terminal.Execute}.")]
     [HttpPost]
     [OptimisticConcurrency]
     [Consumes("application/json")]
@@ -64,8 +71,14 @@ public sealed class CommandsController(
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<CommandDto>> Create(
-        Guid deviceId, CreateCommandRequest request, CancellationToken cancellationToken)
+        Guid deviceId, CreateCommandRequest request, [FromServices] IAuthorizationService authorization,
+        CancellationToken cancellationToken)
     {
+        // TODO(#82): ad-hoc code moves to script executions, and RunScript leaves the command contract.
+        var terminal = new RequireScopeAttribute(Scopes.Terminal.Execute);
+        if (request.Type == CommandType.RunScript && !(await authorization.AuthorizeAsync(User, null, terminal)).Succeeded)
+            return InsufficientScope.Forbid(Scopes.Terminal.Execute);
+
         var device = await db.Devices.AsNoTracking().SingleOrDefaultAsync(d => d.Id == deviceId, cancellationToken);
         if (device is null)
             return NotFound();
@@ -95,6 +108,7 @@ public sealed class CommandsController(
     }
 
     /// <summary>Records the outcome of a command. Sent by the agent once, when it finishes.</summary>
+    [RequireScope(Scopes.Agent)]
     [HttpPut("{commandId:guid}/result")]
     [OptimisticConcurrency]
     [Consumes("application/json")]
@@ -112,6 +126,7 @@ public sealed class CommandsController(
         });
 
     /// <summary>Cancels a pending command. Commands that already finished can't be cancelled (409).</summary>
+    [RequireScope(Scopes.Commands.Execute)]
     [HttpPost("{commandId:guid}:cancel")]
     [OptimisticConcurrency]
     [ProducesResponseType<CommandDto>(StatusCodes.Status200OK)]

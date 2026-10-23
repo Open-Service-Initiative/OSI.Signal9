@@ -49,7 +49,7 @@ public static class AuthorizationServer
             });
 
     /// <summary>
-    /// The token rules every host shares: the issuer, the allowed grants, lifetimes and keys. Password, device code
+    /// The token rules every host shares: the issuer, the allowed grants and scopes, lifetimes and keys. Password, device code
     /// and implicit are never allowed, so OpenIddict refuses them (story 83).
     /// </summary>
     public static OpenIddictServerBuilder UseSignal9TokenRules(this OpenIddictServerBuilder server,
@@ -58,6 +58,8 @@ public static class AuthorizationServer
         server.SetIssuer(identity.Issuer)
             .AllowClientCredentialsFlow()
             .SetAccessTokenLifetime(AccessTokenLifetime)
+            // Only catalogue scopes are issued; anything else is invalid_scope.
+            .RegisterScopes([.. Scopes.All.Keys])
             .UseSignal9ProofOfPossession(identity);
 
         // The signing and encryption keys are the ones stored in the database (ADR-0008).
@@ -88,5 +90,8 @@ public static class AuthorizationServer
 
             return Results.SignIn(new ClaimsPrincipal(identity), properties: null,
                 OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
-        }).AllowAnonymous();
+        })
+        .AllowAnonymous()
+        // OpenIddict's own endpoint, described by discovery rather than the API description.
+        .ExcludeFromDescription();
 }

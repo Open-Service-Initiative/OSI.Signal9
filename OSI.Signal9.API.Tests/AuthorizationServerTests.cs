@@ -25,8 +25,8 @@ public sealed class AuthorizationServerTests : IDisposable
     [TestMethod]
     public async Task Client_credentials_token_from_auth_is_accepted_by_api()
     {
-        await _factory.SeedClientAsync("reporting-app");
-        var token = await _factory.RequestTokenAsync("reporting-app");
+        await _factory.SeedClientAsync("reporting-app", "tenants.read");
+        var token = await _factory.RequestTokenAsync("reporting-app", "tenants.read");
 
         using var api = _factory.CreateAnonymousClient();
         var anonymous = await api.GetAsync("api/v1/tenants", Ct);
@@ -103,8 +103,8 @@ public sealed class AuthorizationServerTests : IDisposable
     [TestMethod]
     public async Task Access_tokens_last_10_minutes()
     {
-        await _factory.SeedClientAsync("reporting-app");
-        var token = await _factory.RequestTokenAsync("reporting-app");
+        await _factory.SeedClientAsync("reporting-app", "tenants.read");
+        var token = await _factory.RequestTokenAsync("reporting-app", "tenants.read");
         using var api = CreateApiClient(token);
 
         _factory.Time.Advance(TimeSpan.FromMinutes(10) - TimeSpan.FromSeconds(1));
@@ -142,8 +142,8 @@ public sealed class AuthorizationServerTests : IDisposable
     [TestMethod]
     public async Task Api_refuses_a_revoked_token_on_the_next_request()
     {
-        await _factory.SeedClientAsync("reporting-app");
-        var token = await _factory.RequestTokenAsync("reporting-app");
+        await _factory.SeedClientAsync("reporting-app", "tenants.read");
+        var token = await _factory.RequestTokenAsync("reporting-app", "tenants.read");
         using var api = CreateApiClient(token);
         var beforeRevocation = await api.GetAsync("api/v1/tenants", Ct);
 

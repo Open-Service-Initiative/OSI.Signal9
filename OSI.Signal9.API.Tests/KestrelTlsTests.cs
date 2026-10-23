@@ -32,11 +32,11 @@ public sealed class KestrelTlsTests : IDisposable
     {
         using var certificate = TestCertificates.SelfSigned();
         var api = StartOnKestrel(_factory);
-        await _factory.SeedSelfSignedTlsClientAsync("agent-app", certificate);
+        await _factory.SeedSelfSignedTlsClientAsync("agent-app", certificate, "tenants.read");
         using var withCertificate = CreateTlsClient(api, certificate);
         using var withoutCertificate = CreateTlsClient(api, certificate: null);
 
-        var response = await withCertificate.PostAsync("connect/token", Signal9ApiFactory.MtlsClientCredentials("agent-app"), Ct);
+        var response = await withCertificate.PostAsync("connect/token", Signal9ApiFactory.MtlsClientCredentials("agent-app", "tenants.read"), Ct);
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, await response.Content.ReadAsStringAsync(Ct));
         var token = (await response.Content.ReadFromJsonAsync<AccessToken>(Ct))!;
         withCertificate.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Value);

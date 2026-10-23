@@ -24,7 +24,7 @@ namespace OSI.Signal9.API.Tests;
 /// <summary>
 /// Hosts <c>api</c> and <c>auth</c> in memory against their own database on the shared PostgreSQL container, with
 /// one controllable clock. Clients from <see cref="WebApplicationFactory{TEntryPoint}.CreateClient()"/> call <c>api</c>
-/// with an access token for a seeded test client.
+/// with an access token for a seeded test client holding every <see cref="GrantableScopes">grantable scope</see>.
 /// </summary>
 public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
 {
@@ -116,10 +116,30 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
 
         _defaultToken ??= Task.Run(async () =>
         {
-            await SeedClientAsync(DefaultClientId);
-            return await RequestTokenAsync(DefaultClientId);
+            await SeedClientAsync(DefaultClientId, GrantableScopes);
+            return await RequestTokenAsync(DefaultClientId, GrantableScopes);
         }).GetAwaiter().GetResult();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _defaultToken.Value);
+    }
+
+    /// <summary>
+    /// Every catalogue scope a client can obtain with client credentials: the OpenID Connect scopes need a person.
+    /// </summary>
+    public static readonly string[] GrantableScopes = OSI.Signal9.Server.Identity.Scopes.All.Keys
+        .Except([OpenIddictConstants.Scopes.OpenId, OpenIddictConstants.Scopes.Profile, OpenIddictConstants.Scopes.OfflineAccess])
+        .ToArray();
+
+    private int _clients;
+
+    /// <summary>A client for <c>api</c> with a token for a newly seeded client holding exactly these scopes.</summary>
+    public async Task<HttpClient> CreateClientAsync(params string[] scopes)
+    {
+        var clientId = $"scoped-client-{Interlocked.Increment(ref _clients)}";
+        await SeedClientAsync(clientId, scopes);
+        var token = await RequestTokenAsync(clientId, scopes);
+        var client = CreateAnonymousClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Value);
+        return client;
     }
 
     /// <summary>A client for <c>api</c> that sends no access token.</summary>
@@ -168,7 +188,7 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         {
             Keys = { JsonWebKeyConverter.ConvertFromX509SecurityKey(new X509SecurityKey(certificate)) },
         };
-        await CreateApplicationAsync(descriptor, scopes);
+        await CreateApplicationAsync(descriptor);
     }
 
     /// <summary>
@@ -180,7 +200,7 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         var descriptor = MtlsClient(clientId, scopes);
         foreach (var (name, value) in subject)
             descriptor.Properties[name] = JsonSerializer.SerializeToElement(value);
-        await CreateApplicationAsync(descriptor, scopes);
+        await CreateApplicationAsync(descriptor);
     }
 
     private static OpenIddictApplicationDescriptor MtlsClient(string clientId, string[] scopes)
@@ -203,18 +223,24 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
     }
 
     /// <summary>Client credentials for a client that authenticates with its certificate alone.</summary>
-    public static FormUrlEncodedContent MtlsClientCredentials(string clientId) => new(new Dictionary<string, string>
+    public static FormUrlEncodedContent MtlsClientCredentials(string clientId, params string[] scopes)
     {
-        ["grant_type"] = GrantTypes.ClientCredentials,
-        ["client_id"] = clientId,
-    });
+        var form = new Dictionary<string, string>
+        {
+            ["grant_type"] = GrantTypes.ClientCredentials,
+            ["client_id"] = clientId,
+        };
+        if (scopes.Length > 0)
+            form["scope"] = string.Join(' ', scopes);
+        return new FormUrlEncodedContent(form);
+    }
 
     /// <summary>The secret of every client seeded by <see cref="SeedClientAsync"/>.</summary>
     public const string ClientSecret = "test-secret-that-is-long-enough";
 
     /// <summary>
     /// Seeds a confidential client that authenticates with <see cref="ClientSecret"/> and may use client credentials,
-    /// revocation and introspection, with the given scopes (each created if it doesn't exist yet).
+    /// revocation and introspection, and may request the given scopes. Only scopes in the catalogue can be issued.
     /// </summary>
     public async Task SeedClientAsync(string clientId, params string[] scopes)
     {
@@ -233,19 +259,12 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         };
         foreach (var name in scopes)
             descriptor.Permissions.Add(Permissions.Prefixes.Scope + name);
-        await CreateApplicationAsync(descriptor, scopes);
+        await CreateApplicationAsync(descriptor);
     }
 
-    private async Task CreateApplicationAsync(OpenIddictApplicationDescriptor descriptor, string[] scopes)
+    private async Task CreateApplicationAsync(OpenIddictApplicationDescriptor descriptor)
     {
         await using var scope = Auth.Services.CreateAsyncScope();
-        var scopeManager = scope.ServiceProvider.GetRequiredService<IOpenIddictScopeManager>();
-        foreach (var name in scopes)
-        {
-            if (await scopeManager.FindByNameAsync(name) is null)
-                await scopeManager.CreateAsync(new OpenIddictScopeDescriptor { Name = name });
-        }
-
         await scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>().CreateAsync(descriptor);
     }
 

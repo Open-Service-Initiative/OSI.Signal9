@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using OSI.Signal9.API.Authorization;
+using OSI.Signal9.Server.Identity;
 using Microsoft.EntityFrameworkCore;
 using OSI.Signal9.Server.Data;
 using OSI.Signal9.API.Infrastructure;
@@ -12,6 +14,7 @@ namespace OSI.Signal9.API.Tenants;
 public sealed class TenantsController(Signal9DbContext db, TenantTree tree, TimeProvider time) : ControllerBase
 {
     /// <summary>Lists tenants, optionally filtered by parent or status.</summary>
+    [RequireScope(Scopes.Tenants.Read)]
     [HttpGet]
     [ProducesResponseType<PagedResult<TenantDto>>(StatusCodes.Status200OK)]
     public async Task<PagedResult<TenantDto>> List(
@@ -33,6 +36,7 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, Time
         return result;
     }
 
+    [RequireScope(Scopes.Tenants.Read)]
     [HttpGet("{tenantId:guid}", Name = nameof(GetTenant))]
     [OptimisticConcurrency]
     [ProducesResponseType<TenantDto>(StatusCodes.Status200OK)]
@@ -47,6 +51,7 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, Time
         return found is null ? NotFound() : this.Conditional(found.Tenant.ToDto(found.DeviceCount), found.Tenant.ETag(found.DeviceCount));
     }
 
+    [RequireScope(Scopes.Tenants.Write)]
     [HttpPost]
     [OptimisticConcurrency]
     [Consumes("application/json")]
@@ -87,6 +92,7 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, Time
         return CreatedAtRoute(nameof(GetTenant), new { tenantId = tenant.Id }, tenant.ToDto(deviceCount: 0));
     }
 
+    [RequireScope(Scopes.Tenants.Write)]
     [HttpPut("{tenantId:guid}")]
     [OptimisticConcurrency]
     [Consumes("application/json")]
@@ -118,6 +124,7 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, Time
     }
 
     /// <summary>Deletes a tenant. Tenants that still own devices or child tenants cannot be deleted.</summary>
+    [RequireScope(Scopes.Tenants.Delete)]
     [HttpDelete("{tenantId:guid}")]
     [OptimisticConcurrency]
     [ProducesResponseType(StatusCodes.Status204NoContent)]

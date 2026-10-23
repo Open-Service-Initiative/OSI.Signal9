@@ -122,8 +122,8 @@ public sealed class MutualTlsTests : IDisposable
     {
         using var certificate = TestCertificates.SelfSigned();
         using var other = TestCertificates.SelfSigned("other");
-        await _factory.SeedSelfSignedTlsClientAsync("agent-app", certificate);
-        var token = await RequestMtlsTokenAsync("agent-app", certificate);
+        await _factory.SeedSelfSignedTlsClientAsync("agent-app", certificate, "tenants.read");
+        var token = await RequestMtlsTokenAsync("agent-app", certificate, "tenants.read");
 
         var withCertificate = await GetTenantsAsync(token, certificate);
         var withOtherCertificate = await GetTenantsAsync(token, other);
@@ -168,9 +168,10 @@ public sealed class MutualTlsTests : IDisposable
         string parameter, string value)
     {
         using var certificate = ReportingCertificate();
-        await _factory.SeedTlsClientAsync("reporting-app", new Dictionary<string, string> { [parameter] = value });
+        await _factory.SeedTlsClientAsync("reporting-app", new Dictionary<string, string> { [parameter] = value },
+            "tenants.read");
 
-        var token = await RequestMtlsTokenAsync("reporting-app", certificate);
+        var token = await RequestMtlsTokenAsync("reporting-app", certificate, "tenants.read");
         var withCertificate = await GetTenantsAsync(token, certificate);
 
         Assert.AreEqual(HttpStatusCode.OK, withCertificate.StatusCode);
@@ -289,10 +290,11 @@ public sealed class MutualTlsTests : IDisposable
         "CN=reporting.example, O=Example Ltd", "reporting.example", "https://reporting.example/app", "192.0.2.10",
         "ops@reporting.example");
 
-    private async Task<AccessToken> RequestMtlsTokenAsync(string clientId, X509Certificate2 certificate)
+    private async Task<AccessToken> RequestMtlsTokenAsync(string clientId, X509Certificate2 certificate,
+        params string[] scopes)
     {
         using var api = _factory.CreateForwardedCertificateClient(certificate);
-        var response = await api.PostAsync("connect/token", Signal9ApiFactory.MtlsClientCredentials(clientId), Ct);
+        var response = await api.PostAsync("connect/token", Signal9ApiFactory.MtlsClientCredentials(clientId, scopes), Ct);
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, await response.Content.ReadAsStringAsync(Ct));
         return (await response.Content.ReadFromJsonAsync<AccessToken>(Ct))!;
     }

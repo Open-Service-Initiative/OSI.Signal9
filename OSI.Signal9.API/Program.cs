@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using OpenIddict.Validation.AspNetCore;
+using OSI.Signal9.API.Authorization;
 using OSI.Signal9.API.Devices;
 using OSI.Signal9.API.Hubs;
 using OSI.Signal9.API.Infrastructure;
@@ -29,7 +30,10 @@ builder.Services.AddScoped<TenantTree>();
 builder.Services.AddControllers()
     .AddJsonOptions(options => Signal9Json.Configure(options.JsonSerializerOptions));
 builder.Services.AddExceptionHandler<ConcurrencyConflictHandler>();
-builder.Services.AddOpenApi(options => options.AddOperationTransformer<ConditionalOperationTransformer>());
+var identity = builder.Configuration.GetIdentityOptions();
+builder.Services.AddOpenApi(options => options
+    .AddScopes(identity.Issuer)
+    .AddOperationTransformer<ConditionalOperationTransformer>());
 builder.Services.AddSignalR()
     .AddJsonProtocol(options => Signal9Json.Configure(options.PayloadSerializerOptions));
 
@@ -39,8 +43,6 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
     .AllowAnyHeader()
     .AllowAnyMethod()
     .AllowCredentials()));
-
-var identity = builder.Configuration.GetIdentityOptions();
 
 // api runs the authorization server's RFC 8705 mTLS aliases (token, revocation, introspection), at the same paths
 // auth advertises for them. Discovery and the key set are served only by auth.
@@ -64,9 +66,12 @@ builder.Services.AddSignal9OpenIddict()
     });
 
 builder.Services.AddAuthentication(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
-// Every endpoint needs a valid access token unless it says otherwise.
+// Every endpoint requires a scope with [RequireScope] or says [AllowAnonymous]; an architecture test enforces it. The
+// fallback is a backstop that still demands a valid access token.
 builder.Services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
+builder.Services.AddSingleton<IAuthorizationHandler, RequireScopeHandler>();
+builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, InsufficientScopeResultHandler>();
 
 var app = builder.Build();
 
@@ -77,16 +82,13 @@ app.UseSignal9ClientCertificates();
 app.UseSignal9ForwardedHeaders();
 app.UseHostHardening();
 
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-}
-
 app.UseCors();
 app.UseRateLimitingAndAuthentication();
 app.UseAuthorization();
 
 app.MapTokenEndpoint().RequireRateLimiting(RateLimiting.Token);
+// The API description is public (story 132): it shows what each call needs, never data.
+app.MapOpenApi().AllowAnonymous().RequireRateLimiting(RateLimiting.Api);
 app.MapControllers().RequireRateLimiting(RateLimiting.Api);
 app.MapHub<AgentHub>(HubRoutes.Agents).RequireRateLimiting(RateLimiting.Api);
 app.MapHub<DashboardHub>(HubRoutes.Dashboard).RequireRateLimiting(RateLimiting.Api);
