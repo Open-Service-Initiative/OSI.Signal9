@@ -12,16 +12,16 @@ If the answer is in one of these, it's already decided. Answer from it and name 
 
 ## Requires human maintainer review
 
-Stop and ask a human maintainer when an answer would:
+A choice requires human maintainer review when it would:
 
 - change a spec, an ADR or a glossary term;
 - make an architecture or high-level design choice the sources above don't already make;
 - close a one-way door: public API shape, database schema, security or authorization behaviour, a new dependency or licence;
 - go beyond the ticket's scope.
 
-Until a maintainer answers, leave that part undone and say what's blocked; build the rest.
+That review happens on the pull request to `dev`, not in conversation. Make the choice the sources point to most strongly, keep it easy to change, and keep building. Then list it in the PR description under **Requires human maintainer review**: what was chosen, the alternatives, and why. The maintainer accepts or redirects it there before merging.
 
-## Record every answer once
+## Record every choice once
 
-- Post the answer as a comment on the ticket, citing its source or the maintainer who decided.
-- If it changes a spec, ADR or glossary term, edit that too, so the next reader finds it there.
+- Settled answers: a comment on the ticket, citing the source.
+- Choices needing review: the PR description, as above. Once the maintainer accepts one that changes a spec, ADR or glossary term, edit that too, so the next reader finds it there.
