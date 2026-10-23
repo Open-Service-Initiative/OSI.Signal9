@@ -22,4 +22,20 @@ internal static class ActiveAgents
                 detail: "This agent is no longer its device's active agent."));
         return (agent.Device, null);
     }
+
+    /// <summary>
+    /// Records an agent's check-in, and any facts it reported, straight to the database. Check-ins are last-write-wins
+    /// and never fail on optimistic concurrency, so an agent isn't refused because someone edited its device meanwhile.
+    /// </summary>
+    public static async Task RecordCheckInAsync(
+        this Signal9DbContext db, Guid agentId, DateTime seenAt, CancellationToken cancellationToken,
+        string? agentVersion = null, string? ipAddress = null)
+    {
+        await db.Agents.Where(a => a.Id == agentId).ExecuteUpdateAsync(set => set
+            .SetProperty(a => a.LastSeenAt, seenAt)
+            .SetProperty(a => a.AgentVersion, a => agentVersion ?? a.AgentVersion), cancellationToken);
+        if (ipAddress is not null)
+            await db.Devices.Where(d => d.ActiveAgentId == agentId).ExecuteUpdateAsync(set => set
+                .SetProperty(d => d.IpAddress, ipAddress), cancellationToken);
+    }
 }

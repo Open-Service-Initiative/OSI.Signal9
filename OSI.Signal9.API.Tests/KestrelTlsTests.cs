@@ -42,8 +42,8 @@ public sealed class KestrelTlsTests : IDisposable
         withCertificate.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Value);
         withoutCertificate.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Value);
 
-        Assert.AreEqual(HttpStatusCode.OK, (await withCertificate.GetAsync("api/tenants", Ct)).StatusCode);
-        Assert.AreEqual(HttpStatusCode.Unauthorized, (await withoutCertificate.GetAsync("api/tenants", Ct)).StatusCode);
+        Assert.AreEqual(HttpStatusCode.OK, (await withCertificate.GetAsync("api/v1/tenants", Ct)).StatusCode);
+        Assert.AreEqual(HttpStatusCode.Unauthorized, (await withoutCertificate.GetAsync("api/v1/tenants", Ct)).StatusCode);
     }
 
     [TestMethod]

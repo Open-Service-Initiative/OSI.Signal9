@@ -49,13 +49,14 @@ public sealed class DevicesController(
     }
 
     [HttpGet("{deviceId:guid}", Name = nameof(GetDevice))]
+    [OptimisticConcurrency]
     [ProducesResponseType<DeviceDto>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<DeviceDto>> GetDevice(Guid deviceId, CancellationToken cancellationToken)
     {
         var device = await db.Devices.AsNoTracking().Include(d => d.ActiveAgent)
             .SingleOrDefaultAsync(d => d.Id == deviceId, cancellationToken);
-        return device is null ? NotFound() : device.ToDto(presence);
+        return device is null ? NotFound() : this.Conditional(device.ToDto(presence), device.ETag(presence));
     }
 
     /// <summary>
@@ -63,6 +64,7 @@ public sealed class DevicesController(
     /// Status is read-only: it comes from the active agent's check-ins.
     /// </summary>
     [HttpPatch("{deviceId:guid}")]
+    [OptimisticConcurrency]
     [Consumes(MergePatch.MediaType)]
     [ProducesResponseType<DeviceDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -74,6 +76,8 @@ public sealed class DevicesController(
             .SingleOrDefaultAsync(d => d.Id == deviceId, cancellationToken);
         if (device is null)
             return NotFound();
+        if (this.Preconditions(device.ETag(presence)) is { } refused)
+            return refused;
 
         UpdateDeviceRequest request;
         try
@@ -99,19 +103,28 @@ public sealed class DevicesController(
 
         var dto = device.ToDto(presence);
         await dashboard.Clients.All.DeviceChanged(dto);
+        this.SetETag(device.ETag(presence));
         return dto;
     }
 
     /// <summary>Deletes a device along with its agents, commands and telemetry.</summary>
     // TODO(#89): deletion becomes anonymised erasure that keeps an anonymous record for alerts and history.
     [HttpDelete("{deviceId:guid}")]
+    [OptimisticConcurrency]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(Guid deviceId, CancellationToken cancellationToken)
     {
-        var deleted = await db.Devices.Where(d => d.Id == deviceId).ExecuteDeleteAsync(cancellationToken);
-        if (deleted == 0)
+        var device = await db.Devices.AsNoTracking().Include(d => d.ActiveAgent)
+            .SingleOrDefaultAsync(d => d.Id == deviceId, cancellationToken);
+        if (device is null)
             return NotFound();
+        if (this.Preconditions(device.ETag(presence)) is { } refused)
+            return refused;
+
+        var deleted = await db.Devices.Where(d => d.Id == deviceId && d.Version == device.Version).ExecuteDeleteAsync(cancellationToken);
+        if (deleted == 0)
+            throw new DbUpdateConcurrencyException("The device changed or was deleted after it was read.");
 
         await dashboard.Clients.All.DeviceDeleted(deviceId);
         return NoContent();

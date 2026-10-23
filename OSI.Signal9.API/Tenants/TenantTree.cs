@@ -89,7 +89,9 @@ public sealed class TenantTree(Signal9DbContext db, IOptions<TenantTreeOptions> 
         }, cancellationToken);
 
     /// <summary>Removes a tenant that has no child tenants. Its closure rows go with it.</summary>
-    public Task<TenantTreeError> RemoveAsync(Guid tenantId, CancellationToken cancellationToken) =>
+    /// <param name="version">The <see cref="Tenant.Version"/> the caller read; if the row has changed since,
+    /// the removal fails with <see cref="DbUpdateConcurrencyException"/>.</param>
+    public Task<TenantTreeError> RemoveAsync(Guid tenantId, uint version, CancellationToken cancellationToken) =>
         ChangeAsync(async () =>
         {
             var tenant = await db.Tenants.SingleOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
@@ -97,6 +99,7 @@ public sealed class TenantTree(Signal9DbContext db, IOptions<TenantTreeOptions> 
                 return TenantTreeError.TenantNotFound;
             if (await db.Tenants.AnyAsync(t => t.ParentTenantId == tenant.Id, cancellationToken))
                 return TenantTreeError.HasChildTenants;
+            db.Entry(tenant).Property(t => t.Version).OriginalValue = version;
             db.Tenants.Remove(tenant);
             return TenantTreeError.None;
         }, cancellationToken);

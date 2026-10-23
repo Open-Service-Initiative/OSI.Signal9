@@ -53,7 +53,7 @@ public sealed class RateLimitingTests
         for (var i = 0; i < 25; i++)
         {
             Assert.AreEqual(HttpStatusCode.OK, (await RequestTokenAsync(auth, "busy-app")).StatusCode);
-            Assert.AreEqual(HttpStatusCode.OK, (await GetAsync(api, "api/tenants")).StatusCode);
+            Assert.AreEqual(HttpStatusCode.OK, (await GetAsync(api, "api/v1/tenants")).StatusCode);
         }
     }
 
@@ -123,10 +123,10 @@ public sealed class RateLimitingTests
         using var callerB = factory.CreateAnonymousClient();
         callerB.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokenB.Value);
 
-        Assert.AreEqual(HttpStatusCode.OK, (await GetAsync(callerA, "api/tenants")).StatusCode);
-        Assert.AreEqual(HttpStatusCode.OK, (await GetAsync(callerA, "api/tenants", ip: "198.51.100.7")).StatusCode);
-        var limited = await GetAsync(callerA, "api/tenants", ip: "192.0.2.9");
-        var otherCaller = await GetAsync(callerB, "api/tenants");
+        Assert.AreEqual(HttpStatusCode.OK, (await GetAsync(callerA, "api/v1/tenants")).StatusCode);
+        Assert.AreEqual(HttpStatusCode.OK, (await GetAsync(callerA, "api/v1/tenants", ip: "198.51.100.7")).StatusCode);
+        var limited = await GetAsync(callerA, "api/v1/tenants", ip: "192.0.2.9");
+        var otherCaller = await GetAsync(callerB, "api/v1/tenants");
 
         Assert.AreEqual(HttpStatusCode.TooManyRequests, limited.StatusCode);
         Assert.AreEqual("application/problem+json", limited.Content.Headers.ContentType?.MediaType);
@@ -135,7 +135,7 @@ public sealed class RateLimitingTests
 
     [TestMethod]
     [DataRow("auth", ".well-known/openid-configuration")]
-    [DataRow("api", "api/tenants")]
+    [DataRow("api", "api/v1/tenants")]
     public async Task Global_limit_covers_every_endpoint_per_ip(string host, string path)
     {
         using var factory = new Signal9ApiFactory(settings: Limit("Global", 2));

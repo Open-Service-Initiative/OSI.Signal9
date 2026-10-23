@@ -273,7 +273,7 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
 
     public async Task<TenantDto> CreateTenantAsync(HttpClient client, string name, int maxDevices = 25)
     {
-        var response = await client.PostAsJsonAsync("api/tenants",
+        var response = await client.PostAsJsonAsync("api/v1/tenants",
             new CreateTenantRequest { Name = name, ContactEmail = $"it@{name.ToLowerInvariant()}.example", MaxDevices = maxDevices },
             Signal9Json.Options);
         response.EnsureSuccessStatusCode();

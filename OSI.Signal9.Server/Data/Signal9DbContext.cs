@@ -22,6 +22,14 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options)
         // OpenIddict's applications, authorizations, scopes and tokens, shared by auth and api (ADR-0003).
         modelBuilder.UseOpenIddict();
 
+        // Every resource's Version is PostgreSQL's xmin, so any write to its row changes its ETag, and EF refuses an
+        // update or delete whose row changed since it was read (DbUpdateConcurrencyException).
+        modelBuilder.Entity<Tenant>().Property(t => t.Version).IsRowVersion();
+        modelBuilder.Entity<Device>().Property(d => d.Version).IsRowVersion();
+        modelBuilder.Entity<Agent>().Property(a => a.Version).IsRowVersion();
+        modelBuilder.Entity<Command>().Property(c => c.Version).IsRowVersion();
+        modelBuilder.Entity<TelemetrySample>().Property(s => s.Version).IsRowVersion();
+
         modelBuilder.Entity<Tenant>(tenant =>
         {
             tenant.Property(t => t.Name).HasMaxLength(200);

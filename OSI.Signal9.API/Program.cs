@@ -28,7 +28,8 @@ builder.Services.AddScoped<TenantTree>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(options => Signal9Json.Configure(options.JsonSerializerOptions));
-builder.Services.AddOpenApi();
+builder.Services.AddExceptionHandler<ConcurrencyConflictHandler>();
+builder.Services.AddOpenApi(options => options.AddOperationTransformer<ConditionalOperationTransformer>());
 builder.Services.AddSignalR()
     .AddJsonProtocol(options => Signal9Json.Configure(options.PayloadSerializerOptions));
 

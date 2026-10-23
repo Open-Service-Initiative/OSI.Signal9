@@ -26,13 +26,14 @@ public sealed class AgentsController(
     IHubContext<DashboardHub, IDashboardHubClient> dashboard) : ControllerBase
 {
     [HttpGet("{agentId:guid}", Name = nameof(GetAgent))]
+    [OptimisticConcurrency]
     [ProducesResponseType<AgentDto>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<AgentDto>> GetAgent(Guid agentId, CancellationToken cancellationToken)
     {
         var agent = await db.Agents.AsNoTracking().Include(a => a.Device)
             .SingleOrDefaultAsync(a => a.Id == agentId, cancellationToken);
-        return agent is null ? NotFound() : agent.ToDto(agent.Device!);
+        return agent is null ? NotFound() : this.Conditional(agent.ToDto(agent.Device!), agent.ETag(agent.Device!));
     }
 
     /// <summary>
@@ -41,12 +42,16 @@ public sealed class AgentsController(
     /// </summary>
     // TODO(enrollment): replaced by enrollment tokens (#128) and identification (#131), which never match machine names.
     [HttpPost]
+    [OptimisticConcurrency]
     [Consumes("application/json")]
     [ProducesResponseType<AgentDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<AgentDto>> Register(RegisterAgentRequest request, CancellationToken cancellationToken)
     {
+        if (this.Preconditions(current: null) is { } refused)
+            return refused;
+
         var tenant = await db.Tenants.AsNoTracking().SingleOrDefaultAsync(t => t.Id == request.TenantId, cancellationToken);
         if (tenant is null || tenant.Status != TenantStatus.Active)
         {
@@ -69,6 +74,7 @@ public sealed class AgentsController(
             return registered.Problem!;
 
         await dashboard.Clients.All.DeviceChanged(device.ToDto(presence));
+        this.SetETag(agent.ETag(device));
         return CreatedAtRoute(nameof(GetAgent), new { agentId = agent.Id }, agent.ToDto(device));
     }
 
@@ -151,6 +157,7 @@ public sealed class AgentsController(
     /// A replaced agent gets 409.
     /// </summary>
     [HttpPut("{agentId:guid}/heartbeat")]
+    [OptimisticConcurrency(Representation = false)]
     [Consumes("application/json")]
     [ProducesResponseType<HeartbeatResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -162,13 +169,16 @@ public sealed class AgentsController(
         var (device, refusal) = await db.FindDeviceOfActiveAgentAsync(this, agentId, cancellationToken);
         if (device is null)
             return (ActionResult)refusal!;
+        // The heartbeat is write-only: it has no representation, so it has no entity tag for If-Match to match.
+        if (this.Preconditions(current: null) is { } refused)
+            return refused;
 
         var agent = device.ActiveAgent!;
         var wasOnline = presence.StatusOf(device) == Contracts.Devices.DeviceStatus.Online;
         agent.LastSeenAt = time.GetUtcNow().UtcDateTime;
         agent.AgentVersion = request.AgentVersion ?? agent.AgentVersion;
         device.IpAddress = request.IpAddress ?? device.IpAddress;
-        await db.SaveChangesAsync(cancellationToken);
+        await db.RecordCheckInAsync(agent.Id, agent.LastSeenAt, cancellationToken, request.AgentVersion, request.IpAddress);
 
         if (!wasOnline)
             await dashboard.Clients.All.DeviceChanged(device.ToDto(presence));

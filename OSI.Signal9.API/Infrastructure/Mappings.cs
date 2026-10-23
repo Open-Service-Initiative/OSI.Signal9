@@ -1,4 +1,5 @@
 using OSI.Signal9.API.Devices;
+using Microsoft.Net.Http.Headers;
 using OSI.Signal9.Server.Data;
 using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.Commands;
@@ -10,6 +11,22 @@ namespace OSI.Signal9.API.Infrastructure;
 
 internal static class Mappings
 {
+    // Each resource's ETag covers its row version and everything else its DTO shows, so it changes whenever the DTO does.
+
+    public static EntityTagHeaderValue ETag(this Tenant tenant, int deviceCount) =>
+        ConditionalRequests.ETag(tenant.Version, deviceCount);
+
+    /// <param name="device">A device loaded with its <see cref="Device.ActiveAgent"/>.</param>
+    public static EntityTagHeaderValue ETag(this Device device, DevicePresence presence) =>
+        ConditionalRequests.ETag(device.Version, device.ActiveAgent?.Version, presence.StatusOf(device));
+
+    public static EntityTagHeaderValue ETag(this Agent agent, Device device) =>
+        ConditionalRequests.ETag(agent.Version, device.Version);
+
+    public static EntityTagHeaderValue ETag(this Command command) => ConditionalRequests.ETag(command.Version);
+
+    public static EntityTagHeaderValue ETag(this TelemetrySample sample) => ConditionalRequests.ETag(sample.Version);
+
     public static TenantDto ToDto(this Tenant tenant, int deviceCount) => new(
         tenant.Id,
         tenant.ParentTenantId,

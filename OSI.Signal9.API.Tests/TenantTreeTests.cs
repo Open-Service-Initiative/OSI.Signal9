@@ -108,7 +108,7 @@ public sealed class TenantTreeTests : IDisposable
         await CreateAsync("Site 1b", client1);
         var site2 = await CreateAsync("Site 2", client2);
         await CreateAsync("Standalone");
-        Assert.AreEqual(HttpStatusCode.NoContent, (await _client.DeleteAsync($"api/tenants/{site2}", Ct)).StatusCode);
+        Assert.AreEqual(HttpStatusCode.NoContent, (await _client.DeleteAsync($"api/v1/tenants/{site2}", Ct)).StatusCode);
         Assert.AreEqual(TenantTreeError.None, await MoveAsync(client1, mspB));
 
         using var scope = _factory.Services.CreateScope();
@@ -130,7 +130,7 @@ public sealed class TenantTreeTests : IDisposable
     }
 
     private async Task<HttpResponseMessage> PostAsync(string name, Guid? parentTenantId = null) =>
-        await _client.PostAsJsonAsync("api/tenants",
+        await _client.PostAsJsonAsync("api/v1/tenants",
             new CreateTenantRequest { Name = name, ContactEmail = "it@tenant.example", ParentTenantId = parentTenantId },
             Signal9Json.Options, Ct);
 
@@ -151,7 +151,7 @@ public sealed class TenantTreeTests : IDisposable
     }
 
     private Task<TenantDto> GetAsync(Guid tenantId) =>
-        _client.GetFromJsonAsync<TenantDto>($"api/tenants/{tenantId}", Signal9Json.Options, Ct)!;
+        _client.GetFromJsonAsync<TenantDto>($"api/v1/tenants/{tenantId}", Signal9Json.Options, Ct)!;
 
     // Re-parenting has no endpoint until tenant transfers; until then, the tree service is driven directly.
     private async Task<TenantTreeError> MoveAsync(Guid tenantId, Guid newParentId)

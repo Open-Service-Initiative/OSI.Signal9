@@ -67,7 +67,7 @@ public sealed class KeyStorageTests : IDisposable
         using var api = _factory.CreateAnonymousClient();
         api.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Value);
 
-        Assert.AreEqual(HttpStatusCode.OK, (await api.GetAsync("api/tenants", Ct)).StatusCode);
+        Assert.AreEqual(HttpStatusCode.OK, (await api.GetAsync("api/v1/tenants", Ct)).StatusCode);
     }
 
     [TestMethod]

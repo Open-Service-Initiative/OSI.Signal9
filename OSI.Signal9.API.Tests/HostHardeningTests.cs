@@ -58,7 +58,7 @@ public sealed class HostHardeningTests : IDisposable
 
     [TestMethod]
     [DataRow("auth", "/.well-known/openid-configuration")]
-    [DataRow("api", "/api/tenants")]
+    [DataRow("api", "/api/v1/tenants")]
     public async Task The_internal_port_serves_only_probes(string host, string path)
     {
         var context = await GetOnPortAsync(Host(host), path, Signal9ApiFactory.ProbePort);
@@ -99,7 +99,7 @@ public sealed class HostHardeningTests : IDisposable
 
     [TestMethod]
     [DataRow("auth", ".well-known/openid-configuration")]
-    [DataRow("api", "api/tenants")]
+    [DataRow("api", "api/v1/tenants")]
     public async Task Https_responses_carry_a_preload_ready_hsts_header(string host, string path)
     {
         using var client = host == "auth" ? _factory.Auth.CreateClient() : _factory.CreateClient();

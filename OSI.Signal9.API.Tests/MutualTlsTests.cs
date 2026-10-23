@@ -301,7 +301,7 @@ public sealed class MutualTlsTests : IDisposable
     {
         using var api = _factory.CreateForwardedCertificateClient(certificate);
         api.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Value);
-        return await api.GetAsync("api/tenants", Ct);
+        return await api.GetAsync("api/v1/tenants", Ct);
     }
 
     private async Task<string?> ErrorAsync(HttpResponseMessage response) =>

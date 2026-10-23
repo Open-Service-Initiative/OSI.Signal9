@@ -47,13 +47,14 @@ public sealed class TelemetryController(
     }
 
     [HttpGet("devices/{deviceId:guid}/telemetry/{sampleId:guid}", Name = nameof(GetSample))]
+    [OptimisticConcurrency]
     [ProducesResponseType<TelemetrySampleDto>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<TelemetrySampleDto>> GetSample(Guid deviceId, Guid sampleId, CancellationToken cancellationToken)
     {
         var sample = await db.TelemetrySamples.AsNoTracking()
             .SingleOrDefaultAsync(s => s.DeviceId == deviceId && s.Id == sampleId, cancellationToken);
-        return sample is null ? NotFound() : sample.ToDto();
+        return sample is null ? NotFound() : this.Conditional(sample.ToDto(), sample.ETag());
     }
 
     /// <summary>
@@ -61,6 +62,7 @@ public sealed class TelemetryController(
     /// The sample's canonical URL is under the device.
     /// </summary>
     [HttpPost("agents/{agentId:guid}/telemetry")]
+    [OptimisticConcurrency]
     [Consumes("application/json")]
     [ProducesResponseType<TelemetrySampleDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -72,6 +74,8 @@ public sealed class TelemetryController(
         var (device, refusal) = await db.FindDeviceOfActiveAgentAsync(this, agentId, cancellationToken);
         if (device is null)
             return (ActionResult)refusal!;
+        if (this.Preconditions(current: null) is { } refused)
+            return refused;
 
         var now = time.GetUtcNow().UtcDateTime;
         var sample = new TelemetrySample
@@ -88,11 +92,12 @@ public sealed class TelemetryController(
             Disks = request.Disks.Select(d => new DiskUsage { Name = d.Name, TotalBytes = d.TotalBytes, FreeBytes = d.FreeBytes }).ToList(),
         };
         db.TelemetrySamples.Add(sample);
-        device.ActiveAgent!.LastSeenAt = now;
         await db.SaveChangesAsync(cancellationToken);
+        await db.RecordCheckInAsync(device.ActiveAgentId!.Value, now, cancellationToken);
 
         var dto = sample.ToDto();
         await dashboard.Clients.All.TelemetryReceived(dto);
+        this.SetETag(sample.ETag());
         return CreatedAtRoute(nameof(GetSample), new { deviceId = device.Id, sampleId = sample.Id }, dto);
     }
 }

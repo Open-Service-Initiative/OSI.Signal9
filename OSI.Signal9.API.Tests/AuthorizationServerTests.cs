@@ -29,9 +29,9 @@ public sealed class AuthorizationServerTests : IDisposable
         var token = await _factory.RequestTokenAsync("reporting-app");
 
         using var api = _factory.CreateAnonymousClient();
-        var anonymous = await api.GetAsync("api/tenants", Ct);
+        var anonymous = await api.GetAsync("api/v1/tenants", Ct);
         api.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Value);
-        var authenticated = await api.GetAsync("api/tenants", Ct);
+        var authenticated = await api.GetAsync("api/v1/tenants", Ct);
 
         Assert.AreEqual("Bearer", token.TokenType);
         Assert.AreEqual(HttpStatusCode.Unauthorized, anonymous.StatusCode);
@@ -108,9 +108,9 @@ public sealed class AuthorizationServerTests : IDisposable
         using var api = CreateApiClient(token);
 
         _factory.Time.Advance(TimeSpan.FromMinutes(10) - TimeSpan.FromSeconds(1));
-        var beforeExpiry = await api.GetAsync("api/tenants", Ct);
+        var beforeExpiry = await api.GetAsync("api/v1/tenants", Ct);
         _factory.Time.Advance(TimeSpan.FromSeconds(2));
-        var afterExpiry = await api.GetAsync("api/tenants", Ct);
+        var afterExpiry = await api.GetAsync("api/v1/tenants", Ct);
 
         Assert.AreEqual(600, token.ExpiresIn);
         Assert.AreEqual(HttpStatusCode.OK, beforeExpiry.StatusCode);
@@ -145,7 +145,7 @@ public sealed class AuthorizationServerTests : IDisposable
         await _factory.SeedClientAsync("reporting-app");
         var token = await _factory.RequestTokenAsync("reporting-app");
         using var api = CreateApiClient(token);
-        var beforeRevocation = await api.GetAsync("api/tenants", Ct);
+        var beforeRevocation = await api.GetAsync("api/v1/tenants", Ct);
 
         using var revoker = _factory.CreateAnonymousClient();
         var revocation = await revoker.PostAsync("connect/revoke", new FormUrlEncodedContent(new Dictionary<string, string>
@@ -154,7 +154,7 @@ public sealed class AuthorizationServerTests : IDisposable
             ["client_secret"] = Signal9ApiFactory.ClientSecret,
             ["token"] = token.Value,
         }), Ct);
-        var afterRevocation = await api.GetAsync("api/tenants", Ct);
+        var afterRevocation = await api.GetAsync("api/v1/tenants", Ct);
 
         Assert.AreEqual(HttpStatusCode.OK, beforeRevocation.StatusCode);
         Assert.AreEqual(HttpStatusCode.OK, revocation.StatusCode);

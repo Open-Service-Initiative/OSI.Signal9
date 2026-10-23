@@ -4,10 +4,14 @@ using OSI.Signal9.Contracts.Tenants;
 namespace OSI.Signal9.Server.Data;
 
 // Persistence model. Timestamps are stored as UTC DateTime and exposed as DateTimeOffset in contracts.
+// Every resource has a Version: its row version, checked on every update and delete (optimistic concurrency).
 
 public sealed class Tenant
 {
     public Guid Id { get; set; }
+
+    /// <summary>Row version (PostgreSQL <c>xmin</c>): the concurrency token behind the resource's ETag.</summary>
+    public uint Version { get; set; }
     public Guid? ParentTenantId { get; set; }
     public required string Name { get; set; }
     public string? Description { get; set; }
@@ -39,6 +43,9 @@ public sealed class TenantClosure
 public sealed class Device
 {
     public Guid Id { get; set; }
+
+    /// <summary>Row version (PostgreSQL <c>xmin</c>): the concurrency token behind the resource's ETag.</summary>
+    public uint Version { get; set; }
     public Guid TenantId { get; set; }
 
     /// <summary>The device's one active agent, if any. Status comes from its check-ins.</summary>
@@ -67,6 +74,9 @@ public sealed class Device
 public sealed class Agent
 {
     public Guid Id { get; set; }
+
+    /// <summary>Row version (PostgreSQL <c>xmin</c>): the concurrency token behind the resource's ETag.</summary>
+    public uint Version { get; set; }
     public Guid DeviceId { get; set; }
     public string? AgentVersion { get; set; }
     public DateTime EnrolledAt { get; set; }
@@ -78,6 +88,9 @@ public sealed class Agent
 public sealed class Command
 {
     public Guid Id { get; set; }
+
+    /// <summary>Row version (PostgreSQL <c>xmin</c>): the concurrency token behind the resource's ETag.</summary>
+    public uint Version { get; set; }
     public Guid DeviceId { get; set; }
     public CommandType Type { get; set; }
     public string? Parameters { get; set; }
@@ -93,6 +106,9 @@ public sealed class Command
 public sealed class TelemetrySample
 {
     public Guid Id { get; set; }
+
+    /// <summary>Row version (PostgreSQL <c>xmin</c>): the concurrency token behind the resource's ETag.</summary>
+    public uint Version { get; set; }
     public Guid DeviceId { get; set; }
     public DateTime CollectedAt { get; set; }
     public DateTime ReceivedAt { get; set; }

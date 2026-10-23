@@ -18,16 +18,16 @@ public sealed class Signal9ApiClient(HttpClient http)
     // Tenants
 
     public Task<PagedResult<TenantDto>> GetTenantsAsync(int page = 1, int pageSize = 100, CancellationToken cancellationToken = default) =>
-        GetAsync<PagedResult<TenantDto>>($"api/tenants?page={page}&pageSize={pageSize}", cancellationToken);
+        GetAsync<PagedResult<TenantDto>>($"api/v1/tenants?page={page}&pageSize={pageSize}", cancellationToken);
 
     public Task<TenantDto> CreateTenantAsync(CreateTenantRequest request, CancellationToken cancellationToken = default) =>
-        SendAsync<TenantDto>(HttpMethod.Post, "api/tenants", request, cancellationToken);
+        SendAsync<TenantDto>(HttpMethod.Post, "api/v1/tenants", request, cancellationToken);
 
     public Task<TenantDto> UpdateTenantAsync(Guid tenantId, UpdateTenantRequest request, CancellationToken cancellationToken = default) =>
-        SendAsync<TenantDto>(HttpMethod.Put, $"api/tenants/{tenantId}", request, cancellationToken);
+        SendAsync<TenantDto>(HttpMethod.Put, $"api/v1/tenants/{tenantId}", request, cancellationToken);
 
     public Task DeleteTenantAsync(Guid tenantId, CancellationToken cancellationToken = default) =>
-        SendAsync(HttpMethod.Delete, $"api/tenants/{tenantId}", body: null, cancellationToken);
+        SendAsync(HttpMethod.Delete, $"api/v1/tenants/{tenantId}", body: null, cancellationToken);
 
     // Devices
 

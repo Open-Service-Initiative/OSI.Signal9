@@ -1,20 +1,20 @@
 @api = https://localhost:7201
 
 ### Create a tenant
-POST {{api}}/api/tenants
+POST {{api}}/api/v1/tenants
 Content-Type: application/json
 
 {
   "name": "Contoso",
   "contactEmail": "it@contoso.example",
-  "maxAgents": 25
+  "maxDevices": 25
 }
 
 ### List tenants
-GET {{api}}/api/tenants?page=1&pageSize=25
+GET {{api}}/api/v1/tenants?page=1&pageSize=25
 
 ### Enroll an agent
-POST {{api}}/api/agents
+POST {{api}}/api/v1/agents
 Content-Type: application/json
 
 {
@@ -25,5 +25,5 @@ Content-Type: application/json
   "totalMemoryMb": 16384
 }
 
-### List online agents
-GET {{api}}/api/agents?status=Online
+### List online devices
+GET {{api}}/api/v1/devices?status=Online

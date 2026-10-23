@@ -27,7 +27,7 @@ public sealed class TenantsTests : IDisposable
     [TestMethod]
     public async Task Create_returns_201_with_location_of_the_new_tenant()
     {
-        var response = await _client.PostAsJsonAsync("api/tenants",
+        var response = await _client.PostAsJsonAsync("api/v1/tenants",
             new CreateTenantRequest { Name = "Contoso", ContactEmail = "it@contoso.example" }, Signal9Json.Options,
             Ct);
 
@@ -43,7 +43,7 @@ public sealed class TenantsTests : IDisposable
     [TestMethod]
     public async Task Create_with_invalid_body_returns_400_validation_problem()
     {
-        var response = await _client.PostAsJsonAsync("api/tenants",
+        var response = await _client.PostAsJsonAsync("api/v1/tenants",
             new CreateTenantRequest { Name = "", ContactEmail = "nope" }, Signal9Json.Options,
             Ct);
 
@@ -130,7 +130,7 @@ public sealed class TenantsTests : IDisposable
         var parent = await _factory.CreateTenantAsync(_client, "MSP");
         await CreateAsync(_client, "Client", parent.Id);
 
-        var response = await _client.DeleteAsync($"api/tenants/{parent.Id}", Ct);
+        var response = await _client.DeleteAsync($"api/v1/tenants/{parent.Id}", Ct);
 
         Assert.AreEqual(HttpStatusCode.Conflict, response.StatusCode);
     }
@@ -140,7 +140,7 @@ public sealed class TenantsTests : IDisposable
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
 
-        var response = await _client.PutAsJsonAsync($"api/tenants/{tenant.Id}",
+        var response = await _client.PutAsJsonAsync($"api/v1/tenants/{tenant.Id}",
             new UpdateTenantRequest { Name = "Contoso Ltd", ContactEmail = "ops@contoso.example", Plan = SubscriptionPlan.Enterprise, MaxDevices = 500, Status = TenantStatus.Suspended },
             Signal9Json.Options, Ct);
 
@@ -154,8 +154,8 @@ public sealed class TenantsTests : IDisposable
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
 
-        var deleted = await _client.DeleteAsync($"api/tenants/{tenant.Id}", Ct);
-        var fetched = await _client.GetAsync($"api/tenants/{tenant.Id}", Ct);
+        var deleted = await _client.DeleteAsync($"api/v1/tenants/{tenant.Id}", Ct);
+        var fetched = await _client.GetAsync($"api/v1/tenants/{tenant.Id}", Ct);
 
         Assert.AreEqual(HttpStatusCode.NoContent, deleted.StatusCode);
         Assert.AreEqual(HttpStatusCode.NotFound, fetched.StatusCode);
@@ -167,7 +167,7 @@ public sealed class TenantsTests : IDisposable
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
         await Signal9ApiFactory.RegisterAsync(_client, tenant.Id, "PC01");
 
-        var response = await _client.DeleteAsync($"api/tenants/{tenant.Id}", Ct);
+        var response = await _client.DeleteAsync($"api/v1/tenants/{tenant.Id}", Ct);
 
         Assert.AreEqual(HttpStatusCode.Conflict, response.StatusCode);
     }
@@ -179,7 +179,7 @@ public sealed class TenantsTests : IDisposable
         var bravo = await _factory.CreateTenantAsync(_client, "Bravo");
         await Signal9ApiFactory.RegisterAsync(_client, bravo.Id, "PC01");
 
-        var page = await _client.GetFromJsonAsync<PagedResult<TenantDto>>("api/tenants?page=2&pageSize=1", Signal9Json.Options,
+        var page = await _client.GetFromJsonAsync<PagedResult<TenantDto>>("api/v1/tenants?page=2&pageSize=1", Signal9Json.Options,
             Ct);
 
         Assert.AreEqual(2, page!.TotalCount);
@@ -191,13 +191,13 @@ public sealed class TenantsTests : IDisposable
     [TestMethod]
     public async Task Invalid_paging_returns_400()
     {
-        var response = await _client.GetAsync("api/tenants?pageSize=1000", Ct);
+        var response = await _client.GetAsync("api/v1/tenants?pageSize=1000", Ct);
 
         Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     private Task<HttpResponseMessage> CreateAsync(HttpClient client, string name, Guid? parentTenantId) =>
-        client.PostAsJsonAsync("api/tenants",
+        client.PostAsJsonAsync("api/v1/tenants",
             new CreateTenantRequest { Name = name, ContactEmail = "it@tenant.example", ParentTenantId = parentTenantId },
             Signal9Json.Options, Ct);
 

@@ -118,7 +118,7 @@ public sealed class KeyRotationTests : IDisposable
     {
         using var api = _factory.CreateAnonymousClient();
         api.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        return (await api.GetAsync("api/tenants", Ct)).StatusCode;
+        return (await api.GetAsync("api/v1/tenants", Ct)).StatusCode;
     }
 
     /// <summary>The stored keys that encrypted an access token and signed the token inside it.</summary>

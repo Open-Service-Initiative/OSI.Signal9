@@ -47,16 +47,18 @@ public sealed class CommandsController(
     }
 
     [HttpGet("{commandId:guid}", Name = nameof(GetCommand))]
+    [OptimisticConcurrency]
     [ProducesResponseType<CommandDto>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<CommandDto>> GetCommand(Guid deviceId, Guid commandId, CancellationToken cancellationToken)
     {
         var command = await FindAsync(deviceId, commandId, tracking: false, cancellationToken);
-        return command is null ? NotFound() : command.ToDto();
+        return command is null ? NotFound() : this.Conditional(command.ToDto(), command.ETag());
     }
 
     /// <summary>Queues a command and rings the doorbell of the device's active agent, which then fetches it.</summary>
     [HttpPost]
+    [OptimisticConcurrency]
     [Consumes("application/json")]
     [ProducesResponseType<CommandDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -67,6 +69,8 @@ public sealed class CommandsController(
         var device = await db.Devices.AsNoTracking().SingleOrDefaultAsync(d => d.Id == deviceId, cancellationToken);
         if (device is null)
             return NotFound();
+        if (this.Preconditions(current: null) is { } refused)
+            return refused;
 
         var command = new Command
         {
@@ -86,11 +90,13 @@ public sealed class CommandsController(
         if (device.ActiveAgentId is { } agentId)
             await agents.Clients.Group(AgentHub.GroupFor(agentId)).WorkAvailable();
         await dashboard.Clients.All.CommandChanged(dto);
+        this.SetETag(command.ETag());
         return CreatedAtRoute(nameof(GetCommand), new { deviceId, commandId = command.Id }, dto);
     }
 
     /// <summary>Records the outcome of a command. Sent by the agent once, when it finishes.</summary>
     [HttpPut("{commandId:guid}/result")]
+    [OptimisticConcurrency]
     [Consumes("application/json")]
     [ProducesResponseType<CommandDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -107,6 +113,7 @@ public sealed class CommandsController(
 
     /// <summary>Cancels a pending command. Commands that already finished can't be cancelled (409).</summary>
     [HttpPost("{commandId:guid}:cancel")]
+    [OptimisticConcurrency]
     [ProducesResponseType<CommandDto>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
@@ -119,6 +126,8 @@ public sealed class CommandsController(
         var command = await FindAsync(deviceId, commandId, tracking: true, cancellationToken);
         if (command is null)
             return NotFound();
+        if (this.Preconditions(command.ETag()) is { } refused)
+            return refused;
         if (command.Status != CommandStatus.Pending)
             return Problem(statusCode: StatusCodes.Status409Conflict, title: "Command already finished",
                 detail: $"The command is {command.Status}.");
@@ -129,6 +138,7 @@ public sealed class CommandsController(
 
         var dto = command.ToDto();
         await dashboard.Clients.All.CommandChanged(dto);
+        this.SetETag(command.ETag());
         return dto;
     }
 

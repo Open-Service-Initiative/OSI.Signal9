@@ -71,8 +71,8 @@ A `tls_client_auth` client registers exactly one RFC 8705 subject (`tls_client_a
 
 | Resource | Methods |
 | --- | --- |
-| `/api/tenants` | `GET` (paged), `POST` |
-| `/api/tenants/{tenantId}` | `GET`, `PUT`, `DELETE` |
+| `/api/v1/tenants` | `GET` (paged), `POST` |
+| `/api/v1/tenants/{tenantId}` | `GET`, `PUT`, `DELETE` |
 | `/api/v1/devices` | `GET` (paged; `tenantId`, `status`, `group`, `search` filters) |
 | `/api/v1/devices/{deviceId}` | `GET`, `PATCH` (`application/merge-patch+json`: group, tags, maintenance mode), `DELETE` |
 | `/api/v1/devices/{deviceId}/telemetry` | `GET` (paged; `from`, `to`) |
@@ -86,6 +86,8 @@ A `tls_client_auth` client registers exactly one RFC 8705 subject (`tls_client_a
 | `/api/v1/agents/{agentId}/heartbeat` | `PUT` (sent by the agent; the response says whether work is waiting) |
 | `/api/v1/agents/{agentId}/pending-commands` | `GET` (paged, oldest first; the agent's pending work, each with its canonical URL) |
 | `/api/v1/agents/{agentId}/telemetry` | `POST` (sent by the agent; stored on its device) |
+
+Single resources and write responses carry a strong `ETag`. Send it back in `If-Match` on a `PUT`, `PATCH`, `DELETE` or `:action` to get `412 Precondition Failed` instead of overwriting someone else's change, and in `If-None-Match` on a `GET` to get `304 Not Modified` when nothing changed.
 
 A device is the managed machine; an agent is one installation on it. Telemetry and command history belong to the device and survive the agent being replaced.
 
