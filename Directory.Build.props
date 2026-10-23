@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <!-- Keep CI strict (including NuGet vulnerability warnings) without blocking local iteration. -->
+    <TreatWarningsAsErrors Condition="'$(CI)' == 'true'">true</TreatWarningsAsErrors>
+    <!-- Informational: we don't use the Aspire CLI bundle. -->
+    <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
+  </PropertyGroup>
+</Project>

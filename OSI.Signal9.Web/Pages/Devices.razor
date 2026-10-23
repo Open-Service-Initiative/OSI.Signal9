@@ -1,0 +1,268 @@
+@page "/devices"
+@inject Signal9ApiClient Api
+@inject DashboardHubConnection Hub
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>Devices - Signal9 RMM</PageTitle>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1>Devices</h1>
+            <p class="text-muted mb-0">Machines enroll themselves when the agent is installed with a tenant code.</p>
+        </div>
+        <button class="btn btn-outline-secondary" @onclick="LoadAsync" disabled="@isLoading">
+            <i class="bi bi-arrow-clockwise me-1"></i> Refresh
+        </button>
+    </div>
+
+    <ErrorAlert @bind-Message="error" />
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <form class="row g-3 align-items-end" @onsubmit="LoadAsync">
+                <div class="col-md-5">
+                    <label class="form-label" for="search">Search</label>
+                    <input id="search" class="form-control" placeholder="Machine name or IP address" @bind="search" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="status">Status</label>
+                    <select id="status" class="form-select" @bind="statusFilter">
+                        <option value="">Any status</option>
+                        @foreach (var status in Enum.GetValues<AgentStatus>())
+                        {
+                            <option value="@status">@status</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-4 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">Apply</button>
+                    <button type="button" class="btn btn-outline-secondary" @onclick="ClearFiltersAsync">Clear</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            @if (agents is null)
+            {
+                <div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>
+            }
+            else if (agents.Items.Count == 0)
+            {
+                <p class="text-muted mb-0">No devices match.</p>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Device</th><th>Status</th><th>Operating system</th><th>IP address</th>
+                                <th>Group</th><th>Last seen</th><th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var agent in agents.Items)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="fw-semibold">@agent.MachineName</div>
+                                        @foreach (var tag in agent.Tags)
+                                        {
+                                            <span class="badge bg-light text-dark border me-1">@tag</span>
+                                        }
+                                    </td>
+                                    <td><AgentStatusBadge Status="agent.Status" /></td>
+                                    <td>@agent.OperatingSystem <small class="text-muted">@agent.Architecture</small></td>
+                                    <td>@agent.IpAddress</td>
+                                    <td>@agent.GroupName</td>
+                                    <td>@agent.LastSeenAt.ToLocalTime().ToString("g")</td>
+                                    <td class="text-end text-nowrap">
+                                        <button class="btn btn-sm btn-outline-primary" title="Edit" @onclick="() => Edit(agent)"><i class="bi bi-pencil"></i></button>
+                                        <button class="btn btn-sm btn-outline-secondary" title="Collect system info" @onclick="() => CollectSystemInfoAsync(agent)"><i class="bi bi-terminal"></i></button>
+                                        <button class="btn btn-sm btn-outline-danger" title="Delete" @onclick="() => DeleteAsync(agent)"><i class="bi bi-trash"></i></button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <small class="text-muted">Showing @agents.Items.Count of @agents.TotalCount</small>
+            }
+        </div>
+    </div>
+</div>
+
+@if (editing is not null)
+{
+    <div class="modal show d-block" tabindex="-1" role="dialog" aria-modal="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <EditForm Model="form" OnValidSubmit="SaveAsync">
+                    <DataAnnotationsValidator />
+                    <div class="modal-header">
+                        <h5 class="modal-title">Edit @editing.MachineName</h5>
+                        <button type="button" class="btn-close" aria-label="Close" @onclick="CloseEditor"></button>
+                    </div>
+                    <div class="modal-body">
+                        <ErrorAlert @bind-Message="formError" />
+                        <div class="mb-3">
+                            <label class="form-label" for="group">Group</label>
+                            <InputText id="group" class="form-control" @bind-Value="form.GroupName" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="tags">Tags</label>
+                            <InputText id="tags" class="form-control" placeholder="Comma-separated, e.g. server, finance" @bind-Value="form.Tags" />
+                        </div>
+                        <div class="form-check">
+                            <InputCheckbox id="maintenance" class="form-check-input" @bind-Value="form.InMaintenance" />
+                            <label class="form-check-label" for="maintenance">In maintenance (suppresses offline status)</label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseEditor">Cancel</button>
+                        <button type="submit" class="btn btn-primary" disabled="@isSaving">Save</button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop show"></div>
+}
+
+@code {
+    private PagedResult<AgentDto>? agents;
+    private string? search;
+    private string statusFilter = string.Empty;
+    private bool isLoading;
+    private string? error;
+
+    private AgentDto? editing;
+    private AgentForm form = new();
+    private string? formError;
+    private bool isSaving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Hub.OnAgentChanged += OnAgentEvent;
+        Hub.OnAgentDeleted += OnAgentEvent;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+        try
+        {
+            AgentStatus? status = Enum.TryParse<AgentStatus>(statusFilter, out var parsed) ? parsed : null;
+            agents = await Api.GetAgentsAsync(status, search);
+        }
+        catch (Exception ex)
+        {
+            error = $"Could not load devices: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private Task ClearFiltersAsync()
+    {
+        search = null;
+        statusFilter = string.Empty;
+        return LoadAsync();
+    }
+
+    private void Edit(AgentDto agent)
+    {
+        editing = agent;
+        formError = null;
+        form = new AgentForm
+        {
+            GroupName = agent.GroupName,
+            Tags = string.Join(", ", agent.Tags),
+            InMaintenance = agent.InMaintenance,
+        };
+    }
+
+    private void CloseEditor() => editing = null;
+
+    private async Task SaveAsync()
+    {
+        isSaving = true;
+        try
+        {
+            await Api.UpdateAgentAsync(editing!.Id, new UpdateAgentRequest
+            {
+                GroupName = form.GroupName,
+                Tags = (form.Tags ?? string.Empty).Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries),
+                InMaintenance = form.InMaintenance,
+            });
+            editing = null;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            formError = ex.Message;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task DeleteAsync(AgentDto agent)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete {agent.MachineName}? Its telemetry and command history will be removed."))
+            return;
+        try
+        {
+            await Api.DeleteAgentAsync(agent.Id);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            error = $"Could not delete {agent.MachineName}: {ex.Message}";
+        }
+    }
+
+    private async Task CollectSystemInfoAsync(AgentDto agent)
+    {
+        try
+        {
+            await Api.CreateCommandAsync(agent.Id, new CreateAgentCommandRequest { Type = CommandType.CollectSystemInfo });
+        }
+        catch (Exception ex)
+        {
+            error = $"Could not queue the command: {ex.Message}";
+        }
+    }
+
+    private Task OnAgentEvent<T>(T _) => InvokeAsync(async () =>
+    {
+        if (editing is not null)
+            return;
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose()
+    {
+        Hub.OnAgentChanged -= OnAgentEvent;
+        Hub.OnAgentDeleted -= OnAgentEvent;
+    }
+
+    private sealed class AgentForm
+    {
+        [System.ComponentModel.DataAnnotations.StringLength(100)]
+        public string? GroupName { get; set; }
+
+        public string? Tags { get; set; }
+
+        public bool InMaintenance { get; set; }
+    }
+}

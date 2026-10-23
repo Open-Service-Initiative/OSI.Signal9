@@ -1,0 +1,9 @@
+### Test suites
+
+| Suite | Tests | Passed | Failed | Skipped | Other | Duration |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+{{#each ctrf.extra.suites}}
+| {{escapeMarkdown this.results.extra.groupKey}} | {{this.results.summary.tests}} | {{this.results.summary.passed}} | {{this.results.summary.failed}} | {{this.results.summary.skipped}} | {{addAll this.results.summary.pending this.results.summary.other}} | {{formatDurationFromTimes 0 this.results.summary.extra.duration}} |
+{{/each}}
+
+**Total:** {{ctrf.summary.tests}} tests — {{ctrf.summary.passed}} passed, {{ctrf.summary.failed}} failed, {{ctrf.summary.skipped}} skipped.

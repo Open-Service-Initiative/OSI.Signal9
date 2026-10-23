@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+    <File Path="README.md" />
+  </Folder>
+  <Project Path="OSI.Signal9.Agent/OSI.Signal9.Agent.csproj" />
+  <Project Path="OSI.Signal9.API/OSI.Signal9.API.csproj" />
+  <Project Path="OSI.Signal9.API.Tests/OSI.Signal9.API.Tests.csproj" />
+  <Project Path="OSI.Signal9.AppHost/OSI.Signal9.AppHost.csproj" />
+  <Project Path="OSI.Signal9.Contracts/OSI.Signal9.Contracts.csproj" />
+  <Project Path="OSI.Signal9.ServiceDefaults/OSI.Signal9.ServiceDefaults.csproj" />
+  <Project Path="OSI.Signal9.Web/OSI.Signal9.Web.csproj" />
+</Solution>

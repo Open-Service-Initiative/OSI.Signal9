@@ -1,0 +1,128 @@
+# Adapted from CyberDrain/CIPP (.github/workflows/Conventional_Commits.yml, commit c058808),
+# AGPL-3.0. Modified for Signal9, 2026-10-22: revert titles, a single updating comment,
+# and closing/reopening the PR on an invalid/fixed title.
+name: Conventional Commits Check
+
+on:
+  # Using pull_request_target instead of pull_request for secure handling of fork PRs
+  pull_request_target:
+    # Re-run on title edits so a corrected title clears the check and reopens the PR
+    types: [opened, synchronize, reopened, edited]
+    # Check PRs targeting dev and release PRs targeting main
+    branches:
+      - dev
+      - main
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  conventional-commits:
+    name: Validate Conventional Commits
+    runs-on: ubuntu-slim
+    steps:
+      - name: Validate PR title
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const marker = '<!-- conventional-commits -->';
+            const title = context.payload.pull_request.title || '';
+            const pattern = /^(feat|fix|docs|style|refactor|perf|test|chore|ci|build|revert)(\(.+\))?!?: .+/i;
+            // GitHub's own revert button titles a PR 'Revert "<original title>"'; accept that form too.
+            const isConventional = (t) => pattern.test(t) || /^Revert ".+"$/.test(t);
+            const valid = isConventional(title);
+
+            // Find a previous comment from this workflow so we update instead of piling up.
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find(
+              (c) => c.user.type === 'Bot' && c.body.includes(marker)
+            );
+
+            if (valid) {
+              console.log(`✓ PR title follows Conventional Commits format: "${title}"`);
+
+              // Nothing was ever wrong — stay quiet.
+              if (!existing) return;
+
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: existing.id,
+                body: [
+                  marker,
+                  '### ✅ PR title follows Conventional Commits',
+                  '',
+                  `Received: \`${title}\``,
+                  '',
+                  'Thanks for fixing it!'
+                ].join('\n'),
+              });
+
+              // We closed this PR for a bad title, so reopen it now that it is corrected.
+              // Only on an edit that turned an invalid title into a valid one, so a later
+              // human closure isn't undone by an unrelated edit.
+              const pr = context.payload.pull_request;
+              const previousTitle = context.payload.changes?.title?.from;
+              const titleWasFixed = context.payload.action === 'edited'
+                && typeof previousTitle === 'string'
+                && !isConventional(previousTitle);
+              if (titleWasFixed && pr.state === 'closed' && !pr.merged) {
+                await github.rest.pulls.update({
+                  ...context.repo,
+                  pull_number: context.issue.number,
+                  state: 'open'
+                });
+                console.log('Reopened the PR after the title was corrected.');
+              }
+              return;
+            }
+
+            console.log(`❌ PR title does not follow Conventional Commits format: "${title}"`);
+
+            const body = [
+              marker,
+              '### ❌ This PR title does not follow the [Conventional Commits](https://www.conventionalcommits.org/) format.',
+              '',
+              'Expected format: `type(scope)?: description`',
+              '',
+              'Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `ci`, `build`, `revert`',
+              '',
+              'Examples:',
+              '- `feat(api): add tenant transfer endpoint`',
+              '- `fix(auth): handle expired refresh tokens`',
+              '- `docs(adr): record realtime doorbell`',
+              '',
+              `Received: \`${title}\``,
+              '',
+              '🔒 This PR has been automatically closed. Edit the title to match the format above and it will reopen automatically.'
+            ].join('\n');
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+            const pr = context.payload.pull_request;
+            if (pr.state !== 'closed') {
+              await github.rest.pulls.update({
+                ...context.repo,
+                pull_number: context.issue.number,
+                state: 'closed'
+              });
+            }
+
+            core.setFailed(`PR title does not follow Conventional Commits format: "${title}"`);

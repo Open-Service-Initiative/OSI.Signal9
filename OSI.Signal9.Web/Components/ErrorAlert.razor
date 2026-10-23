@@ -1,0 +1,14 @@
+@if (!string.IsNullOrEmpty(Message))
+{
+    <div class="alert alert-danger alert-dismissible" role="alert">
+        <i class="bi bi-exclamation-octagon me-2"></i>@Message
+        <button type="button" class="btn-close" aria-label="Close" @onclick="Dismiss"></button>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Message { get; set; }
+    [Parameter] public EventCallback<string?> MessageChanged { get; set; }
+
+    private Task Dismiss() => MessageChanged.InvokeAsync(null);
+}
