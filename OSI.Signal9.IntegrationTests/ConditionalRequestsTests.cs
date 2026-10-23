@@ -67,12 +67,12 @@ public sealed class ConditionalRequestsTests : IDisposable
     }
 
     [TestMethod]
-    public async Task Tenant_put_with_a_matching_etag_succeeds_and_returns_the_new_etag()
+    public async Task Tenant_patch_with_a_matching_etag_succeeds_and_returns_the_new_etag()
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
         var etag = await GetETagAsync($"api/v1/tenants/{tenant.Id}");
 
-        var response = await PutTenantAsync(tenant.Id, "Contoso Ltd", ifMatch: etag);
+        var response = await PatchTenantAsync(tenant.Id, "Contoso Ltd", ifMatch: etag);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         var newETag = AssertStrongETag(response);
@@ -81,13 +81,13 @@ public sealed class ConditionalRequestsTests : IDisposable
     }
 
     [TestMethod]
-    public async Task Tenant_put_with_a_stale_etag_returns_412_problem_and_changes_nothing()
+    public async Task Tenant_patch_with_a_stale_etag_returns_412_problem_and_changes_nothing()
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
         var stale = await GetETagAsync($"api/v1/tenants/{tenant.Id}");
-        await PutTenantAsync(tenant.Id, "Contoso Ltd", ifMatch: stale);
+        await PatchTenantAsync(tenant.Id, "Contoso Ltd", ifMatch: stale);
 
-        var response = await PutTenantAsync(tenant.Id, "Lost update", ifMatch: stale);
+        var response = await PatchTenantAsync(tenant.Id, "Lost update", ifMatch: stale);
 
         await AssertPreconditionFailedAsync(response);
         var current = await _client.GetFromJsonAsync<TenantDto>($"api/v1/tenants/{tenant.Id}", Signal9Json.Options, Ct);
@@ -95,14 +95,14 @@ public sealed class ConditionalRequestsTests : IDisposable
     }
 
     [TestMethod]
-    public async Task Tenant_put_honours_if_match_star_and_rejects_weak_etags()
+    public async Task Tenant_patch_honours_if_match_star_and_rejects_weak_etags()
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
         var etag = await GetETagAsync($"api/v1/tenants/{tenant.Id}");
 
-        var weak = await PutTenantAsync(tenant.Id, "Weak", ifMatch: "W/" + etag);
-        var star = await PutTenantAsync(tenant.Id, "Star", ifMatch: "*");
-        var unconditional = await PutTenantAsync(tenant.Id, "Unconditional", ifMatch: null);
+        var weak = await PatchTenantAsync(tenant.Id, "Weak", ifMatch: "W/" + etag);
+        var star = await PatchTenantAsync(tenant.Id, "Star", ifMatch: "*");
+        var unconditional = await PatchTenantAsync(tenant.Id, "Unconditional", ifMatch: null);
 
         await AssertPreconditionFailedAsync(weak);
         Assert.AreEqual(HttpStatusCode.OK, star.StatusCode);
@@ -110,11 +110,27 @@ public sealed class ConditionalRequestsTests : IDisposable
     }
 
     [TestMethod]
+    public async Task Tenant_transitions_honour_if_match()
+    {
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
+        var stale = await GetETagAsync($"api/v1/tenants/{tenant.Id}");
+        await PatchTenantAsync(tenant.Id, "Contoso Ltd", ifMatch: null);
+        var current = await GetETagAsync($"api/v1/tenants/{tenant.Id}");
+
+        var staleSuspend = await SendAsync(HttpMethod.Post, $"api/v1/tenants/{tenant.Id}:suspend", ifMatch: stale);
+        var suspend = await SendAsync(HttpMethod.Post, $"api/v1/tenants/{tenant.Id}:suspend", ifMatch: current);
+
+        await AssertPreconditionFailedAsync(staleSuspend);
+        Assert.AreEqual(HttpStatusCode.OK, suspend.StatusCode);
+        Assert.AreEqual(AssertStrongETag(suspend), await GetETagAsync($"api/v1/tenants/{tenant.Id}"));
+    }
+
+    [TestMethod]
     public async Task Tenant_delete_honours_if_match()
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
         var stale = await GetETagAsync($"api/v1/tenants/{tenant.Id}");
-        await PutTenantAsync(tenant.Id, "Contoso Ltd", ifMatch: null);
+        await PatchTenantAsync(tenant.Id, "Contoso Ltd", ifMatch: null);
         var current = await GetETagAsync($"api/v1/tenants/{tenant.Id}");
 
         var staleDelete = await SendAsync(HttpMethod.Delete, $"api/v1/tenants/{tenant.Id}", ifMatch: stale);
@@ -143,7 +159,7 @@ public sealed class ConditionalRequestsTests : IDisposable
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
 
-        var ifMatch = await PutTenantAsync(tenant.Id, "Contoso Ltd", ifMatch: "not-a-tag");
+        var ifMatch = await PatchTenantAsync(tenant.Id, "Contoso Ltd", ifMatch: "not-a-tag");
         var ifNoneMatch = await SendAsync(HttpMethod.Get, $"api/v1/tenants/{tenant.Id}", ifNoneMatch: "not-a-tag");
 
         Assert.AreEqual(HttpStatusCode.BadRequest, ifMatch.StatusCode);
@@ -297,15 +313,15 @@ public sealed class ConditionalRequestsTests : IDisposable
     // Races: a write that passes its If-Match check but loses the race to save must not silently overwrite.
 
     [TestMethod]
-    public async Task Tenant_put_that_loses_a_race_returns_412_or_409_and_keeps_the_concurrent_change()
+    public async Task Tenant_patch_that_loses_a_race_returns_412_or_409_and_keeps_the_concurrent_change()
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
         var etag = await GetETagAsync($"api/v1/tenants/{tenant.Id}");
 
         using var racing = RaceWith($"""UPDATE "Tenants" SET "Name" = 'Concurrent' WHERE "Id" = '{tenant.Id}'""");
         using var client = racing.CreateClient();
-        var conditional = await PutTenantAsync(client, tenant.Id, "Lost update", ifMatch: etag);
-        var unconditional = await PutTenantAsync(client, tenant.Id, "Lost update", ifMatch: null);
+        var conditional = await PatchTenantAsync(client, tenant.Id, "Lost update", ifMatch: etag);
+        var unconditional = await PatchTenantAsync(client, tenant.Id, "Lost update", ifMatch: null);
 
         await AssertPreconditionFailedAsync(conditional);
         Assert.AreEqual(HttpStatusCode.Conflict, unconditional.StatusCode);
@@ -421,15 +437,14 @@ public sealed class ConditionalRequestsTests : IDisposable
         SendAsync(HttpMethod.Patch, $"api/v1/devices/{deviceId}", ifMatch: ifMatch,
             content: new StringContent(mergePatch, System.Text.Encoding.UTF8, "application/merge-patch+json"));
 
-    private Task<HttpResponseMessage> PutTenantAsync(Guid tenantId, string name, string? ifMatch) =>
-        PutTenantAsync(_client, tenantId, name, ifMatch);
+    private Task<HttpResponseMessage> PatchTenantAsync(Guid tenantId, string name, string? ifMatch) =>
+        PatchTenantAsync(_client, tenantId, name, ifMatch);
 
-    private Task<HttpResponseMessage> PutTenantAsync(HttpClient client, Guid tenantId, string name, string? ifMatch)
+    private Task<HttpResponseMessage> PatchTenantAsync(HttpClient client, Guid tenantId, string name, string? ifMatch)
     {
-        var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/tenants/{tenantId}")
+        var request = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/tenants/{tenantId}")
         {
-            Content = JsonContent.Create(
-                new UpdateTenantRequest { Name = name, ContactEmail = "it@contoso.example", MaxDevices = 25 }, options: Signal9Json.Options),
+            Content = JsonContent.Create(new { name }, new MediaTypeHeaderValue("application/merge-patch+json"), Signal9Json.Options),
         };
         if (ifMatch is not null)
             request.Headers.TryAddWithoutValidation("If-Match", ifMatch);

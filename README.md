@@ -73,7 +73,8 @@ A `tls_client_auth` client registers exactly one RFC 8705 subject (`tls_client_a
 | Resource | Methods |
 | --- | --- |
 | `/api/v1/tenants` | `GET` (paged), `POST` |
-| `/api/v1/tenants/{tenantId}` | `GET`, `PUT`, `DELETE` |
+| `/api/v1/tenants/{tenantId}` | `GET`, `PATCH` (`application/merge-patch+json`: name, description, contact, plan, max devices), `DELETE` |
+| `/api/v1/tenants/{tenantId}:suspend`, `:activate`, `:cancel` | `POST` (status transitions; 409 when the current status doesn't allow it) |
 | `/api/v1/devices` | `GET` (paged; `tenantId`, `status`, `group`, `search` filters) |
 | `/api/v1/devices/{deviceId}` | `GET`, `PATCH` (`application/merge-patch+json`: group, tags, maintenance mode), `DELETE` |
 | `/api/v1/devices/{deviceId}/telemetry` | `GET` (paged; `from`, `to`) |

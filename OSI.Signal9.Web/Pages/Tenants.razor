@@ -49,6 +49,18 @@
                                     <td>@tenant.ContactEmail</td>
                                     <td class="text-end text-nowrap">
                                         <button class="btn btn-sm btn-outline-primary" title="Edit" @onclick="() => Edit(tenant)"><i class="bi bi-pencil"></i></button>
+                                        @if (tenant.Status == TenantStatus.Active)
+                                        {
+                                            <button class="btn btn-sm btn-outline-warning" title="Suspend" @onclick="() => TransitionAsync(tenant, Api.SuspendTenantAsync)"><i class="bi bi-pause-circle"></i></button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-sm btn-outline-success" title="Activate" @onclick="() => TransitionAsync(tenant, Api.ActivateTenantAsync)"><i class="bi bi-play-circle"></i></button>
+                                        }
+                                        @if (tenant.Status != TenantStatus.Cancelled)
+                                        {
+                                            <button class="btn btn-sm btn-outline-secondary" title="Cancel tenant" @onclick="() => TransitionAsync(tenant, Api.CancelTenantAsync)"><i class="bi bi-x-circle"></i></button>
+                                        }
                                         <button class="btn btn-sm btn-outline-danger" title="Delete" @onclick="() => DeleteAsync(tenant)"><i class="bi bi-trash"></i></button>
                                     </td>
                                 </tr>
@@ -107,9 +119,9 @@
                                 <InputNumber id="maxDevices" class="form-control" @bind-Value="form.MaxDevices" />
                                 <ValidationMessage For="() => form.MaxDevices" />
                             </div>
-                            <div class="col-md-4">
-                                @if (editing is null)
-                                {
+                            @if (editing is null)
+                            {
+                                <div class="col-md-4">
                                     <label class="form-label" for="parent">Parent tenant</label>
                                     <InputSelect id="parent" class="form-select" @bind-Value="form.ParentTenantId">
                                         <option value="">None</option>
@@ -118,18 +130,8 @@
                                             <option value="@parent.Id">@parent.Name</option>
                                         }
                                     </InputSelect>
-                                }
-                                else
-                                {
-                                    <label class="form-label" for="tenantStatus">Status</label>
-                                    <InputSelect id="tenantStatus" class="form-select" @bind-Value="form.Status">
-                                        @foreach (var status in Enum.GetValues<TenantStatus>())
-                                        {
-                                            <option value="@status">@status</option>
-                                        }
-                                    </InputSelect>
-                                }
-                            </div>
+                                </div>
+                            }
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -189,7 +191,6 @@
             ContactPhone = tenant.ContactPhone,
             Plan = tenant.Plan,
             MaxDevices = tenant.MaxDevices,
-            Status = tenant.Status,
         };
         formError = null;
         showEditor = true;
@@ -225,7 +226,6 @@
                     ContactPhone = NullIfBlank(form.ContactPhone),
                     Plan = form.Plan,
                     MaxDevices = form.MaxDevices,
-                    Status = form.Status,
                 });
             }
             showEditor = false;
@@ -256,6 +256,19 @@
         }
     }
 
+    private async Task TransitionAsync(TenantDto tenant, Func<Guid, CancellationToken, Task<TenantDto>> transition)
+    {
+        try
+        {
+            await transition(tenant.Id, CancellationToken.None);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            error = $"Could not change the status of {tenant.Name}: {ex.Message}";
+        }
+    }
+
     private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
     private sealed class TenantForm
@@ -277,7 +290,5 @@
 
         [Range(1, 100_000)]
         public int MaxDevices { get; set; } = 25;
-
-        public TenantStatus Status { get; set; } = TenantStatus.Active;
     }
 }

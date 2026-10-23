@@ -56,7 +56,8 @@ public sealed record CreateTenantRequest
 }
 
 /// <summary>
-/// Full replacement of a tenant's mutable fields (PUT semantics).
+/// A tenant's editable fields: the document a JSON merge patch (RFC 7396) applies to. Status is read-only and changes
+/// through the <c>:suspend</c>, <c>:activate</c> and <c>:cancel</c> actions; the parent changes with a tenant transfer.
 /// </summary>
 public sealed record UpdateTenantRequest
 {
@@ -76,6 +77,4 @@ public sealed record UpdateTenantRequest
 
     [Range(1, 100_000)]
     public int MaxDevices { get; init; }
-
-    public TenantStatus Status { get; init; }
 }

@@ -107,7 +107,8 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
         var api = new AgentApiClient(_factory.CreateDefaultClient(_agentRequests));
         var options = Options.Create(_agentOptions);
         var telemetry = new TelemetryCollector(_agentTime, NullLogger<TelemetryCollector>.Instance);
-        var executor = new CommandExecutor(new SystemInfoProvider(options), telemetry, NullLogger<CommandExecutor>.Instance);
+        var executor = new CommandExecutor([new CollectSystemInfoHandler(new SystemInfoProvider(options), telemetry)], _agentTime,
+            NullLogger<CommandExecutor>.Instance);
         var session = new AgentSession(api, executor, telemetry, _network.Connect, _agentTime, options,
             NullLogger<AgentSession>.Instance);
         _session = session.RunAsync(agent, _stop.Token);

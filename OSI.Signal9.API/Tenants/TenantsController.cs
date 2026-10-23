@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using OSI.Signal9.API.Authorization;
 using OSI.Signal9.Server.Identity;
@@ -92,14 +93,19 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, Time
         return CreatedAtRoute(nameof(GetTenant), new { tenantId = tenant.Id }, tenant.ToDto(deviceCount: 0));
     }
 
+    /// <summary>
+    /// Updates a tenant's editable fields with a JSON merge patch (RFC 7396). Status is read-only: it changes through
+    /// the <c>:suspend</c>, <c>:activate</c> and <c>:cancel</c> actions.
+    /// </summary>
     [RequireScope(Scopes.Tenants.Write)]
-    [HttpPut("{tenantId:guid}")]
+    [HttpPatch("{tenantId:guid}")]
     [OptimisticConcurrency]
-    [Consumes("application/json")]
+    [Consumes(MergePatch.MediaType)]
     [ProducesResponseType<TenantDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<TenantDto>> Update(Guid tenantId, UpdateTenantRequest request, CancellationToken cancellationToken)
+    [ProducesResponseType(StatusCodes.Status415UnsupportedMediaType)]
+    public async Task<ActionResult<TenantDto>> Update(Guid tenantId, [FromBody] JsonElement patch, CancellationToken cancellationToken)
     {
         var tenant = await db.Tenants.SingleOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
         if (tenant is null)
@@ -108,17 +114,91 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, Time
         if (this.Preconditions(tenant.ETag(deviceCount)) is { } refused)
             return refused;
 
+        UpdateTenantRequest request;
+        try
+        {
+            request = MergePatch.Apply(
+                new UpdateTenantRequest
+                {
+                    Name = tenant.Name,
+                    Description = tenant.Description,
+                    ContactEmail = tenant.ContactEmail,
+                    ContactPhone = tenant.ContactPhone,
+                    Plan = tenant.Plan,
+                    MaxDevices = tenant.MaxDevices,
+                },
+                patch);
+        }
+        catch (JsonException ex)
+        {
+            ModelState.AddModelError(string.Empty, ex.Message);
+            return ValidationProblem(ModelState);
+        }
+        if (!TryValidateModel(request))
+            return ValidationProblem(ModelState);
+
         tenant.Name = request.Name;
         tenant.Description = request.Description;
         tenant.ContactEmail = request.ContactEmail;
         tenant.ContactPhone = request.ContactPhone;
         tenant.Plan = request.Plan;
         tenant.MaxDevices = request.MaxDevices;
-        tenant.Status = request.Status;
+        return await SaveAsync(tenant, cancellationToken);
+    }
+
+    /// <summary>Suspends an active tenant. Only active tenants can be suspended (409).</summary>
+    [RequireScope(Scopes.Tenants.Write)]
+    [HttpPost("{tenantId:guid}:suspend")]
+    [OptimisticConcurrency]
+    [ProducesResponseType<TenantDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public Task<ActionResult<TenantDto>> Suspend(Guid tenantId, CancellationToken cancellationToken) =>
+        TransitionAsync(tenantId, TenantStatus.Suspended, [TenantStatus.Active], cancellationToken);
+
+    /// <summary>Makes a suspended or cancelled tenant active again. An active tenant can't be activated (409).</summary>
+    [RequireScope(Scopes.Tenants.Write)]
+    [HttpPost("{tenantId:guid}:activate")]
+    [OptimisticConcurrency]
+    [ProducesResponseType<TenantDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public Task<ActionResult<TenantDto>> Activate(Guid tenantId, CancellationToken cancellationToken) =>
+        TransitionAsync(tenantId, TenantStatus.Active, [TenantStatus.Suspended, TenantStatus.Cancelled], cancellationToken);
+
+    /// <summary>Cancels an active or suspended tenant. A cancelled tenant can't be cancelled again (409).</summary>
+    [RequireScope(Scopes.Tenants.Write)]
+    [HttpPost("{tenantId:guid}:cancel")]
+    [OptimisticConcurrency]
+    [ProducesResponseType<TenantDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public Task<ActionResult<TenantDto>> Cancel(Guid tenantId, CancellationToken cancellationToken) =>
+        TransitionAsync(tenantId, TenantStatus.Cancelled, [TenantStatus.Active, TenantStatus.Suspended], cancellationToken);
+
+    private async Task<ActionResult<TenantDto>> TransitionAsync(
+        Guid tenantId, TenantStatus to, TenantStatus[] allowedFrom, CancellationToken cancellationToken)
+    {
+        var tenant = await db.Tenants.SingleOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+        if (tenant is null)
+            return NotFound();
+        var deviceCount = await db.Devices.CountAsync(d => d.TenantId == tenantId, cancellationToken);
+        if (this.Preconditions(tenant.ETag(deviceCount)) is { } refused)
+            return refused;
+        if (!allowedFrom.Contains(tenant.Status))
+            return Problem(statusCode: StatusCodes.Status409Conflict, title: "Transition not allowed",
+                detail: $"The tenant is {tenant.Status}, so it can't become {to}.");
+
+        tenant.Status = to;
+        return await SaveAsync(tenant, cancellationToken);
+    }
+
+    private async Task<ActionResult<TenantDto>> SaveAsync(Tenant tenant, CancellationToken cancellationToken)
+    {
         tenant.UpdatedAt = time.GetUtcNow().UtcDateTime;
         await db.SaveChangesAsync(cancellationToken);
 
-        deviceCount = await db.Devices.CountAsync(d => d.TenantId == tenantId, cancellationToken);
+        var deviceCount = await db.Devices.CountAsync(d => d.TenantId == tenant.Id, cancellationToken);
         this.SetETag(tenant.ETag(deviceCount));
         return tenant.ToDto(deviceCount);
     }

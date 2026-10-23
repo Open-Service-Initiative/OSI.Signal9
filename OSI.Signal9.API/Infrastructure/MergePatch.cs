@@ -6,17 +6,27 @@ namespace OSI.Signal9.API.Infrastructure;
 
 /// <summary>
 /// JSON merge patch (RFC 7396): members in the patch replace the target's, null removes them, and members left out
-/// keep their current values.
+/// keep their current values. A patch may only name the target's editable fields; read-only and unknown members are
+/// refused rather than silently ignored.
 /// </summary>
 internal static class MergePatch
 {
     public const string MediaType = "application/merge-patch+json";
 
     /// <summary>Applies <paramref name="patch"/> to <paramref name="current"/>, both as their JSON form.</summary>
-    /// <exception cref="JsonException">The patched document doesn't fit <typeparamref name="T"/>.</exception>
+    /// <exception cref="JsonException">The patch isn't an object, names a member that isn't editable, or the patched
+    /// document doesn't fit <typeparamref name="T"/>.</exception>
     public static T Apply<T>(T current, JsonElement patch)
     {
-        var target = JsonSerializer.SerializeToNode(current, Signal9Json.Options);
+        if (patch.ValueKind != JsonValueKind.Object)
+            throw new JsonException("A merge patch must be a JSON object.");
+        var target = JsonSerializer.SerializeToNode(current, Signal9Json.Options)!.AsObject();
+        foreach (var member in patch.EnumerateObject())
+        {
+            if (!target.ContainsKey(member.Name))
+                throw new JsonException($"'{member.Name}' isn't an editable field.");
+        }
+
         var merged = Merge(target, JsonNode.Parse(patch.GetRawText()));
         return merged.Deserialize<T>(Signal9Json.Options)
             ?? throw new JsonException("The patch removed the whole resource.");

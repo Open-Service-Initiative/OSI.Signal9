@@ -87,8 +87,6 @@ public sealed class DevicesController(
         UpdateDeviceRequest request;
         try
         {
-            if (patch.ValueKind != JsonValueKind.Object)
-                throw new JsonException("A merge patch for a device must be a JSON object.");
             request = MergePatch.Apply(
                 new UpdateDeviceRequest { GroupName = device.GroupName, Tags = device.Tags, MaintenanceMode = device.MaintenanceMode },
                 patch);

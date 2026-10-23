@@ -136,17 +136,101 @@ public sealed class TenantsTests : IDisposable
     }
 
     [TestMethod]
-    public async Task Update_replaces_mutable_fields()
+    public async Task Patch_merges_editable_fields_and_leaves_the_rest()
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
 
-        var response = await _client.PutAsJsonAsync($"api/v1/tenants/{tenant.Id}",
-            new UpdateTenantRequest { Name = "Contoso Ltd", ContactEmail = "ops@contoso.example", Plan = SubscriptionPlan.Enterprise, MaxDevices = 500, Status = TenantStatus.Suspended },
-            Signal9Json.Options, Ct);
+        var response = await PatchAsync(tenant.Id, """{ "name": "Contoso Ltd", "plan": "Enterprise", "maxDevices": 500 }""");
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         var updated = await response.Content.ReadFromJsonAsync<TenantDto>(Signal9Json.Options, Ct);
-        Assert.AreEqual(("Contoso Ltd", SubscriptionPlan.Enterprise, TenantStatus.Suspended), (updated!.Name, updated.Plan, updated.Status));
+        Assert.AreEqual(("Contoso Ltd", SubscriptionPlan.Enterprise, 500), (updated!.Name, updated.Plan, updated.MaxDevices));
+        Assert.AreEqual((tenant.ContactEmail, TenantStatus.Active), (updated.ContactEmail, updated.Status));
+        Assert.AreEqual(updated, await _client.GetFromJsonAsync<TenantDto>($"api/v1/tenants/{tenant.Id}", Signal9Json.Options, Ct));
+    }
+
+    [TestMethod]
+    public async Task Patch_with_null_clears_an_optional_field()
+    {
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
+        await PatchAsync(tenant.Id, """{ "description": "Head office" }""");
+
+        var response = await PatchAsync(tenant.Id, """{ "description": null }""");
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        Assert.IsNull((await response.Content.ReadFromJsonAsync<TenantDto>(Signal9Json.Options, Ct))!.Description);
+    }
+
+    [TestMethod]
+    public async Task Patch_rejects_invalid_values_read_only_fields_unknown_tenants_and_other_media_types()
+    {
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
+
+        var invalid = await PatchAsync(tenant.Id, """{ "name": "", "contactEmail": "nope" }""");
+        var removesRequired = await PatchAsync(tenant.Id, """{ "name": null }""");
+        var notAnObject = await PatchAsync(tenant.Id, "[]");
+        var status = await PatchAsync(tenant.Id, """{ "status": "Suspended" }""");
+        var parent = await PatchAsync(tenant.Id, $$"""{ "parentTenantId": "{{Guid.NewGuid()}}" }""");
+        var missing = await PatchAsync(Guid.NewGuid(), """{ "name": "Nobody" }""");
+        var plainJson = await _client.PatchAsJsonAsync($"api/v1/tenants/{tenant.Id}", new { name = "Plain" }, Ct);
+        var put = await _client.PutAsJsonAsync($"api/v1/tenants/{tenant.Id}", new { name = "Replaced" }, Ct);
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, invalid.StatusCode);
+        var problem = await invalid.Content.ReadFromJsonAsync<ValidationProblemDetails>(Ct);
+        Assert.Contains("Name", problem!.Errors.Keys);
+        Assert.Contains("ContactEmail", problem.Errors.Keys);
+        Assert.AreEqual(HttpStatusCode.BadRequest, removesRequired.StatusCode);
+        Assert.AreEqual(HttpStatusCode.BadRequest, notAnObject.StatusCode);
+        Assert.AreEqual(HttpStatusCode.BadRequest, status.StatusCode);
+        Assert.AreEqual(HttpStatusCode.BadRequest, parent.StatusCode);
+        Assert.AreEqual(HttpStatusCode.NotFound, missing.StatusCode);
+        Assert.AreEqual(HttpStatusCode.UnsupportedMediaType, plainJson.StatusCode);
+        Assert.AreEqual(HttpStatusCode.MethodNotAllowed, put.StatusCode);
+        var current = await _client.GetFromJsonAsync<TenantDto>($"api/v1/tenants/{tenant.Id}", Signal9Json.Options, Ct);
+        Assert.AreEqual(tenant, current);
+    }
+
+    [TestMethod]
+    [DataRow("", "suspend", TenantStatus.Suspended)]
+    [DataRow("", "cancel", TenantStatus.Cancelled)]
+    [DataRow("suspend", "activate", TenantStatus.Active)]
+    [DataRow("suspend", "cancel", TenantStatus.Cancelled)]
+    [DataRow("cancel", "activate", TenantStatus.Active)]
+    public async Task An_allowed_transition_returns_200_with_the_new_status(string from, string verb, TenantStatus expected)
+    {
+        var tenant = await TenantInStatusAsync(from);
+
+        var response = await _client.PostAsync($"api/v1/tenants/{tenant.Id}:{verb}", null, Ct);
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        Assert.IsNotNull(response.Headers.ETag);
+        var updated = await response.Content.ReadFromJsonAsync<TenantDto>(Signal9Json.Options, Ct);
+        Assert.AreEqual(expected, updated!.Status);
+        Assert.AreEqual(updated, await _client.GetFromJsonAsync<TenantDto>($"api/v1/tenants/{tenant.Id}", Signal9Json.Options, Ct));
+    }
+
+    [TestMethod]
+    [DataRow("", "activate", TenantStatus.Active)]
+    [DataRow("suspend", "suspend", TenantStatus.Suspended)]
+    [DataRow("cancel", "cancel", TenantStatus.Cancelled)]
+    [DataRow("cancel", "suspend", TenantStatus.Cancelled)]
+    public async Task A_transition_the_current_status_does_not_allow_returns_409(string from, string verb, TenantStatus current)
+    {
+        var tenant = await TenantInStatusAsync(from);
+
+        var response = await _client.PostAsync($"api/v1/tenants/{tenant.Id}:{verb}", null, Ct);
+
+        Assert.AreEqual(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.AreEqual("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.AreEqual(current, (await _client.GetFromJsonAsync<TenantDto>($"api/v1/tenants/{tenant.Id}", Signal9Json.Options, Ct))!.Status);
+    }
+
+    [TestMethod]
+    public async Task A_transition_on_an_unknown_tenant_returns_404()
+    {
+        var response = await _client.PostAsync($"api/v1/tenants/{Guid.NewGuid()}:suspend", null, Ct);
+
+        Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [TestMethod]
@@ -195,6 +279,18 @@ public sealed class TenantsTests : IDisposable
 
         Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
     }
+
+    private async Task<TenantDto> TenantInStatusAsync(string verb)
+    {
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
+        if (verb.Length > 0)
+            (await _client.PostAsync($"api/v1/tenants/{tenant.Id}:{verb}", null, Ct)).EnsureSuccessStatusCode();
+        return tenant;
+    }
+
+    private Task<HttpResponseMessage> PatchAsync(Guid tenantId, string mergePatch) =>
+        _client.PatchAsync($"api/v1/tenants/{tenantId}",
+            new StringContent(mergePatch, System.Text.Encoding.UTF8, "application/merge-patch+json"), Ct);
 
     private Task<HttpResponseMessage> CreateAsync(HttpClient client, string name, Guid? parentTenantId) =>
         client.PostAsJsonAsync("api/v1/tenants",

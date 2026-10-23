@@ -13,6 +13,18 @@ Content-Type: application/json
 ### List tenants
 GET {{api}}/api/v1/tenants?page=1&pageSize=25
 
+### Update a tenant's fields (JSON merge patch: send only what changes; null clears)
+PATCH {{api}}/api/v1/tenants/<tenant id>
+Content-Type: application/merge-patch+json
+
+{
+  "plan": "Professional",
+  "maxDevices": 50
+}
+
+### Suspend a tenant (then :activate or :cancel)
+POST {{api}}/api/v1/tenants/<tenant id>:suspend
+
 ### Enroll an agent
 POST {{api}}/api/v1/agents
 Content-Type: application/json

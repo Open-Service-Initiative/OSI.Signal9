@@ -23,8 +23,18 @@ public sealed class Signal9ApiClient(HttpClient http)
     public Task<TenantDto> CreateTenantAsync(CreateTenantRequest request, CancellationToken cancellationToken = default) =>
         SendAsync<TenantDto>(HttpMethod.Post, "api/v1/tenants", request, cancellationToken);
 
+    /// <summary>Sends every editable field as a JSON merge patch.</summary>
     public Task<TenantDto> UpdateTenantAsync(Guid tenantId, UpdateTenantRequest request, CancellationToken cancellationToken = default) =>
-        SendAsync<TenantDto>(HttpMethod.Put, $"api/v1/tenants/{tenantId}", request, cancellationToken);
+        PatchAsync<TenantDto>($"api/v1/tenants/{tenantId}", request, cancellationToken);
+
+    public Task<TenantDto> SuspendTenantAsync(Guid tenantId, CancellationToken cancellationToken = default) =>
+        SendAsync<TenantDto>(HttpMethod.Post, $"api/v1/tenants/{tenantId}:suspend", body: null, cancellationToken);
+
+    public Task<TenantDto> ActivateTenantAsync(Guid tenantId, CancellationToken cancellationToken = default) =>
+        SendAsync<TenantDto>(HttpMethod.Post, $"api/v1/tenants/{tenantId}:activate", body: null, cancellationToken);
+
+    public Task<TenantDto> CancelTenantAsync(Guid tenantId, CancellationToken cancellationToken = default) =>
+        SendAsync<TenantDto>(HttpMethod.Post, $"api/v1/tenants/{tenantId}:cancel", body: null, cancellationToken);
 
     public Task DeleteTenantAsync(Guid tenantId, CancellationToken cancellationToken = default) =>
         SendAsync(HttpMethod.Delete, $"api/v1/tenants/{tenantId}", body: null, cancellationToken);
@@ -43,15 +53,8 @@ public sealed class Signal9ApiClient(HttpClient http)
     }
 
     /// <summary>Sends every editable field as a JSON merge patch.</summary>
-    public async Task<DeviceDto> UpdateDeviceAsync(Guid deviceId, UpdateDeviceRequest request, CancellationToken cancellationToken = default)
-    {
-        using var message = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/devices/{deviceId}")
-        {
-            Content = JsonContent.Create(request, new MediaTypeHeaderValue("application/merge-patch+json"), Signal9Json.Options),
-        };
-        using var response = await http.SendAsync(message, cancellationToken);
-        return await ReadAsync<DeviceDto>(response, cancellationToken);
-    }
+    public Task<DeviceDto> UpdateDeviceAsync(Guid deviceId, UpdateDeviceRequest request, CancellationToken cancellationToken = default) =>
+        PatchAsync<DeviceDto>($"api/v1/devices/{deviceId}", request, cancellationToken);
 
     public Task DeleteDeviceAsync(Guid deviceId, CancellationToken cancellationToken = default) =>
         SendAsync(HttpMethod.Delete, $"api/v1/devices/{deviceId}", body: null, cancellationToken);
@@ -67,6 +70,16 @@ public sealed class Signal9ApiClient(HttpClient http)
     private async Task<T> GetAsync<T>(string uri, CancellationToken cancellationToken)
     {
         using var response = await http.GetAsync(uri, cancellationToken);
+        return await ReadAsync<T>(response, cancellationToken);
+    }
+
+    private async Task<T> PatchAsync<T>(string uri, object mergePatch, CancellationToken cancellationToken)
+    {
+        using var message = new HttpRequestMessage(HttpMethod.Patch, uri)
+        {
+            Content = JsonContent.Create(mergePatch, mergePatch.GetType(), new MediaTypeHeaderValue("application/merge-patch+json"), Signal9Json.Options),
+        };
+        using var response = await http.SendAsync(message, cancellationToken);
         return await ReadAsync<T>(response, cancellationToken);
     }
 

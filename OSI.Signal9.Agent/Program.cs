@@ -21,6 +21,7 @@ builder.Services.AddHttpClient<AgentApiClient>((sp, http) =>
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<SystemInfoProvider>();
 builder.Services.AddSingleton<TelemetryCollector>();
+builder.Services.AddSingleton<ICommandHandler, CollectSystemInfoHandler>();
 builder.Services.AddSingleton<CommandExecutor>();
 builder.Services.AddSingleton<AgentHubConnectionFactory>(sp =>
 {

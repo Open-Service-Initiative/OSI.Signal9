@@ -27,12 +27,12 @@ public sealed class OpenApiTests : IDisposable
         var tenant = (await DocumentAsync()).Paths["/api/v1/tenants/{tenantId}"]!.Operations!;
         var create = (await DocumentAsync()).Paths["/api/v1/tenants"]!.Operations![HttpMethod.Post];
 
-        foreach (var write in new[] { tenant[HttpMethod.Put], tenant[HttpMethod.Delete], create })
+        foreach (var write in new[] { tenant[HttpMethod.Patch], tenant[HttpMethod.Delete], create })
         {
             Assert.IsTrue(HasHeaderParameter(write, "If-Match"), write.OperationId);
             Assert.IsTrue(write.Responses!.ContainsKey("412"), write.OperationId);
         }
-        Assert.IsTrue(tenant[HttpMethod.Put].Responses!["200"].Headers!.ContainsKey("ETag"));
+        Assert.IsTrue(tenant[HttpMethod.Patch].Responses!["200"].Headers!.ContainsKey("ETag"));
         Assert.IsTrue(create.Responses!["201"].Headers!.ContainsKey("ETag"));
         Assert.IsFalse(tenant[HttpMethod.Delete].Responses!["204"].Headers?.ContainsKey("ETag") == true);
     }
