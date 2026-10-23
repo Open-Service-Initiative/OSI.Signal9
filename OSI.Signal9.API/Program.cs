@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using OpenIddict.Validation.AspNetCore;
 using OSI.Signal9.API.Devices;
 using OSI.Signal9.API.Hubs;
+using OSI.Signal9.API.Infrastructure;
 using OSI.Signal9.API.Tenants;
 using OSI.Signal9.Contracts.Hubs;
 using OSI.Signal9.Contracts.Serialization;
@@ -15,6 +16,8 @@ builder.AddServiceDefaults();
 builder.AddHostHardening();
 
 builder.AddSignal9Database();
+builder.AddSignal9ForwardedHeaders();
+builder.AddSignal9ClientCertificates();
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddOptions<DevicePresenceOptions>().BindConfiguration(DevicePresenceOptions.SectionName);
@@ -42,7 +45,7 @@ var identity = builder.Configuration.GetIdentityOptions();
 // auth advertises for them. Discovery and the key set are served only by auth.
 builder.Services.AddSignal9OpenIddict()
     .AddServer(server => server
-        .UseSignal9TokenRules(identity.Issuer, builder.Configuration)
+        .UseSignal9TokenRules(identity, builder.Configuration)
         .SetConfigurationEndpointUris(Array.Empty<Uri>())
         .SetJsonWebKeySetEndpointUris(Array.Empty<Uri>())
         .SetTokenEndpointUris(AuthorizationServer.TokenEndpoint)
@@ -67,6 +70,10 @@ builder.Services.AddAuthorizationBuilder()
 var app = builder.Build();
 
 app.UseHealthProbes();
+// The certificate header is judged by the proxy's own address, so before forwarded headers replace it. Both come
+// before rate limiting, which partitions by the client's address.
+app.UseSignal9ClientCertificates();
+app.UseSignal9ForwardedHeaders();
 app.UseHostHardening();
 
 if (app.Environment.IsDevelopment())

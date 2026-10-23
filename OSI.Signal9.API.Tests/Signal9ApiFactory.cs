@@ -2,6 +2,8 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography.X509Certificates;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -10,6 +12,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
+using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
 using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.Serialization;
@@ -79,6 +82,10 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         builder.UseSetting("KeyEncryption:Provider", "Certificate");
         builder.UseSetting("KeyEncryption:Certificate:Path", kekPath ?? TestKeys.KekPath);
         builder.UseSetting("HealthProbes:Port", ProbePort.ToString(CultureInfo.InvariantCulture));
+        // Container Apps' ingress is the proxy in front of every host; api takes client certificates from it.
+        builder.UseSetting("ForwardedHeaders:KnownNetworks:0", TrustedProxyNetwork);
+        builder.UseSetting("ForwardedHeaders:ForwardClientCertificate", "true");
+        builder.UseSetting("Identity:TlsClientCertificateAuthorities:0", TestCertificates.AuthorityPem);
         foreach (var (key, value) in settings)
             builder.UseSetting(key, value);
         builder.ConfigureTestServices(services =>
@@ -88,6 +95,15 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
             services.AddSingleton<TimeProvider>(time);
         });
     }
+
+    /// <summary>The network the fixture trusts forwarded headers from, standing in for Container Apps' ingress.</summary>
+    public const string TrustedProxyNetwork = "10.0.0.0/24";
+
+    /// <summary>A peer inside <see cref="TrustedProxyNetwork"/>.</summary>
+    public static readonly IPAddress TrustedProxy = IPAddress.Parse("10.0.0.4");
+
+    /// <summary>A peer outside <see cref="TrustedProxyNetwork"/>.</summary>
+    public static readonly IPAddress UntrustedPeer = IPAddress.Parse("203.0.113.9");
 
     /// <summary>The base address of every test client. OpenIddict accepts only HTTPS requests.</summary>
     public static readonly Uri HttpsLocalhost = new("https://localhost");
@@ -114,6 +130,85 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         return client;
     }
 
+    /// <summary>
+    /// A client for <c>api</c> whose requests arrive from <paramref name="peer"/>, optionally over a TLS connection
+    /// that presented <paramref name="tlsCertificate"/> (the self-hosted path, where Kestrel reads the handshake).
+    /// </summary>
+    public HttpClient CreatePeerClient(IPAddress peer, X509Certificate2? tlsCertificate = null) =>
+        CreatePeerClient(Server, peer, tlsCertificate);
+
+    internal static HttpClient CreatePeerClient(TestServer server, IPAddress peer, X509Certificate2? tlsCertificate) =>
+        new(server.CreateHandler(context =>
+        {
+            context.Connection.RemoteIpAddress = peer;
+            if (tlsCertificate is not null)
+                context.Connection.ClientCertificate = tlsCertificate;
+        }))
+        { BaseAddress = HttpsLocalhost };
+
+    /// <summary>A client for <c>api</c> behind Container Apps' ingress, which forwards <paramref name="certificate"/>.</summary>
+    public HttpClient CreateForwardedCertificateClient(X509Certificate2? certificate)
+    {
+        var client = CreatePeerClient(TrustedProxy);
+        if (certificate is not null)
+            client.DefaultRequestHeaders.Add(ClientCertificateHeader, TestCertificates.ContainerAppsHeader(certificate));
+        return client;
+    }
+
+    public const string ClientCertificateHeader = "X-Forwarded-Client-Cert";
+
+    /// <summary>
+    /// Seeds a confidential client that authenticates with <c>self_signed_tls_client_auth</c>: its certificate is
+    /// registered in its key set (RFC 8705 §2.2).
+    /// </summary>
+    public async Task SeedSelfSignedTlsClientAsync(string clientId, X509Certificate2 certificate, params string[] scopes)
+    {
+        var descriptor = MtlsClient(clientId, scopes);
+        descriptor.JsonWebKeySet = new JsonWebKeySet
+        {
+            Keys = { JsonWebKeyConverter.ConvertFromX509SecurityKey(new X509SecurityKey(certificate)) },
+        };
+        await CreateApplicationAsync(descriptor, scopes);
+    }
+
+    /// <summary>
+    /// Seeds a confidential client that authenticates with <c>tls_client_auth</c>, registered with one RFC 8705 §2.1.2
+    /// subject parameter (for example <c>tls_client_auth_subject_dn</c>), or none.
+    /// </summary>
+    public async Task SeedTlsClientAsync(string clientId, IReadOnlyDictionary<string, string> subject, params string[] scopes)
+    {
+        var descriptor = MtlsClient(clientId, scopes);
+        foreach (var (name, value) in subject)
+            descriptor.Properties[name] = JsonSerializer.SerializeToElement(value);
+        await CreateApplicationAsync(descriptor, scopes);
+    }
+
+    private static OpenIddictApplicationDescriptor MtlsClient(string clientId, string[] scopes)
+    {
+        var descriptor = new OpenIddictApplicationDescriptor
+        {
+            ClientId = clientId,
+            ClientType = ClientTypes.Confidential,
+            Permissions =
+            {
+                Permissions.Endpoints.Token,
+                Permissions.Endpoints.Revocation,
+                Permissions.Endpoints.Introspection,
+                Permissions.GrantTypes.ClientCredentials,
+            },
+        };
+        foreach (var name in scopes)
+            descriptor.Permissions.Add(Permissions.Prefixes.Scope + name);
+        return descriptor;
+    }
+
+    /// <summary>Client credentials for a client that authenticates with its certificate alone.</summary>
+    public static FormUrlEncodedContent MtlsClientCredentials(string clientId) => new(new Dictionary<string, string>
+    {
+        ["grant_type"] = GrantTypes.ClientCredentials,
+        ["client_id"] = clientId,
+    });
+
     /// <summary>The secret of every client seeded by <see cref="SeedClientAsync"/>.</summary>
     public const string ClientSecret = "test-secret-that-is-long-enough";
 
@@ -123,14 +218,6 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
     /// </summary>
     public async Task SeedClientAsync(string clientId, params string[] scopes)
     {
-        await using var scope = Auth.Services.CreateAsyncScope();
-        var scopeManager = scope.ServiceProvider.GetRequiredService<IOpenIddictScopeManager>();
-        foreach (var name in scopes)
-        {
-            if (await scopeManager.FindByNameAsync(name) is null)
-                await scopeManager.CreateAsync(new OpenIddictScopeDescriptor { Name = name });
-        }
-
         var descriptor = new OpenIddictApplicationDescriptor
         {
             ClientId = clientId,
@@ -146,6 +233,19 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         };
         foreach (var name in scopes)
             descriptor.Permissions.Add(Permissions.Prefixes.Scope + name);
+        await CreateApplicationAsync(descriptor, scopes);
+    }
+
+    private async Task CreateApplicationAsync(OpenIddictApplicationDescriptor descriptor, string[] scopes)
+    {
+        await using var scope = Auth.Services.CreateAsyncScope();
+        var scopeManager = scope.ServiceProvider.GetRequiredService<IOpenIddictScopeManager>();
+        foreach (var name in scopes)
+        {
+            if (await scopeManager.FindByNameAsync(name) is null)
+                await scopeManager.CreateAsync(new OpenIddictScopeDescriptor { Name = name });
+        }
+
         await scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>().CreateAsync(descriptor);
     }
 

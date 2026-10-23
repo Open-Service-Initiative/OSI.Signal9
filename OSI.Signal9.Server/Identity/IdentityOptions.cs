@@ -14,4 +14,10 @@ public sealed class IdentityOptions
     /// <summary>The base address of the <c>api</c> host, where the RFC 8705 mTLS endpoint aliases live.</summary>
     [Required]
     public Uri ApiUri { get; set; } = null!;
+
+    /// <summary>
+    /// PEM-encoded root (and optionally intermediate) certificate authorities trusted to issue client certificates for
+    /// <c>tls_client_auth</c>. With none, only <c>self_signed_tls_client_auth</c> is offered.
+    /// </summary>
+    public string[] TlsClientCertificateAuthorities { get; set; } = [];
 }

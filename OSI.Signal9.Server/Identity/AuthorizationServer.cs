@@ -42,18 +42,23 @@ public static class AuthorizationServer
     /// <summary>Adds OpenIddict's stores, on the shared <see cref="Signal9DbContext"/>.</summary>
     public static OpenIddictBuilder AddSignal9OpenIddict(this IServiceCollection services) =>
         services.AddOpenIddict()
-            .AddCore(core => core.UseEntityFrameworkCore().UseDbContext<Signal9DbContext>());
+            .AddCore(core =>
+            {
+                core.UseEntityFrameworkCore().UseDbContext<Signal9DbContext>();
+                core.ReplaceApplicationManager(typeof(Signal9ApplicationManager<>));
+            });
 
     /// <summary>
     /// The token rules every host shares: the issuer, the allowed grants, lifetimes and keys. Password, device code
     /// and implicit are never allowed, so OpenIddict refuses them (story 83).
     /// </summary>
-    public static OpenIddictServerBuilder UseSignal9TokenRules(this OpenIddictServerBuilder server, Uri issuer,
-        IConfiguration configuration)
+    public static OpenIddictServerBuilder UseSignal9TokenRules(this OpenIddictServerBuilder server,
+        IdentityOptions identity, IConfiguration configuration)
     {
-        server.SetIssuer(issuer)
+        server.SetIssuer(identity.Issuer)
             .AllowClientCredentialsFlow()
-            .SetAccessTokenLifetime(AccessTokenLifetime);
+            .SetAccessTokenLifetime(AccessTokenLifetime)
+            .UseSignal9ProofOfPossession(identity);
 
         // The signing and encryption keys are the ones stored in the database (ADR-0008).
         server.Services.AddSignal9Keys(configuration);

@@ -8,6 +8,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 builder.AddHostHardening();
 builder.AddSignal9Database();
+builder.AddSignal9ForwardedHeaders();
 builder.Services.AddSingleton(TimeProvider.System);
 
 var identity = builder.Configuration.GetIdentityOptions();
@@ -18,7 +19,7 @@ var identity = builder.Configuration.GetIdentityOptions();
 builder.Services.AddSignal9OpenIddict()
     .AddCore(core => core.UseQuartz())
     .AddServer(server => server
-        .UseSignal9TokenRules(identity.Issuer, builder.Configuration)
+        .UseSignal9TokenRules(identity, builder.Configuration)
         .SetTokenEndpointUris(AuthorizationServer.TokenEndpoint)
         .SetRevocationEndpointUris(AuthorizationServer.RevocationEndpoint)
         .SetIntrospectionEndpointUris(AuthorizationServer.IntrospectionEndpoint)
@@ -35,6 +36,8 @@ builder.Services.AddQuartzHostedService(options => options.WaitForJobsToComplete
 var app = builder.Build();
 
 app.UseHealthProbes();
+// auth never asks for client certificates (ADR-0003), so it never reads a forwarded one either.
+app.UseSignal9ForwardedHeaders();
 app.UseHostHardening();
 app.UseRateLimitingAndAuthentication();
 app.UseAuthorization();

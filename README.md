@@ -55,6 +55,18 @@ The `KeyEncryption` section chooses the key-encryption key on `auth` and `api`:
 | `Certificate:Path` | A PKCS#12 file, or a PEM certificate with `Certificate:KeyPath`. The key must be RSA-3072 or larger. |
 | `Certificate:KeyPath`, `Certificate:Password` | The PEM private key, and the password of the PKCS#12 file or encrypted PEM key, if any. |
 
+## Client certificates (mTLS)
+
+Agents and API applications that authenticate with a certificate use the api host's RFC 8705 aliases (`connect/token`, `connect/revoke`, `connect/introspect`), which auth's discovery document lists under `mtls_endpoint_aliases`. Access tokens issued there are bound to the certificate (`cnf`), and api refuses them without it. auth never asks for client certificates.
+
+| Setting | Purpose |
+| --- | --- |
+| `ForwardedHeaders:KnownNetworks` | CIDR networks whose `X-Forwarded-For`, `X-Forwarded-Proto` and client-certificate headers are believed, such as the Container Apps infrastructure subnet. Empty by default: forwarded headers are ignored. |
+| `ForwardedHeaders:ForwardClientCertificate` | api only. `true` behind Container Apps ingress, which forwards the client certificate in `X-Forwarded-Client-Cert`. Leave it `false` when self-hosted: Kestrel reads the certificate from the TLS handshake. |
+| `Identity:TlsClientCertificateAuthorities` | PEM root (and intermediate) certificates trusted to issue `tls_client_auth` client certificates. Without them only `self_signed_tls_client_auth` is offered. |
+
+A `tls_client_auth` client registers exactly one RFC 8705 subject (`tls_client_auth_subject_dn`, `_san_dns`, `_san_uri`, `_san_ip` or `_san_email`); a `self_signed_tls_client_auth` client registers its certificate in its key set.
+
 ## API
 
 | Resource | Methods |
