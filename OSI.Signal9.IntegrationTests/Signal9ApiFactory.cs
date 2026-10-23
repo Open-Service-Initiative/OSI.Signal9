@@ -14,12 +14,13 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
 using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
+using OSI.Signal9.API;
 using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Contracts.Tenants;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
-namespace OSI.Signal9.API.Tests;
+namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>
 /// Hosts <c>api</c> and <c>auth</c> in memory against their own database on the shared PostgreSQL container, with

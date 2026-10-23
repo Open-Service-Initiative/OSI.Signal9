@@ -2,7 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
-namespace OSI.Signal9.API.Tests;
+namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>Client certificates for mTLS tests: self-signed ones and ones issued by a test certificate authority.</summary>
 internal static class TestCertificates

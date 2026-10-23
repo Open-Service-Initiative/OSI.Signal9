@@ -1,7 +1,7 @@
 using System.Net;
 using Microsoft.AspNetCore.TestHost;
 
-namespace OSI.Signal9.API.Tests;
+namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>
 /// Forwarded headers are believed only from configured proxies (story 129). Container Apps' ingress terminates TLS, so

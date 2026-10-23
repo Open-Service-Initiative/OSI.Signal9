@@ -12,7 +12,7 @@ using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Hubs;
 using OSI.Signal9.Contracts.Serialization;
 
-namespace OSI.Signal9.API.Tests;
+namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>
 /// The agent hub is a doorbell (ADR-0009): it only tells an agent it has work, and the agent fetches the work over REST.

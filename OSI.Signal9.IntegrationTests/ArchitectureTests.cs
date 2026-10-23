@@ -2,10 +2,11 @@ using System.Reflection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Routing;
+using OSI.Signal9.API;
 using OSI.Signal9.API.Infrastructure;
 using OSI.Signal9.Contracts;
 
-namespace OSI.Signal9.API.Tests;
+namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>Rules every endpoint must follow, so resources added later inherit them.</summary>
 [TestClass]

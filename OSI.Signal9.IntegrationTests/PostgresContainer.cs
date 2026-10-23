@@ -3,7 +3,7 @@ using Npgsql;
 using OSI.Signal9.Server.Data;
 using Testcontainers.PostgreSql;
 
-namespace OSI.Signal9.API.Tests;
+namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>
 /// One PostgreSQL container shared by every test in the run. Each <see cref="Signal9ApiFactory"/> gets its

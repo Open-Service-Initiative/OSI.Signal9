@@ -18,7 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="OSI.Signal9.API.Tests" />
+    <InternalsVisibleTo Include="OSI.Signal9.IntegrationTests" />
   </ItemGroup>
 
 </Project>

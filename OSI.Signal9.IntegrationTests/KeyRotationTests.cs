@@ -10,7 +10,7 @@ using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Validation;
 using OSI.Signal9.Server.Keys;
 
-namespace OSI.Signal9.API.Tests;
+namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>
 /// Signing and encryption keys rotate every 90 days, the next key is published 14 days early, and running hosts reload

@@ -6,7 +6,7 @@ using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Contracts.Tenants;
 
-namespace OSI.Signal9.API.Tests;
+namespace OSI.Signal9.IntegrationTests;
 
 [TestClass]
 public sealed class TenantsTests : IDisposable

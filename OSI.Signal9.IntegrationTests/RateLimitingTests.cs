@@ -2,7 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 
-namespace OSI.Signal9.API.Tests;
+namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>
 /// Rate limiting (stories 128, 129): named, configurable policies under <c>RateLimiting:{name}</c>, with no limits

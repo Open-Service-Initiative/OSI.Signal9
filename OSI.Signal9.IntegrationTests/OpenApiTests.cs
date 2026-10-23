@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.OpenApi;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi;
 
-namespace OSI.Signal9.API.Tests;
+namespace OSI.Signal9.IntegrationTests;
 
 [TestClass]
 public sealed class OpenApiTests : IDisposable

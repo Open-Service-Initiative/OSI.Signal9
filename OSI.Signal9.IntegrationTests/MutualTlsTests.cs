@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 using OpenIddict.Abstractions;
 using OpenIddict.Server;
 
-namespace OSI.Signal9.API.Tests;
+namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>
 /// mTLS client authentication and certificate-bound tokens at api's RFC 8705 aliases (ADR-0004). Certificates arrive

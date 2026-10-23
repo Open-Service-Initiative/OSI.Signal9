@@ -63,8 +63,13 @@ These rules are Signal9's own, drawn from Google's AIP-122, AIP-159 and AIP-216 
 
 ## Testing
 
-- `OSI.Signal9.API.Tests` hosts Auth and API in memory together, with a `FakeTimeProvider`; test clients carry a token minted at Auth. Every new endpoint gets a test covering its status codes.
-- Run the tests with `dotnet test --solution OSI.Signal9.slnx`.
+Unit and integration tests live in separate projects, all on MSTest. A new test goes in the unit suite for the project it covers; it goes in the integration suite only when it needs a host or the database.
+
+- `OSI.Signal9.Agent.Tests`: agent unit tests (command executor, collectors, session logic), with no API host or database. OS and machine interactions go behind fakes.
+- `OSI.Signal9.Web.Tests`: dashboard component tests with bUnit, created with the first components (#112).
+- `OSI.Signal9.IntegrationTests`: hosts Auth and API in memory together against the shared Testcontainers PostgreSQL fixture, with a `FakeTimeProvider`; test clients carry a token minted at Auth. The end-to-end agent ↔ API tests, which drive the real agent session over the in-memory transport, live here too. Every new endpoint gets a test here covering its status codes.
+
+Run every suite with `dotnet test --solution OSI.Signal9.slnx`; CI publishes each suite's results separately.
 
 ## Commits and pull requests
 

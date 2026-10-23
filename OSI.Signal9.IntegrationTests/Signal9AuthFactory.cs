@@ -6,7 +6,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Time.Testing;
 using OSI.Signal9.Auth;
 
-namespace OSI.Signal9.API.Tests;
+namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>Hosts <c>auth</c> in memory, sharing the database and clock of the <see cref="Signal9ApiFactory"/> that owns it.</summary>
 public sealed class Signal9AuthFactory : WebApplicationFactory<AuthHost>

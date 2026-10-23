@@ -9,7 +9,7 @@ using OSI.Signal9.API.Tenants;
 using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Contracts.Tenants;
 
-namespace OSI.Signal9.API.Tests;
+namespace OSI.Signal9.IntegrationTests;
 
 [TestClass]
 public sealed class TenantTreeTests : IDisposable

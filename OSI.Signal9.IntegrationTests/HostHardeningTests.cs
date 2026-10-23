@@ -2,7 +2,7 @@ using System.Net;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 
-namespace OSI.Signal9.API.Tests;
+namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>The operational hardening every host shares (#105): probes, errors, HSTS and rate limiting.</summary>
 [TestClass]

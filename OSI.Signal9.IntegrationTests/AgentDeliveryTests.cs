@@ -15,7 +15,7 @@ using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Hubs;
 using OSI.Signal9.Contracts.Serialization;
 
-namespace OSI.Signal9.API.Tests;
+namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>
 /// End to end: the agent's session against the API in memory. Work reaches the agent by doorbell then fetch, by a fetch

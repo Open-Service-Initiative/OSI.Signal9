@@ -11,7 +11,7 @@ using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Server.Identity;
 
-namespace OSI.Signal9.API.Tests;
+namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>The scope catalogue and the scope every endpoint requires (#63, ADR-0010).</summary>
 [TestClass]

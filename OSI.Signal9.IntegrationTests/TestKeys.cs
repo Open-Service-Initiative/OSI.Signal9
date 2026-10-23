@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
-namespace OSI.Signal9.API.Tests;
+namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>
 /// Key-encryption key certificates for the test run, written to PKCS#12 files the hosts load by path, as an on-prem

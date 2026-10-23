@@ -9,7 +9,7 @@ using OpenIddict.Quartz;
 using OpenIddict.Validation;
 using Quartz;
 
-namespace OSI.Signal9.API.Tests;
+namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>The OpenIddict authorization server, split across <c>auth</c> and <c>api</c> (ADR-0002, ADR-0003).</summary>
 [TestClass]

@@ -14,7 +14,8 @@ Remote monitoring and management (RMM) for MSPs. Pre-alpha: not ready for produc
 | `OSI.Signal9.Contracts` | Request/response types shared by the API, Web and Agent. |
 | `OSI.Signal9.AppHost` | Aspire orchestration for local development. |
 | `OSI.Signal9.ServiceDefaults` | Aspire defaults: OpenTelemetry, health checks, resilience. |
-| `OSI.Signal9.API.Tests` | Integration tests for Auth and API. |
+| `OSI.Signal9.IntegrationTests` | Integration tests: Auth and API in memory against PostgreSQL, and the agent end to end against them. |
+| `OSI.Signal9.Agent.Tests` | Agent unit tests, with no API host or database. |
 
 ## Running locally
 

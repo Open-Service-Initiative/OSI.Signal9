@@ -2,7 +2,7 @@ using System.Data.Common;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Npgsql;
 
-namespace OSI.Signal9.API.Tests;
+namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>
 /// Plays a concurrent writer: just before a DbContext's first UPDATE or DELETE, commits <paramref name="sql"/> on its

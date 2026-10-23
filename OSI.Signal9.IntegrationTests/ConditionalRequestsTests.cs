@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using OSI.Signal9.API;
 using OSI.Signal9.Server.Data;
 using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.Commands;
@@ -13,7 +14,7 @@ using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Contracts.Telemetry;
 using OSI.Signal9.Contracts.Tenants;
 
-namespace OSI.Signal9.API.Tests;
+namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>
 /// Optimistic concurrency (RFC 9110 §8.8.3, §13): strong ETags on single resources and write responses,
