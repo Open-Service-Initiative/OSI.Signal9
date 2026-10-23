@@ -191,6 +191,7 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         if (_auth is not null)
             await _auth.DisposeAsync();
         await base.DisposeAsync();
+        await PostgresContainer.DropDatabaseAsync(ConnectionString);
     }
 }
 

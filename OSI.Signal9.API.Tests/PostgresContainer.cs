@@ -47,6 +47,16 @@ public static class PostgresContainer
         return ConnectionStringFor(name);
     }
 
+    /// <summary>
+    /// Drops a database made by <see cref="CreateDatabase"/>, closing the connections its hosts' pools still hold, so
+    /// a long run never exhausts the server's connection limit.
+    /// </summary>
+    public static async Task DropDatabaseAsync(string connectionString)
+    {
+        var name = new NpgsqlConnectionStringBuilder(connectionString).Database;
+        await ExecuteAsync($"DROP DATABASE IF EXISTS {name} WITH (FORCE)", CancellationToken.None);
+    }
+
     private static string ConnectionStringFor(string database) =>
         new NpgsqlConnectionStringBuilder(Container.GetConnectionString()) { Database = database }.ConnectionString;
 
