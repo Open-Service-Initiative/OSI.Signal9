@@ -58,6 +58,7 @@ internal static class Mappings
     public static CommandDto ToDto(this Command command) => new(
         command.Id,
         command.DeviceId,
+        $"/api/v1/devices/{command.DeviceId}/commands/{command.Id}",
         command.Type,
         command.Parameters,
         command.Priority,

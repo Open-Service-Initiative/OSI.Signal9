@@ -26,9 +26,11 @@ public enum CommandPriority
 }
 
 /// <summary>A command for a device, run by whichever agent is active on it. It stays in the device's history.</summary>
+/// <param name="Url">The command's canonical URL, where agents report its result.</param>
 public sealed record CommandDto(
     Guid Id,
     Guid DeviceId,
+    string Url,
     CommandType Type,
     string? Parameters,
     CommandPriority Priority,

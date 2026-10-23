@@ -71,3 +71,7 @@ public sealed record HeartbeatRequest
     [StringLength(50)]
     public string? AgentVersion { get; init; }
 }
+
+/// <summary>Response to a heartbeat.</summary>
+/// <param name="HasPendingWork">Whether work is waiting for the agent, which it then fetches from its pending-commands list.</param>
+public sealed record HeartbeatResponse(bool HasPendingWork);

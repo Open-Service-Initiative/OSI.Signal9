@@ -97,7 +97,7 @@ public sealed class DevicesTests : IDisposable
         Assert.AreEqual(1, (await ListAsync("status=Offline")).TotalCount);
 
         var heartbeat = await _client.PutAsJsonAsync($"api/v1/agents/{agent.Id}/heartbeat", new HeartbeatRequest(), Signal9Json.Options, Ct);
-        Assert.AreEqual(HttpStatusCode.NoContent, heartbeat.StatusCode);
+        Assert.AreEqual(HttpStatusCode.OK, heartbeat.StatusCode);
         Assert.AreEqual(DeviceStatus.Online, (await GetDeviceAsync(agent.DeviceId)).Status);
         Assert.AreEqual(1, (await ListAsync("status=Online")).TotalCount);
     }

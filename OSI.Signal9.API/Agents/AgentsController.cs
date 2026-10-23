@@ -5,7 +5,9 @@ using OSI.Signal9.Server.Data;
 using OSI.Signal9.API.Devices;
 using OSI.Signal9.API.Hubs;
 using OSI.Signal9.API.Infrastructure;
+using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Agents;
+using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Hubs;
 using OSI.Signal9.Contracts.Tenants;
 
@@ -122,18 +124,44 @@ public sealed class AgentsController(
         return (null, (device, agent));
     }
 
-    /// <summary>Records that the agent is alive. Sent by the agent on a fixed interval. A replaced agent gets 409.</summary>
-    [HttpPut("{agentId:guid}/heartbeat")]
-    [Consumes("application/json")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    /// <summary>
+    /// Lists the pending commands of the agent's device, oldest first. The agent calls it when its doorbell rings, every
+    /// time it (re)connects and when a heartbeat says work is waiting, then reports each result at the command's URL.
+    /// A replaced agent gets 409.
+    /// </summary>
+    [HttpGet("{agentId:guid}/pending-commands")]
+    [ProducesResponseType<PagedResult<CommandDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> Heartbeat(Guid agentId, HeartbeatRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<PagedResult<CommandDto>>> ListPendingCommands(
+        Guid agentId, [FromQuery] PageQuery query, CancellationToken cancellationToken)
     {
         var (device, refusal) = await db.FindDeviceOfActiveAgentAsync(this, agentId, cancellationToken);
         if (device is null)
-            return refusal!;
+            return (ActionResult)refusal!;
+
+        return await db.Commands.AsNoTracking()
+            .Where(c => c.DeviceId == device.Id && c.Status == CommandStatus.Pending)
+            .OrderBy(c => c.CreatedAt).ThenBy(c => c.Id)
+            .ToPagedResultAsync(query, c => c.ToDto(), cancellationToken);
+    }
+
+    /// <summary>
+    /// Records that the agent is alive and tells it whether work is waiting. Sent by the agent on a fixed interval.
+    /// A replaced agent gets 409.
+    /// </summary>
+    [HttpPut("{agentId:guid}/heartbeat")]
+    [Consumes("application/json")]
+    [ProducesResponseType<HeartbeatResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<HeartbeatResponse>> Heartbeat(
+        Guid agentId, HeartbeatRequest request, CancellationToken cancellationToken)
+    {
+        var (device, refusal) = await db.FindDeviceOfActiveAgentAsync(this, agentId, cancellationToken);
+        if (device is null)
+            return (ActionResult)refusal!;
 
         var agent = device.ActiveAgent!;
         var wasOnline = presence.StatusOf(device) == Contracts.Devices.DeviceStatus.Online;
@@ -144,6 +172,8 @@ public sealed class AgentsController(
 
         if (!wasOnline)
             await dashboard.Clients.All.DeviceChanged(device.ToDto(presence));
-        return NoContent();
+        var hasPendingWork = await db.Commands.AnyAsync(
+            c => c.DeviceId == device.Id && c.Status == CommandStatus.Pending, cancellationToken);
+        return new HeartbeatResponse(hasPendingWork);
     }
 }

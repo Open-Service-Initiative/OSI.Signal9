@@ -27,7 +27,7 @@ public sealed class CommandsController(
     IHubContext<AgentHub, IAgentHubClient> agents,
     IHubContext<DashboardHub, IDashboardHubClient> dashboard) : ControllerBase
 {
-    /// <summary>Lists a device's commands, newest first. Its agent fetches ?status=Pending after reconnecting.</summary>
+    /// <summary>Lists a device's commands, newest first. Agents fetch their work from their own pending-commands list.</summary>
     [HttpGet]
     [ProducesResponseType<PagedResult<CommandDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -55,7 +55,7 @@ public sealed class CommandsController(
         return command is null ? NotFound() : command.ToDto();
     }
 
-    /// <summary>Queues a command and pushes it to the device's active agent if it is connected.</summary>
+    /// <summary>Queues a command and rings the doorbell of the device's active agent, which then fetches it.</summary>
     [HttpPost]
     [Consumes("application/json")]
     [ProducesResponseType<CommandDto>(StatusCodes.Status201Created)]
@@ -84,7 +84,7 @@ public sealed class CommandsController(
 
         var dto = command.ToDto();
         if (device.ActiveAgentId is { } agentId)
-            await agents.Clients.Group(AgentHub.GroupFor(agentId)).CommandQueued(dto);
+            await agents.Clients.Group(AgentHub.GroupFor(agentId)).WorkAvailable();
         await dashboard.Clients.All.CommandChanged(dto);
         return CreatedAtRoute(nameof(GetCommand), new { deviceId, commandId = command.Id }, dto);
     }

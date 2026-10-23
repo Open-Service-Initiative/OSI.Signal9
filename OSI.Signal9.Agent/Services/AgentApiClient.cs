@@ -21,14 +21,14 @@ public sealed class AgentApiClient(HttpClient http)
         return (await response.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options, cancellationToken))!;
     }
 
-    /// <returns>False when the API no longer knows this agent, or it was replaced, and it must re-register.</returns>
-    public async Task<bool> SendHeartbeatAsync(Guid agentId, HeartbeatRequest request, CancellationToken cancellationToken)
+    /// <returns>Null when the API no longer knows this agent, or it was replaced, and it must re-register.</returns>
+    public async Task<HeartbeatResponse?> SendHeartbeatAsync(Guid agentId, HeartbeatRequest request, CancellationToken cancellationToken)
     {
         using var response = await http.PutAsJsonAsync($"api/v1/agents/{agentId}/heartbeat", request, Signal9Json.Options, cancellationToken);
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Conflict)
-            return false;
+            return null;
         await EnsureSuccessAsync(response, cancellationToken);
-        return true;
+        return (await response.Content.ReadFromJsonAsync<HeartbeatResponse>(Signal9Json.Options, cancellationToken))!;
     }
 
     public async Task SendTelemetryAsync(Guid agentId, CreateTelemetrySampleRequest sample, CancellationToken cancellationToken)
@@ -37,17 +37,18 @@ public sealed class AgentApiClient(HttpClient http)
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
-    // TODO(#103): list pending work from the agent's own URL once the doorbell lands.
-    public async Task<IReadOnlyList<CommandDto>> GetPendingCommandsAsync(Guid deviceId, CancellationToken cancellationToken)
+    /// <summary>Lists the agent's pending commands, oldest first, up to one page.</summary>
+    public async Task<IReadOnlyList<CommandDto>> GetPendingCommandsAsync(Guid agentId, CancellationToken cancellationToken)
     {
         var page = await http.GetFromJsonAsync<PagedResult<CommandDto>>(
-            $"api/v1/devices/{deviceId}/commands?status={CommandStatus.Pending}&pageSize=100", Signal9Json.Options, cancellationToken);
+            $"api/v1/agents/{agentId}/pending-commands?pageSize=100", Signal9Json.Options, cancellationToken);
         return page?.Items ?? [];
     }
 
+    /// <summary>Reports a command's result at its canonical URL.</summary>
     public async Task SendCommandResultAsync(CommandDto command, CommandResultRequest result, CancellationToken cancellationToken)
     {
-        using var response = await http.PutAsJsonAsync($"api/v1/devices/{command.DeviceId}/commands/{command.Id}/result", result, Signal9Json.Options, cancellationToken);
+        using var response = await http.PutAsJsonAsync($"{command.Url.TrimStart('/')}/result", result, Signal9Json.Options, cancellationToken);
         // 409 means the command was cancelled or already reported; nothing more to do.
         if (response.StatusCode != HttpStatusCode.Conflict)
             await EnsureSuccessAsync(response, cancellationToken);

@@ -55,12 +55,13 @@ dotnet run --project OSI.Signal9.Agent -- --Agent:TenantId=<tenant id>
 | `/api/v1/devices/{deviceId}/commands/{commandId}:cancel` | `POST` |
 | `/api/v1/agents` | `POST` (agent registration: a new agent, active on its device) |
 | `/api/v1/agents/{agentId}` | `GET` |
-| `/api/v1/agents/{agentId}/heartbeat` | `PUT` (sent by the agent) |
+| `/api/v1/agents/{agentId}/heartbeat` | `PUT` (sent by the agent; the response says whether work is waiting) |
+| `/api/v1/agents/{agentId}/pending-commands` | `GET` (paged, oldest first; the agent's pending work, each with its canonical URL) |
 | `/api/v1/agents/{agentId}/telemetry` | `POST` (sent by the agent; stored on its device) |
 
 A device is the managed machine; an agent is one installation on it. Telemetry and command history belong to the device and survive the agent being replaced.
 
-Hubs: `/hubs/agents` (commands pushed to a device's active agent) and `/hubs/dashboard` (live updates for the dashboard).
+Hubs: `/hubs/agents` and `/hubs/dashboard` (live updates for the dashboard). The agent hub is a doorbell (ADR-0009): it rings a device's active agent when a command is queued, carries no command content and accepts no calls. The agent fetches its pending commands over REST when the doorbell rings, every time it (re)connects and when a heartbeat response says work is waiting.
 
 ## Development
 
