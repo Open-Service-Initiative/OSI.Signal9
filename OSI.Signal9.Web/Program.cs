@@ -43,6 +43,7 @@ app.UseAuthorization();
 app.MapStaticAssets();
 app.MapBff();
 app.MapApiProxy();
+app.MapApiReference();
 // Every page is the same WebAssembly shell, which shows a sign-in prompt when there's no session; the data stays behind
 // the proxy's own checks. The shell takes no form posts, so it needs no antiforgery token: CSRF is the custom header.
 app.MapRazorComponents<App>()

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.OpenApi;
 using OpenIddict.Validation.AspNetCore;
 using OSI.Signal9.API.Authorization;
 using OSI.Signal9.API.Devices;
@@ -35,7 +36,15 @@ builder.Services.AddControllers()
 builder.Services.AddExceptionHandler<ConcurrencyConflictHandler>();
 var identity = builder.Configuration.GetIdentityOptions();
 builder.Services.AddOpenApi(options => options
+    // Relative, so "try it" calls whichever host served the document: api itself, or web's /docs, where calls go out
+    // with the signed-in person's session (story 133).
+    .AddDocumentTransformer((document, _, _) =>
+    {
+        document.Servers = [new OpenApiServer { Url = "/" }];
+        return Task.CompletedTask;
+    })
     .AddScopes(identity.Issuer)
+    .AddOperationTransformer<DocumentedRequirements>()
     .AddOperationTransformer<ConditionalOperationTransformer>());
 builder.Services.AddSignalR()
     .AddJsonProtocol(options => Signal9Json.Configure(options.PayloadSerializerOptions));
@@ -88,7 +97,7 @@ app.UseAuthorization();
 
 app.MapTokenEndpoint().RequireRateLimiting(RateLimiting.Token);
 // The API description is public (story 132): it shows what each call needs, never data.
-app.MapOpenApi().AllowAnonymous().RequireRateLimiting(RateLimiting.Api);
+app.MapOpenApi(ApiDocs.DocumentPattern).AllowAnonymous().RequireRateLimiting(RateLimiting.Api);
 app.MapControllers().RequireRateLimiting(RateLimiting.Api);
 app.MapHub<AgentHub>(HubRoutes.Agents).RequireRateLimiting(RateLimiting.Api);
 app.MapHub<DashboardHub>(HubRoutes.Dashboard).RequireRateLimiting(RateLimiting.Api);
