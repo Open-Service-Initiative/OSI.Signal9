@@ -6,11 +6,11 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
 using OSI.Signal9.Server.Data;
+using OSI.Signal9.Server.Keys;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
 namespace OSI.Signal9.Server.Identity;
@@ -49,16 +49,14 @@ public static class AuthorizationServer
     /// and implicit are never allowed, so OpenIddict refuses them (story 83).
     /// </summary>
     public static OpenIddictServerBuilder UseSignal9TokenRules(this OpenIddictServerBuilder server, Uri issuer,
-        IHostEnvironment environment)
+        IConfiguration configuration)
     {
         server.SetIssuer(issuer)
             .AllowClientCredentialsFlow()
             .SetAccessTokenLifetime(AccessTokenLifetime);
 
-        // TODO(#106): load the signing and encryption keys from the database. Until then only Development has keys,
-        // and the test fixture supplies its own.
-        if (environment.IsDevelopment())
-            server.AddDevelopmentEncryptionCertificate().AddDevelopmentSigningCertificate();
+        // The signing and encryption keys are the ones stored in the database (ADR-0008).
+        server.Services.AddSignal9Keys(configuration);
 
         server.UseAspNetCore().EnableTokenEndpointPassthrough();
         return server;

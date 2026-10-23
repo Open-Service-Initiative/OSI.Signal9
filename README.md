@@ -8,7 +8,7 @@ Remote monitoring and management (RMM) for MSPs. Pre-alpha: not ready for produc
 | --- | --- |
 | `OSI.Signal9.Auth` | The OAuth authorization server (OpenIddict): discovery and token endpoints. |
 | `OSI.Signal9.API` | ASP.NET Core REST API and SignalR hubs, plus the authorization server's mTLS token, revocation and introspection endpoints. Deployed to Azure Container Apps. |
-| `OSI.Signal9.Server` | Server code shared by Auth and API: EF Core on PostgreSQL, migrations and the OpenIddict token rules. |
+| `OSI.Signal9.Server` | Server code shared by Auth and API: EF Core on PostgreSQL, migrations, the OpenIddict token rules and the stored keys. |
 | `OSI.Signal9.Web` | Blazor WebAssembly dashboard. Deployed to Azure Static Web Apps. |
 | `OSI.Signal9.Agent` | Windows Service installed on managed machines. |
 | `OSI.Signal9.Contracts` | Request/response types shared by the API, Web and Agent. |
@@ -33,11 +33,25 @@ dotnet tool restore
 dotnet ef database update --project OSI.Signal9.Server --connection "<connection string>"
 ```
 
+Signal9 generates its own token signing and encryption keys and its Data Protection keys, and stores them in the database, wrapped by a key-encryption key (ADR-0008). Locally that's a certificate the AppHost creates on first run at `Signal9/local-kek.pfx` under your local application data folder. Keep it: the keys in your local database can't be read without it. If you lose it, delete the PostgreSQL data volume too.
+
 To enroll a machine, create a tenant in the dashboard, then run the agent with the tenant's ID:
 
 ```sh
 dotnet run --project OSI.Signal9.Agent -- --Agent:TenantId=<tenant id>
 ```
+
+## Keys
+
+The `KeyEncryption` section chooses the key-encryption key on `auth` and `api`:
+
+| Setting | Meaning |
+| --- | --- |
+| `Provider` | `KeyVault` (Azure) or `Certificate` (on-prem and local development). |
+| `KeyVault:KeyId` | The Key Vault RSA key, without a version: `https://{vault}.vault.azure.net/keys/{name}`. Reached by managed identity only; the identity needs wrap and unwrap permission on the key. |
+| `KeyVault:ManagedIdentityClientId` | A user-assigned identity's client ID, or empty for the system-assigned identity. |
+| `Certificate:Path` | A PKCS#12 file, or a PEM certificate with `Certificate:KeyPath`. The key must be RSA-3072 or larger. |
+| `Certificate:KeyPath`, `Certificate:Password` | The PEM private key, and the password of the PKCS#12 file or encrypted PEM key, if any. |
 
 ## API
 

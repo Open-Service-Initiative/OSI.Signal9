@@ -50,21 +50,24 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         ConfigureSharedHost(builder, ConnectionString, Time);
     }
 
-    /// <summary>What <c>auth</c> and <c>api</c> share: the database, clock, issuer and keys.</summary>
-    internal static void ConfigureSharedHost(IWebHostBuilder builder, string connectionString, FakeTimeProvider time)
+    /// <summary>
+    /// What <c>auth</c> and <c>api</c> share: the database, clock, issuer and the key-encryption key that wraps the
+    /// stored keys.
+    /// </summary>
+    internal static void ConfigureSharedHost(IWebHostBuilder builder, string connectionString, FakeTimeProvider time,
+        string? kekPath = null)
     {
         builder.UseEnvironment("Testing");
         builder.UseSetting("ConnectionStrings:signal9", connectionString);
         builder.UseSetting("Identity:Issuer", Signal9AuthFactory.Issuer);
         builder.UseSetting("Identity:ApiUri", Signal9AuthFactory.ApiUri);
         builder.UseSetting("Logging:LogLevel:Default", "Warning");
+        builder.UseSetting("KeyEncryption:Provider", "Certificate");
+        builder.UseSetting("KeyEncryption:Certificate:Path", kekPath ?? TestKeys.KekPath);
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(time);
-            services.AddOpenIddict().AddServer(server => server
-                .AddSigningKey(TestKeys.Signing)
-                .AddEncryptionKey(TestKeys.Encryption));
         });
     }
 

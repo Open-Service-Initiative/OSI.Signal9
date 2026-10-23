@@ -24,6 +24,14 @@ foreach (var host in new IResourceBuilder<ProjectResource>[] { auth, api })
 {
     host.WithEnvironment("Identity__Issuer", issuer)
         .WithEnvironment("Identity__ApiUri", apiUri);
+
+    // Locally a certificate is the key-encryption key that wraps the stored keys (ADR-0008); when published it's a
+    // Key Vault key reached by managed identity, which #77 provisions.
+    if (builder.ExecutionContext.IsRunMode)
+    {
+        host.WithEnvironment("KeyEncryption__Provider", "Certificate")
+            .WithEnvironment("KeyEncryption__Certificate__Path", LocalKeyEncryptionKey.EnsureCertificate());
+    }
 }
 
 // The Blazor WebAssembly app reads the API address from wwwroot/appsettings.*.json, so this only starts it.

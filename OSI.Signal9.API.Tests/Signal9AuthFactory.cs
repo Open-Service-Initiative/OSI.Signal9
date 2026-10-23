@@ -13,11 +13,14 @@ public sealed class Signal9AuthFactory : WebApplicationFactory<AuthHost>
 {
     private readonly string _connectionString;
     private readonly FakeTimeProvider _time;
+    private readonly string? _kekPath;
 
-    public Signal9AuthFactory(string connectionString, FakeTimeProvider time)
+    /// <param name="kekPath">The key-encryption key certificate, if not the one the test run shares.</param>
+    public Signal9AuthFactory(string connectionString, FakeTimeProvider time, string? kekPath = null)
     {
         _connectionString = connectionString;
         _time = time;
+        _kekPath = kekPath;
         ClientOptions.BaseAddress = Signal9ApiFactory.HttpsLocalhost;
     }
 
@@ -26,7 +29,7 @@ public sealed class Signal9AuthFactory : WebApplicationFactory<AuthHost>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        Signal9ApiFactory.ConfigureSharedHost(builder, _connectionString, _time);
+        Signal9ApiFactory.ConfigureSharedHost(builder, _connectionString, _time, _kekPath);
         // Tests start the pruning job themselves, so it never runs in the middle of another test.
         builder.ConfigureTestServices(services =>
         {

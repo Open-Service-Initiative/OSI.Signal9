@@ -12,6 +12,10 @@ _Avoid_: Installation, environment
 The organization that runs a deployment and owns its infrastructure and Entra app registration. An organization, unlike a Superadministrator, who is a person; an operator's own MSP is usually also a tenant in its deployment.
 _Avoid_: Host, provider, vendor
 
+**Key-encryption key**:
+The one key that wraps every key a deployment stores: its token signing and encryption keys and its Data Protection keys. A Key Vault key on Azure, a certificate otherwise. The deployment's single root of trust.
+_Avoid_: KEK (in prose), master key, root key
+
 **Setup code**:
 A one-time secret a new deployment writes to its logs while it has no Superadministrator. Presenting it is the only way to start first-run setup, and it stops working once setup completes.
 _Avoid_: Bootstrap token, install code, admin password

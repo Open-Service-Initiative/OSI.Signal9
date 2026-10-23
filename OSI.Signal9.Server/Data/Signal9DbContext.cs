@@ -1,8 +1,10 @@
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using OSI.Signal9.Server.Keys;
 
 namespace OSI.Signal9.Server.Data;
 
-public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options) : DbContext(options)
+public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options) : DbContext(options), IDataProtectionKeyContext
 {
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<TenantClosure> TenantClosures => Set<TenantClosure>();
@@ -10,6 +12,10 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options)
     public DbSet<Agent> Agents => Set<Agent>();
     public DbSet<Command> Commands => Set<Command>();
     public DbSet<TelemetrySample> TelemetrySamples => Set<TelemetrySample>();
+    public DbSet<StoredKey> StoredKeys => Set<StoredKey>();
+
+    /// <summary>The ASP.NET Core Data Protection key ring, each key wrapped by the key-encryption key (ADR-0008).</summary>
+    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -83,6 +89,13 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options)
                 .WithMany()
                 .HasForeignKey(c => c.DeviceId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<StoredKey>(key =>
+        {
+            key.Property(k => k.Use).HasConversion<string>().HasMaxLength(20);
+            key.Property(k => k.KekId).HasMaxLength(500);
+            key.HasIndex(k => new { k.Use, k.ActivatesAt });
         });
 
         modelBuilder.Entity<TelemetrySample>(sample =>

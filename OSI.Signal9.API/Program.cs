@@ -41,7 +41,7 @@ var identity = builder.Configuration.GetIdentityOptions();
 // auth advertises for them. Discovery and the key set are served only by auth.
 builder.Services.AddSignal9OpenIddict()
     .AddServer(server => server
-        .UseSignal9TokenRules(identity.Issuer, builder.Environment)
+        .UseSignal9TokenRules(identity.Issuer, builder.Configuration)
         .SetConfigurationEndpointUris(Array.Empty<Uri>())
         .SetJsonWebKeySetEndpointUris(Array.Empty<Uri>())
         .SetTokenEndpointUris(AuthorizationServer.TokenEndpoint)
