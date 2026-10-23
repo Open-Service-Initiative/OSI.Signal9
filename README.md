@@ -77,6 +77,24 @@ A device is the managed machine; an agent is one installation on it. Telemetry a
 
 Hubs: `/hubs/agents` and `/hubs/dashboard` (live updates for the dashboard). The agent hub is a doorbell (ADR-0009): it rings a device's active agent when a command is queued, carries no command content and accepts no calls. The agent fetches its pending commands over REST when the doorbell rings, every time it (re)connects and when a heartbeat response says work is waiting.
 
+## Operations
+
+Both hosts serve their liveness (`/alive`) and readiness (`/health`) probes only on the internal port in `HealthProbes:Port`, in every environment; it's required, and that port serves nothing else. The AppHost assigns it.
+
+Rate limiting is off until configured. Each policy has a `RateLimiting:<policy>` section with `PermitLimit` (requests per window; absent means no limit) and `Window` (default `00:01:00`):
+
+| Policy | Applies to | Partitioned by |
+| --- | --- | --- |
+| `Global` | every request on the host | client IP |
+| `Token` | the token endpoint on auth and its mTLS alias on api | `client_id` and client IP |
+| `Api` | api's resources and hubs | caller (the access token's subject), or client IP without a token |
+
+```json
+"RateLimiting": { "Token": { "PermitLimit": 20, "Window": "00:01:00" } }
+```
+
+Rejected requests get `429` ProblemDetails with `Retry-After`. Errors are ProblemDetails, without exception details outside Development, and HSTS (two years, `includeSubDomains`, `preload`) is sent outside Development.
+
 ## Development
 
 ```sh

@@ -32,6 +32,12 @@ foreach (var host in new IResourceBuilder<ProjectResource>[] { auth, api })
         host.WithEnvironment("KeyEncryption__Provider", "Certificate")
             .WithEnvironment("KeyEncryption__Certificate__Path", LocalKeyEncryptionKey.EnsureCertificate());
     }
+
+    // Health probes on their own internal port (story 134), added after WithExternalHttpEndpoints so it stays internal.
+    host.WithHttpEndpoint(name: "probes");
+    var probes = host.GetEndpoint("probes");
+    host.WithEnvironment("HealthProbes__Port", probes.Property(EndpointProperty.TargetPort))
+        .WithHttpHealthCheck("/health", endpointName: "probes");
 }
 
 // The Blazor WebAssembly app reads the API address from wwwroot/appsettings.*.json, so this only starts it.

@@ -1,6 +1,9 @@
+using System.Globalization;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -23,11 +26,14 @@ namespace OSI.Signal9.API.Tests;
 public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
 {
     private readonly bool _migrated;
+    private readonly IReadOnlyDictionary<string, string?> _settings;
 
     /// <param name="migrated">Whether the database starts with the schema applied, or empty.</param>
-    public Signal9ApiFactory(bool migrated = true)
+    /// <param name="settings">Configuration for both hosts, on top of the fixture's own.</param>
+    public Signal9ApiFactory(bool migrated = true, IReadOnlyDictionary<string, string?>? settings = null)
     {
         _migrated = migrated;
+        _settings = settings ?? new Dictionary<string, string?>();
         ConnectionString = PostgresContainer.CreateDatabase(migrated);
         ClientOptions.BaseAddress = HttpsLocalhost;
     }
@@ -43,19 +49,27 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
     public string ConnectionString { get; }
 
     /// <summary>The <c>auth</c> host, sharing this factory's database and clock.</summary>
-    public Signal9AuthFactory Auth => _auth ??= new Signal9AuthFactory(ConnectionString, Time);
+    public Signal9AuthFactory Auth => _auth ??= new Signal9AuthFactory(ConnectionString, Time, settings: _settings);
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        ConfigureSharedHost(builder, ConnectionString, Time);
+        ConfigureSharedHost(builder, ConnectionString, Time, _settings);
     }
 
+    /// <summary>The internal port both hosts serve their health probes on.</summary>
+    public const int ProbePort = 8081;
+
     /// <summary>
-    /// What <c>auth</c> and <c>api</c> share: the database, clock, issuer and the key-encryption key that wraps the
-    /// stored keys.
+    /// A request header the fixture turns into the connection's remote IP address, standing in for distinct callers.
+    /// </summary>
+    public const string ClientIpHeader = "X-Test-Client-IP";
+
+    /// <summary>
+    /// What <c>auth</c> and <c>api</c> share: the database, clock, issuer, settings and the key-encryption key that
+    /// wraps the stored keys.
     /// </summary>
     internal static void ConfigureSharedHost(IWebHostBuilder builder, string connectionString, FakeTimeProvider time,
-        string? kekPath = null)
+        IReadOnlyDictionary<string, string?> settings, string? kekPath = null)
     {
         builder.UseEnvironment("Testing");
         builder.UseSetting("ConnectionStrings:signal9", connectionString);
@@ -64,8 +78,12 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         builder.UseSetting("Logging:LogLevel:Default", "Warning");
         builder.UseSetting("KeyEncryption:Provider", "Certificate");
         builder.UseSetting("KeyEncryption:Certificate:Path", kekPath ?? TestKeys.KekPath);
+        builder.UseSetting("HealthProbes:Port", ProbePort.ToString(CultureInfo.InvariantCulture));
+        foreach (var (key, value) in settings)
+            builder.UseSetting(key, value);
         builder.ConfigureTestServices(services =>
         {
+            services.AddSingleton<IStartupFilter, ClientIpFromHeader>();
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(time);
         });
@@ -174,6 +192,21 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
             await _auth.DisposeAsync();
         await base.DisposeAsync();
     }
+}
+
+/// <summary>Sets the connection's remote IP from <see cref="Signal9ApiFactory.ClientIpHeader"/>, ahead of the host's pipeline.</summary>
+internal sealed class ClientIpFromHeader : IStartupFilter
+{
+    public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+    {
+        app.Use((context, nextMiddleware) =>
+        {
+            if (IPAddress.TryParse(context.Request.Headers[Signal9ApiFactory.ClientIpHeader], out var address))
+                context.Connection.RemoteIpAddress = address;
+            return nextMiddleware(context);
+        });
+        next(app);
+    };
 }
 
 /// <summary>A token endpoint's successful response.</summary>

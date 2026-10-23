@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
@@ -106,22 +108,38 @@ public static class Extensions
         return builder;
     }
 
-    public static WebApplication MapDefaultEndpoints(this WebApplication app)
+    /// <summary>
+    /// Serves the liveness (<c>/alive</c>) and readiness (<c>/health</c>) probes on the internal port in
+    /// <c>HealthProbes:Port</c>, in every environment, and nothing else on that port. The port is matched on the
+    /// connection's local port, never the Host header, and is never exposed publicly (story 134). Call it first, so
+    /// probes skip the rest of the pipeline.
+    /// </summary>
+    public static WebApplication UseHealthProbes(this WebApplication app)
     {
-        // Adding health checks endpoints to applications in non-development environments has security implications.
-        // See https://aka.ms/dotnet/aspire/healthchecks for details before enabling these endpoints in non-development environments.
-        if (app.Environment.IsDevelopment())
-        {
-            // All health checks must pass for app to be considered ready to accept traffic after starting
-            app.MapHealthChecks(HealthEndpointPath).AllowAnonymous();
+        var port = app.Configuration.GetValue<int?>(HealthProbePortKey)
+            ?? throw new InvalidOperationException($"'{HealthProbePortKey}' must name the internal port for health probes.");
+        if (port is < 1 or > 65535)
+            throw new InvalidOperationException($"'{HealthProbePortKey}' must be a TCP port, not {port}.");
 
-            // Only health checks tagged with the "live" tag must pass for app to be considered alive
-            app.MapHealthChecks(AlivenessEndpointPath, new HealthCheckOptions
+        app.MapWhen(context => context.Connection.LocalPort == port, probes =>
+        {
+            // All health checks must pass for the app to be ready to accept traffic.
+            probes.UseHealthChecks(HealthEndpointPath);
+            // Only checks tagged "live" must pass for the app to be alive.
+            probes.UseHealthChecks(AlivenessEndpointPath, new HealthCheckOptions
             {
                 Predicate = r => r.Tags.Contains("live")
-            }).AllowAnonymous();
-        }
+            });
+            probes.Run(context =>
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return Task.CompletedTask;
+            });
+        });
 
         return app;
     }
+
+    /// <summary>The configuration key of the internal port that serves health probes.</summary>
+    public const string HealthProbePortKey = "HealthProbes:Port";
 }

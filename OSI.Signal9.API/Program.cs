@@ -6,11 +6,13 @@ using OSI.Signal9.API.Tenants;
 using OSI.Signal9.Contracts.Hubs;
 using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Server.Data;
+using OSI.Signal9.Server.Hosting;
 using OSI.Signal9.Server.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddHostHardening();
 
 builder.AddSignal9Database();
 
@@ -23,7 +25,6 @@ builder.Services.AddScoped<TenantTree>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(options => Signal9Json.Configure(options.JsonSerializerOptions));
-builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
 builder.Services.AddSignalR()
     .AddJsonProtocol(options => Signal9Json.Configure(options.PayloadSerializerOptions));
@@ -65,8 +66,8 @@ builder.Services.AddAuthorizationBuilder()
 
 var app = builder.Build();
 
-app.UseExceptionHandler();
-app.UseStatusCodePages();
+app.UseHealthProbes();
+app.UseHostHardening();
 
 if (app.Environment.IsDevelopment())
 {
@@ -74,14 +75,13 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors();
-app.UseAuthentication();
+app.UseRateLimitingAndAuthentication();
 app.UseAuthorization();
 
-app.MapTokenEndpoint();
-app.MapControllers();
-app.MapHub<AgentHub>(HubRoutes.Agents);
-app.MapHub<DashboardHub>(HubRoutes.Dashboard);
-app.MapDefaultEndpoints();
+app.MapTokenEndpoint().RequireRateLimiting(RateLimiting.Token);
+app.MapControllers().RequireRateLimiting(RateLimiting.Api);
+app.MapHub<AgentHub>(HubRoutes.Agents).RequireRateLimiting(RateLimiting.Api);
+app.MapHub<DashboardHub>(HubRoutes.Dashboard).RequireRateLimiting(RateLimiting.Api);
 
 app.Run();
 

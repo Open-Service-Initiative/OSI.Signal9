@@ -1,10 +1,12 @@
 using OSI.Signal9.Server.Data;
+using OSI.Signal9.Server.Hosting;
 using OSI.Signal9.Server.Identity;
 using Quartz;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddHostHardening();
 builder.AddSignal9Database();
 builder.Services.AddSingleton(TimeProvider.System);
 
@@ -24,7 +26,6 @@ builder.Services.AddSignal9OpenIddict()
         .SetMtlsRevocationEndpointAliasUri(new Uri(identity.ApiUri, AuthorizationServer.RevocationEndpoint))
         .SetMtlsIntrospectionEndpointAliasUri(new Uri(identity.ApiUri, AuthorizationServer.IntrospectionEndpoint)));
 
-builder.Services.AddProblemDetails();
 builder.Services.AddAuthorization();
 
 // Prunes expired and revoked tokens and authorizations hourly. Only auth runs it.
@@ -33,12 +34,12 @@ builder.Services.AddQuartzHostedService(options => options.WaitForJobsToComplete
 
 var app = builder.Build();
 
-app.UseExceptionHandler();
-app.UseAuthentication();
+app.UseHealthProbes();
+app.UseHostHardening();
+app.UseRateLimitingAndAuthentication();
 app.UseAuthorization();
 
-app.MapTokenEndpoint();
-app.MapDefaultEndpoints();
+app.MapTokenEndpoint().RequireRateLimiting(RateLimiting.Token);
 
 app.Run();
 
