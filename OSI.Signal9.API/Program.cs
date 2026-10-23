@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using OSI.Signal9.API.Agents;
+using OSI.Signal9.API.Devices;
 using OSI.Signal9.API.Data;
 using OSI.Signal9.API.Hubs;
 using OSI.Signal9.API.Tenants;
@@ -16,8 +16,8 @@ builder.Services.AddDbContext<Signal9DbContext>(options =>
 builder.EnrichAzureNpgsqlDbContext<Signal9DbContext>();
 
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddOptions<AgentPresenceOptions>().BindConfiguration(AgentPresenceOptions.SectionName);
-builder.Services.AddSingleton<AgentPresence>();
+builder.Services.AddOptions<DevicePresenceOptions>().BindConfiguration(DevicePresenceOptions.SectionName);
+builder.Services.AddSingleton<DevicePresence>();
 builder.Services.AddOptions<TenantTreeOptions>().BindConfiguration(TenantTreeOptions.SectionName)
     .ValidateDataAnnotations().ValidateOnStart();
 builder.Services.AddScoped<TenantTree>();

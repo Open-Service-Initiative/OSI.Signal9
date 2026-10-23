@@ -9,7 +9,7 @@ namespace OSI.Signal9.Agent.Services;
 /// </summary>
 public sealed class CommandExecutor(SystemInfoProvider systemInfo, TelemetryCollector telemetry, ILogger<CommandExecutor> logger)
 {
-    public async Task<CommandResultRequest> ExecuteAsync(AgentCommandDto command, CancellationToken cancellationToken)
+    public async Task<CommandResultRequest> ExecuteAsync(CommandDto command, CancellationToken cancellationToken)
     {
         logger.LogInformation("Executing {CommandType} command {CommandId}", command.Type, command.Id);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

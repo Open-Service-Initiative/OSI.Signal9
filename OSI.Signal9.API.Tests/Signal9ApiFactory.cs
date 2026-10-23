@@ -34,17 +34,17 @@ public sealed class Signal9ApiFactory(bool migrated = true) : WebApplicationFact
         });
     }
 
-    public async Task<TenantDto> CreateTenantAsync(HttpClient client, string name, int maxAgents = 25)
+    public async Task<TenantDto> CreateTenantAsync(HttpClient client, string name, int maxDevices = 25)
     {
         var response = await client.PostAsJsonAsync("api/tenants",
-            new CreateTenantRequest { Name = name, ContactEmail = $"it@{name.ToLowerInvariant()}.example", MaxAgents = maxAgents },
+            new CreateTenantRequest { Name = name, ContactEmail = $"it@{name.ToLowerInvariant()}.example", MaxDevices = maxDevices },
             Signal9Json.Options);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<TenantDto>(Signal9Json.Options))!;
     }
 
     public static async Task<HttpResponseMessage> RegisterAsync(HttpClient client, Guid tenantId, string machineName) =>
-        await client.PostAsJsonAsync("api/agents",
+        await client.PostAsJsonAsync("api/v1/agents",
             new RegisterAgentRequest { TenantId = tenantId, MachineName = machineName, OperatingSystem = "Windows 11 Pro", ProcessorCores = 8 },
             Signal9Json.Options);
 }

@@ -28,8 +28,8 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, Time
 
         var result = await query
             .OrderBy(t => t.Name)
-            .Select(t => new { Tenant = t, AgentCount = t.Agents.Count })
-            .ToPagedResultAsync(paging, x => x.Tenant.ToDto(x.AgentCount), cancellationToken);
+            .Select(t => new { Tenant = t, DeviceCount = t.Devices.Count })
+            .ToPagedResultAsync(paging, x => x.Tenant.ToDto(x.DeviceCount), cancellationToken);
         return result;
     }
 
@@ -40,10 +40,10 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, Time
     {
         var found = await db.Tenants.AsNoTracking()
             .Where(t => t.Id == tenantId)
-            .Select(t => new { Tenant = t, AgentCount = t.Agents.Count })
+            .Select(t => new { Tenant = t, DeviceCount = t.Devices.Count })
             .SingleOrDefaultAsync(cancellationToken);
 
-        return found is null ? NotFound() : found.Tenant.ToDto(found.AgentCount);
+        return found is null ? NotFound() : found.Tenant.ToDto(found.DeviceCount);
     }
 
     [HttpPost]
@@ -63,7 +63,7 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, Time
             ContactEmail = request.ContactEmail,
             ContactPhone = request.ContactPhone,
             Plan = request.Plan,
-            MaxAgents = request.MaxAgents,
+            MaxDevices = request.MaxDevices,
             Status = TenantStatus.Active,
             CreatedAt = now,
             UpdatedAt = now,
@@ -78,7 +78,7 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, Time
                     detail: "The parent tenant is already at the maximum depth of the tenant tree.");
         }
 
-        return CreatedAtRoute(nameof(GetTenant), new { tenantId = tenant.Id }, tenant.ToDto(agentCount: 0));
+        return CreatedAtRoute(nameof(GetTenant), new { tenantId = tenant.Id }, tenant.ToDto(deviceCount: 0));
     }
 
     [HttpPut("{tenantId:guid}")]
@@ -97,25 +97,25 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, Time
         tenant.ContactEmail = request.ContactEmail;
         tenant.ContactPhone = request.ContactPhone;
         tenant.Plan = request.Plan;
-        tenant.MaxAgents = request.MaxAgents;
+        tenant.MaxDevices = request.MaxDevices;
         tenant.Status = request.Status;
         tenant.UpdatedAt = time.GetUtcNow().UtcDateTime;
         await db.SaveChangesAsync(cancellationToken);
 
-        var agentCount = await db.Agents.CountAsync(a => a.TenantId == tenantId, cancellationToken);
-        return tenant.ToDto(agentCount);
+        var deviceCount = await db.Devices.CountAsync(d => d.TenantId == tenantId, cancellationToken);
+        return tenant.ToDto(deviceCount);
     }
 
-    /// <summary>Deletes a tenant. Tenants that still own agents or child tenants cannot be deleted.</summary>
+    /// <summary>Deletes a tenant. Tenants that still own devices or child tenants cannot be deleted.</summary>
     [HttpDelete("{tenantId:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete(Guid tenantId, CancellationToken cancellationToken)
     {
-        if (await db.Agents.AnyAsync(a => a.TenantId == tenantId, cancellationToken))
-            return Problem(statusCode: StatusCodes.Status409Conflict, title: "Tenant has agents",
-                detail: "Delete or move the tenant's agents before deleting the tenant.");
+        if (await db.Devices.AnyAsync(d => d.TenantId == tenantId, cancellationToken))
+            return Problem(statusCode: StatusCodes.Status409Conflict, title: "Tenant has devices",
+                detail: "Delete or transfer the tenant's devices before deleting the tenant.");
 
         switch (await tree.RemoveAsync(tenantId, cancellationToken))
         {

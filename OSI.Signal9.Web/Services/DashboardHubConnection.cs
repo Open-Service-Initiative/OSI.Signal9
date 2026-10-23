@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.SignalR.Client;
-using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.Commands;
+using OSI.Signal9.Contracts.Devices;
 using OSI.Signal9.Contracts.Hubs;
 using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Contracts.Telemetry;
@@ -26,10 +26,10 @@ public sealed class DashboardHubConnection : IDashboardHubClient, IAsyncDisposab
             .WithAutomaticReconnect()
             .Build();
 
-        _connection.On<AgentDto>(nameof(AgentChanged), AgentChanged);
-        _connection.On<Guid>(nameof(AgentDeleted), AgentDeleted);
+        _connection.On<DeviceDto>(nameof(DeviceChanged), DeviceChanged);
+        _connection.On<Guid>(nameof(DeviceDeleted), DeviceDeleted);
         _connection.On<TelemetrySampleDto>(nameof(TelemetryReceived), TelemetryReceived);
-        _connection.On<AgentCommandDto>(nameof(CommandChanged), CommandChanged);
+        _connection.On<CommandDto>(nameof(CommandChanged), CommandChanged);
         _connection.Reconnecting += _ => RaiseStateChanged();
         _connection.Reconnected += _ => RaiseStateChanged();
         _connection.Closed += async error =>
@@ -39,10 +39,10 @@ public sealed class DashboardHubConnection : IDashboardHubClient, IAsyncDisposab
         };
     }
 
-    public event Func<AgentDto, Task>? OnAgentChanged;
-    public event Func<Guid, Task>? OnAgentDeleted;
+    public event Func<DeviceDto, Task>? OnDeviceChanged;
+    public event Func<Guid, Task>? OnDeviceDeleted;
     public event Func<TelemetrySampleDto, Task>? OnTelemetryReceived;
-    public event Func<AgentCommandDto, Task>? OnCommandChanged;
+    public event Func<CommandDto, Task>? OnCommandChanged;
     public event Func<Task>? OnStateChanged;
 
     public HubConnectionState State => _connection.State switch
@@ -89,10 +89,10 @@ public sealed class DashboardHubConnection : IDashboardHubClient, IAsyncDisposab
         }
     }
 
-    public Task AgentChanged(AgentDto agent) => OnAgentChanged?.Invoke(agent) ?? Task.CompletedTask;
-    public Task AgentDeleted(Guid agentId) => OnAgentDeleted?.Invoke(agentId) ?? Task.CompletedTask;
+    public Task DeviceChanged(DeviceDto device) => OnDeviceChanged?.Invoke(device) ?? Task.CompletedTask;
+    public Task DeviceDeleted(Guid deviceId) => OnDeviceDeleted?.Invoke(deviceId) ?? Task.CompletedTask;
     public Task TelemetryReceived(TelemetrySampleDto sample) => OnTelemetryReceived?.Invoke(sample) ?? Task.CompletedTask;
-    public Task CommandChanged(AgentCommandDto command) => OnCommandChanged?.Invoke(command) ?? Task.CompletedTask;
+    public Task CommandChanged(CommandDto command) => OnCommandChanged?.Invoke(command) ?? Task.CompletedTask;
 
     private Task RaiseStateChanged() => OnStateChanged?.Invoke() ?? Task.CompletedTask;
 

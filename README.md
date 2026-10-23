@@ -43,17 +43,22 @@ dotnet run --project OSI.Signal9.Agent -- --Agent:TenantId=<tenant id>
 | --- | --- |
 | `/api/tenants` | `GET` (paged), `POST` |
 | `/api/tenants/{tenantId}` | `GET`, `PUT`, `DELETE` |
-| `/api/agents` | `GET` (paged; `tenantId`, `status`, `group`, `search` filters), `POST` (agent enrollment) |
-| `/api/agents/{agentId}` | `GET`, `PUT` (group, tags, maintenance), `DELETE` |
-| `/api/agents/{agentId}/heartbeat` | `PUT` |
-| `/api/agents/{agentId}/telemetry` | `GET` (paged; `from`, `to`), `POST` |
-| `/api/agents/{agentId}/telemetry/{sampleId}` | `GET` |
-| `/api/agents/{agentId}/commands` | `GET` (paged; `status`), `POST` |
-| `/api/agents/{agentId}/commands/{commandId}` | `GET` |
-| `/api/agents/{agentId}/commands/{commandId}/result` | `PUT` (agent reports the outcome) |
-| `/api/agents/{agentId}/commands/{commandId}/cancellation` | `PUT` |
+| `/api/v1/devices` | `GET` (paged; `tenantId`, `status`, `group`, `search` filters) |
+| `/api/v1/devices/{deviceId}` | `GET`, `PATCH` (`application/merge-patch+json`: group, tags, maintenance mode), `DELETE` |
+| `/api/v1/devices/{deviceId}/telemetry` | `GET` (paged; `from`, `to`) |
+| `/api/v1/devices/{deviceId}/telemetry/{sampleId}` | `GET` |
+| `/api/v1/devices/{deviceId}/commands` | `GET` (paged; `status`), `POST` |
+| `/api/v1/devices/{deviceId}/commands/{commandId}` | `GET` |
+| `/api/v1/devices/{deviceId}/commands/{commandId}/result` | `PUT` (the agent reports the outcome) |
+| `/api/v1/devices/{deviceId}/commands/{commandId}:cancel` | `POST` |
+| `/api/v1/agents` | `POST` (agent registration: a new agent, active on its device) |
+| `/api/v1/agents/{agentId}` | `GET` |
+| `/api/v1/agents/{agentId}/heartbeat` | `PUT` (sent by the agent) |
+| `/api/v1/agents/{agentId}/telemetry` | `POST` (sent by the agent; stored on its device) |
 
-Hubs: `/hubs/agents` (commands pushed to agents) and `/hubs/dashboard` (live updates for the dashboard).
+A device is the managed machine; an agent is one installation on it. Telemetry and command history belong to the device and survive the agent being replaced.
+
+Hubs: `/hubs/agents` (commands pushed to a device's active agent) and `/hubs/dashboard` (live updates for the dashboard).
 
 ## Development
 

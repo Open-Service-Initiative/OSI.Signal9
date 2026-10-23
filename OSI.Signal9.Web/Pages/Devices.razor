@@ -30,7 +30,7 @@
                     <label class="form-label" for="status">Status</label>
                     <select id="status" class="form-select" @bind="statusFilter">
                         <option value="">Any status</option>
-                        @foreach (var status in Enum.GetValues<AgentStatus>())
+                        @foreach (var status in Enum.GetValues<DeviceStatus>())
                         {
                             <option value="@status">@status</option>
                         }
@@ -46,11 +46,11 @@
 
     <div class="card">
         <div class="card-body">
-            @if (agents is null)
+            @if (devices is null)
             {
                 <div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>
             }
-            else if (agents.Items.Count == 0)
+            else if (devices.Items.Count == 0)
             {
                 <p class="text-muted mb-0">No devices match.</p>
             }
@@ -65,32 +65,32 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var agent in agents.Items)
+                            @foreach (var device in devices.Items)
                             {
                                 <tr>
                                     <td>
-                                        <div class="fw-semibold">@agent.MachineName</div>
-                                        @foreach (var tag in agent.Tags)
+                                        <div class="fw-semibold">@device.MachineName</div>
+                                        @foreach (var tag in device.Tags)
                                         {
                                             <span class="badge bg-light text-dark border me-1">@tag</span>
                                         }
                                     </td>
-                                    <td><AgentStatusBadge Status="agent.Status" /></td>
-                                    <td>@agent.OperatingSystem <small class="text-muted">@agent.Architecture</small></td>
-                                    <td>@agent.IpAddress</td>
-                                    <td>@agent.GroupName</td>
-                                    <td>@agent.LastSeenAt.ToLocalTime().ToString("g")</td>
+                                    <td><DeviceStatusBadge Status="device.Status" MaintenanceMode="device.MaintenanceMode" /></td>
+                                    <td>@device.OperatingSystem <small class="text-muted">@device.Architecture</small></td>
+                                    <td>@device.IpAddress</td>
+                                    <td>@device.GroupName</td>
+                                    <td>@device.LastSeenAt?.ToLocalTime().ToString("g")</td>
                                     <td class="text-end text-nowrap">
-                                        <button class="btn btn-sm btn-outline-primary" title="Edit" @onclick="() => Edit(agent)"><i class="bi bi-pencil"></i></button>
-                                        <button class="btn btn-sm btn-outline-secondary" title="Collect system info" @onclick="() => CollectSystemInfoAsync(agent)"><i class="bi bi-terminal"></i></button>
-                                        <button class="btn btn-sm btn-outline-danger" title="Delete" @onclick="() => DeleteAsync(agent)"><i class="bi bi-trash"></i></button>
+                                        <button class="btn btn-sm btn-outline-primary" title="Edit" @onclick="() => Edit(device)"><i class="bi bi-pencil"></i></button>
+                                        <button class="btn btn-sm btn-outline-secondary" title="Collect system info" @onclick="() => CollectSystemInfoAsync(device)"><i class="bi bi-terminal"></i></button>
+                                        <button class="btn btn-sm btn-outline-danger" title="Delete" @onclick="() => DeleteAsync(device)"><i class="bi bi-trash"></i></button>
                                     </td>
                                 </tr>
                             }
                         </tbody>
                     </table>
                 </div>
-                <small class="text-muted">Showing @agents.Items.Count of @agents.TotalCount</small>
+                <small class="text-muted">Showing @devices.Items.Count of @devices.TotalCount</small>
             }
         </div>
     </div>
@@ -118,8 +118,8 @@
                             <InputText id="tags" class="form-control" placeholder="Comma-separated, e.g. server, finance" @bind-Value="form.Tags" />
                         </div>
                         <div class="form-check">
-                            <InputCheckbox id="maintenance" class="form-check-input" @bind-Value="form.InMaintenance" />
-                            <label class="form-check-label" for="maintenance">In maintenance (suppresses offline status)</label>
+                            <InputCheckbox id="maintenance" class="form-check-input" @bind-Value="form.MaintenanceMode" />
+                            <label class="form-check-label" for="maintenance">Maintenance mode (planned downtime)</label>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -134,21 +134,21 @@
 }
 
 @code {
-    private PagedResult<AgentDto>? agents;
+    private PagedResult<DeviceDto>? devices;
     private string? search;
     private string statusFilter = string.Empty;
     private bool isLoading;
     private string? error;
 
-    private AgentDto? editing;
-    private AgentForm form = new();
+    private DeviceDto? editing;
+    private DeviceForm form = new();
     private string? formError;
     private bool isSaving;
 
     protected override async Task OnInitializedAsync()
     {
-        Hub.OnAgentChanged += OnAgentEvent;
-        Hub.OnAgentDeleted += OnAgentEvent;
+        Hub.OnDeviceChanged += OnDeviceEvent;
+        Hub.OnDeviceDeleted += OnDeviceEvent;
         await LoadAsync();
     }
 
@@ -157,8 +157,8 @@
         isLoading = true;
         try
         {
-            AgentStatus? status = Enum.TryParse<AgentStatus>(statusFilter, out var parsed) ? parsed : null;
-            agents = await Api.GetAgentsAsync(status, search);
+            DeviceStatus? status = Enum.TryParse<DeviceStatus>(statusFilter, out var parsed) ? parsed : null;
+            devices = await Api.GetDevicesAsync(status, search);
         }
         catch (Exception ex)
         {
@@ -177,15 +177,15 @@
         return LoadAsync();
     }
 
-    private void Edit(AgentDto agent)
+    private void Edit(DeviceDto device)
     {
-        editing = agent;
+        editing = device;
         formError = null;
-        form = new AgentForm
+        form = new DeviceForm
         {
-            GroupName = agent.GroupName,
-            Tags = string.Join(", ", agent.Tags),
-            InMaintenance = agent.InMaintenance,
+            GroupName = device.GroupName,
+            Tags = string.Join(", ", device.Tags),
+            MaintenanceMode = device.MaintenanceMode,
         };
     }
 
@@ -196,11 +196,11 @@
         isSaving = true;
         try
         {
-            await Api.UpdateAgentAsync(editing!.Id, new UpdateAgentRequest
+            await Api.UpdateDeviceAsync(editing!.Id, new UpdateDeviceRequest
             {
                 GroupName = form.GroupName,
                 Tags = (form.Tags ?? string.Empty).Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries),
-                InMaintenance = form.InMaintenance,
+                MaintenanceMode = form.MaintenanceMode,
             });
             editing = null;
             await LoadAsync();
@@ -215,26 +215,26 @@
         }
     }
 
-    private async Task DeleteAsync(AgentDto agent)
+    private async Task DeleteAsync(DeviceDto device)
     {
-        if (!await JS.InvokeAsync<bool>("confirm", $"Delete {agent.MachineName}? Its telemetry and command history will be removed."))
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete {device.MachineName}? Its agents, telemetry and command history will be removed."))
             return;
         try
         {
-            await Api.DeleteAgentAsync(agent.Id);
+            await Api.DeleteDeviceAsync(device.Id);
             await LoadAsync();
         }
         catch (Exception ex)
         {
-            error = $"Could not delete {agent.MachineName}: {ex.Message}";
+            error = $"Could not delete {device.MachineName}: {ex.Message}";
         }
     }
 
-    private async Task CollectSystemInfoAsync(AgentDto agent)
+    private async Task CollectSystemInfoAsync(DeviceDto device)
     {
         try
         {
-            await Api.CreateCommandAsync(agent.Id, new CreateAgentCommandRequest { Type = CommandType.CollectSystemInfo });
+            await Api.CreateCommandAsync(device.Id, new CreateCommandRequest { Type = CommandType.CollectSystemInfo });
         }
         catch (Exception ex)
         {
@@ -242,7 +242,7 @@
         }
     }
 
-    private Task OnAgentEvent<T>(T _) => InvokeAsync(async () =>
+    private Task OnDeviceEvent<T>(T _) => InvokeAsync(async () =>
     {
         if (editing is not null)
             return;
@@ -252,17 +252,17 @@
 
     public void Dispose()
     {
-        Hub.OnAgentChanged -= OnAgentEvent;
-        Hub.OnAgentDeleted -= OnAgentEvent;
+        Hub.OnDeviceChanged -= OnDeviceEvent;
+        Hub.OnDeviceDeleted -= OnDeviceEvent;
     }
 
-    private sealed class AgentForm
+    private sealed class DeviceForm
     {
         [System.ComponentModel.DataAnnotations.StringLength(100)]
         public string? GroupName { get; set; }
 
         public string? Tags { get; set; }
 
-        public bool InMaintenance { get; set; }
+        public bool MaintenanceMode { get; set; }
     }
 }

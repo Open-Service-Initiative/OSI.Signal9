@@ -14,13 +14,13 @@ public sealed class Tenant
     public required string ContactEmail { get; set; }
     public string? ContactPhone { get; set; }
     public SubscriptionPlan Plan { get; set; }
-    public int MaxAgents { get; set; }
+    public int MaxDevices { get; set; }
     public TenantStatus Status { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 
     public Tenant? ParentTenant { get; set; }
-    public List<Agent> Agents { get; set; } = [];
+    public List<Device> Devices { get; set; } = [];
 }
 
 /// <summary>
@@ -35,10 +35,15 @@ public sealed class TenantClosure
     public int Depth { get; set; }
 }
 
-public sealed class Agent
+/// <summary>A managed machine. Owns its telemetry and command history across agent reinstalls.</summary>
+public sealed class Device
 {
     public Guid Id { get; set; }
     public Guid TenantId { get; set; }
+
+    /// <summary>The device's one active agent, if any. Status comes from its check-ins.</summary>
+    public Guid? ActiveAgentId { get; set; }
+
     public required string MachineName { get; set; }
     public string? Domain { get; set; }
     public required string OperatingSystem { get; set; }
@@ -49,20 +54,31 @@ public sealed class Agent
     public long TotalMemoryMb { get; set; }
     public string? IpAddress { get; set; }
     public string? MacAddress { get; set; }
-    public string? AgentVersion { get; set; }
     public string? GroupName { get; set; }
     public List<string> Tags { get; set; } = [];
-    public bool InMaintenance { get; set; }
-    public DateTime FirstSeenAt { get; set; }
-    public DateTime LastSeenAt { get; set; }
+    public bool MaintenanceMode { get; set; }
+    public DateTime CreatedAt { get; set; }
 
     public Tenant? Tenant { get; set; }
+    public Agent? ActiveAgent { get; set; }
 }
 
-public sealed class AgentCommand
+/// <summary>One installation of the agent software on a device.</summary>
+public sealed class Agent
 {
     public Guid Id { get; set; }
-    public Guid AgentId { get; set; }
+    public Guid DeviceId { get; set; }
+    public string? AgentVersion { get; set; }
+    public DateTime EnrolledAt { get; set; }
+    public DateTime LastSeenAt { get; set; }
+
+    public Device? Device { get; set; }
+}
+
+public sealed class Command
+{
+    public Guid Id { get; set; }
+    public Guid DeviceId { get; set; }
     public CommandType Type { get; set; }
     public string? Parameters { get; set; }
     public CommandPriority Priority { get; set; }
@@ -77,7 +93,7 @@ public sealed class AgentCommand
 public sealed class TelemetrySample
 {
     public Guid Id { get; set; }
-    public Guid AgentId { get; set; }
+    public Guid DeviceId { get; set; }
     public DateTime CollectedAt { get; set; }
     public DateTime ReceivedAt { get; set; }
     public double? CpuPercent { get; set; }

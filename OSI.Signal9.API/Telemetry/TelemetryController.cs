@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using OSI.Signal9.API.Agents;
 using OSI.Signal9.API.Data;
 using OSI.Signal9.API.Hubs;
 using OSI.Signal9.API.Infrastructure;
@@ -18,23 +19,23 @@ public sealed record TelemetryQuery : PageQuery
 }
 
 [ApiController]
-[Route("api/agents/{agentId:guid}/telemetry")]
+[Route("api/v1")]
 public sealed class TelemetryController(
     Signal9DbContext db,
     TimeProvider time,
     IHubContext<DashboardHub, IDashboardHubClient> dashboard) : ControllerBase
 {
-    /// <summary>Lists an agent's telemetry samples, newest first.</summary>
-    [HttpGet]
+    /// <summary>Lists a device's telemetry samples, newest first, across all the agents it has had.</summary>
+    [HttpGet("devices/{deviceId:guid}/telemetry")]
     [ProducesResponseType<PagedResult<TelemetrySampleDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<PagedResult<TelemetrySampleDto>>> List(
-        Guid agentId, [FromQuery] TelemetryQuery query, CancellationToken cancellationToken)
+        Guid deviceId, [FromQuery] TelemetryQuery query, CancellationToken cancellationToken)
     {
-        if (!await db.Agents.AnyAsync(a => a.Id == agentId, cancellationToken))
+        if (!await db.Devices.AnyAsync(d => d.Id == deviceId, cancellationToken))
             return NotFound();
 
-        var samples = db.TelemetrySamples.AsNoTracking().Where(s => s.AgentId == agentId);
+        var samples = db.TelemetrySamples.AsNoTracking().Where(s => s.DeviceId == deviceId);
         if (query.From is { } from)
             samples = samples.Where(s => s.CollectedAt >= from.UtcDateTime);
         if (query.To is { } to)
@@ -45,34 +46,38 @@ public sealed class TelemetryController(
             .ToPagedResultAsync(query, s => s.ToDto(), cancellationToken);
     }
 
-    [HttpGet("{sampleId:guid}", Name = nameof(GetSample))]
+    [HttpGet("devices/{deviceId:guid}/telemetry/{sampleId:guid}", Name = nameof(GetSample))]
     [ProducesResponseType<TelemetrySampleDto>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<TelemetrySampleDto>> GetSample(Guid agentId, Guid sampleId, CancellationToken cancellationToken)
+    public async Task<ActionResult<TelemetrySampleDto>> GetSample(Guid deviceId, Guid sampleId, CancellationToken cancellationToken)
     {
         var sample = await db.TelemetrySamples.AsNoTracking()
-            .SingleOrDefaultAsync(s => s.AgentId == agentId && s.Id == sampleId, cancellationToken);
+            .SingleOrDefaultAsync(s => s.DeviceId == deviceId && s.Id == sampleId, cancellationToken);
         return sample is null ? NotFound() : sample.ToDto();
     }
 
-    /// <summary>Stores a telemetry sample reported by the agent. Also counts as a heartbeat.</summary>
-    [HttpPost]
+    /// <summary>
+    /// Stores a telemetry sample sent by an agent on its device. Also counts as a heartbeat.
+    /// The sample's canonical URL is under the device.
+    /// </summary>
+    [HttpPost("agents/{agentId:guid}/telemetry")]
     [Consumes("application/json")]
     [ProducesResponseType<TelemetrySampleDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TelemetrySampleDto>> Create(
         Guid agentId, CreateTelemetrySampleRequest request, CancellationToken cancellationToken)
     {
-        var agent = await db.Agents.SingleOrDefaultAsync(a => a.Id == agentId, cancellationToken);
-        if (agent is null)
-            return NotFound();
+        var (device, refusal) = await db.FindDeviceOfActiveAgentAsync(this, agentId, cancellationToken);
+        if (device is null)
+            return (ActionResult)refusal!;
 
         var now = time.GetUtcNow().UtcDateTime;
         var sample = new TelemetrySample
         {
             Id = Guid.CreateVersion7(),
-            AgentId = agentId,
+            DeviceId = device.Id,
             CollectedAt = request.CollectedAt.UtcDateTime,
             ReceivedAt = now,
             CpuPercent = request.CpuPercent,
@@ -83,11 +88,11 @@ public sealed class TelemetryController(
             Disks = request.Disks.Select(d => new DiskUsage { Name = d.Name, TotalBytes = d.TotalBytes, FreeBytes = d.FreeBytes }).ToList(),
         };
         db.TelemetrySamples.Add(sample);
-        agent.LastSeenAt = now;
+        device.ActiveAgent!.LastSeenAt = now;
         await db.SaveChangesAsync(cancellationToken);
 
         var dto = sample.ToDto();
         await dashboard.Clients.All.TelemetryReceived(dto);
-        return CreatedAtRoute(nameof(GetSample), new { agentId, sampleId = sample.Id }, dto);
+        return CreatedAtRoute(nameof(GetSample), new { deviceId = device.Id, sampleId = sample.Id }, dto);
     }
 }

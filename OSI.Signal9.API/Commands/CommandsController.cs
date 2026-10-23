@@ -16,27 +16,28 @@ public sealed record CommandQuery : PageQuery
 }
 
 /// <summary>
-/// Commands queued for an agent. A command starts Pending and ends Completed, Failed or Cancelled.
+/// Commands for a device, run by its active agent. A command starts Pending and ends Completed, Failed or Cancelled,
+/// and stays in the device's history when the agent is replaced.
 /// </summary>
 [ApiController]
-[Route("api/agents/{agentId:guid}/commands")]
-public sealed class AgentCommandsController(
+[Route("api/v1/devices/{deviceId:guid}/commands")]
+public sealed class CommandsController(
     Signal9DbContext db,
     TimeProvider time,
     IHubContext<AgentHub, IAgentHubClient> agents,
     IHubContext<DashboardHub, IDashboardHubClient> dashboard) : ControllerBase
 {
-    /// <summary>Lists an agent's commands, newest first. Agents poll ?status=Pending after reconnecting.</summary>
+    /// <summary>Lists a device's commands, newest first. Its agent fetches ?status=Pending after reconnecting.</summary>
     [HttpGet]
-    [ProducesResponseType<PagedResult<AgentCommandDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<PagedResult<CommandDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<PagedResult<AgentCommandDto>>> List(
-        Guid agentId, [FromQuery] CommandQuery query, CancellationToken cancellationToken)
+    public async Task<ActionResult<PagedResult<CommandDto>>> List(
+        Guid deviceId, [FromQuery] CommandQuery query, CancellationToken cancellationToken)
     {
-        if (!await db.Agents.AnyAsync(a => a.Id == agentId, cancellationToken))
+        if (!await db.Devices.AnyAsync(d => d.Id == deviceId, cancellationToken))
             return NotFound();
 
-        var commands = db.AgentCommands.AsNoTracking().Where(c => c.AgentId == agentId);
+        var commands = db.Commands.AsNoTracking().Where(c => c.DeviceId == deviceId);
         if (query.Status is { } status)
             commands = commands.Where(c => c.Status == status);
 
@@ -46,30 +47,31 @@ public sealed class AgentCommandsController(
     }
 
     [HttpGet("{commandId:guid}", Name = nameof(GetCommand))]
-    [ProducesResponseType<AgentCommandDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<CommandDto>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<AgentCommandDto>> GetCommand(Guid agentId, Guid commandId, CancellationToken cancellationToken)
+    public async Task<ActionResult<CommandDto>> GetCommand(Guid deviceId, Guid commandId, CancellationToken cancellationToken)
     {
-        var command = await FindAsync(agentId, commandId, tracking: false, cancellationToken);
+        var command = await FindAsync(deviceId, commandId, tracking: false, cancellationToken);
         return command is null ? NotFound() : command.ToDto();
     }
 
-    /// <summary>Queues a command and pushes it to the agent if it is connected.</summary>
+    /// <summary>Queues a command and pushes it to the device's active agent if it is connected.</summary>
     [HttpPost]
     [Consumes("application/json")]
-    [ProducesResponseType<AgentCommandDto>(StatusCodes.Status201Created)]
+    [ProducesResponseType<CommandDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<AgentCommandDto>> Create(
-        Guid agentId, CreateAgentCommandRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<CommandDto>> Create(
+        Guid deviceId, CreateCommandRequest request, CancellationToken cancellationToken)
     {
-        if (!await db.Agents.AnyAsync(a => a.Id == agentId, cancellationToken))
+        var device = await db.Devices.AsNoTracking().SingleOrDefaultAsync(d => d.Id == deviceId, cancellationToken);
+        if (device is null)
             return NotFound();
 
-        var command = new AgentCommand
+        var command = new Command
         {
             Id = Guid.CreateVersion7(),
-            AgentId = agentId,
+            DeviceId = deviceId,
             Type = request.Type,
             Parameters = request.Parameters,
             Priority = request.Priority,
@@ -77,43 +79,44 @@ public sealed class AgentCommandsController(
             Status = CommandStatus.Pending,
             CreatedAt = time.GetUtcNow().UtcDateTime,
         };
-        db.AgentCommands.Add(command);
+        db.Commands.Add(command);
         await db.SaveChangesAsync(cancellationToken);
 
         var dto = command.ToDto();
-        await agents.Clients.Group(AgentHub.GroupFor(agentId)).CommandQueued(dto);
+        if (device.ActiveAgentId is { } agentId)
+            await agents.Clients.Group(AgentHub.GroupFor(agentId)).CommandQueued(dto);
         await dashboard.Clients.All.CommandChanged(dto);
-        return CreatedAtRoute(nameof(GetCommand), new { agentId, commandId = command.Id }, dto);
+        return CreatedAtRoute(nameof(GetCommand), new { deviceId, commandId = command.Id }, dto);
     }
 
     /// <summary>Records the outcome of a command. Sent by the agent once, when it finishes.</summary>
     [HttpPut("{commandId:guid}/result")]
     [Consumes("application/json")]
-    [ProducesResponseType<AgentCommandDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<CommandDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
-    public Task<ActionResult<AgentCommandDto>> PutResult(
-        Guid agentId, Guid commandId, CommandResultRequest request, CancellationToken cancellationToken) =>
-        CompleteAsync(agentId, commandId, cancellationToken, command =>
+    public Task<ActionResult<CommandDto>> PutResult(
+        Guid deviceId, Guid commandId, CommandResultRequest request, CancellationToken cancellationToken) =>
+        CompleteAsync(deviceId, commandId, cancellationToken, command =>
         {
             command.Status = request.Succeeded ? CommandStatus.Completed : CommandStatus.Failed;
             command.Output = request.Output;
             command.Error = request.Error;
         });
 
-    /// <summary>Cancels a pending command. Commands that already finished cannot be cancelled.</summary>
-    [HttpPut("{commandId:guid}/cancellation")]
-    [ProducesResponseType<AgentCommandDto>(StatusCodes.Status200OK)]
+    /// <summary>Cancels a pending command. Commands that already finished can't be cancelled (409).</summary>
+    [HttpPost("{commandId:guid}:cancel")]
+    [ProducesResponseType<CommandDto>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
-    public Task<ActionResult<AgentCommandDto>> Cancel(Guid agentId, Guid commandId, CancellationToken cancellationToken) =>
-        CompleteAsync(agentId, commandId, cancellationToken, command => command.Status = CommandStatus.Cancelled);
+    public Task<ActionResult<CommandDto>> Cancel(Guid deviceId, Guid commandId, CancellationToken cancellationToken) =>
+        CompleteAsync(deviceId, commandId, cancellationToken, command => command.Status = CommandStatus.Cancelled);
 
-    private async Task<ActionResult<AgentCommandDto>> CompleteAsync(
-        Guid agentId, Guid commandId, CancellationToken cancellationToken, Action<AgentCommand> complete)
+    private async Task<ActionResult<CommandDto>> CompleteAsync(
+        Guid deviceId, Guid commandId, CancellationToken cancellationToken, Action<Command> complete)
     {
-        var command = await FindAsync(agentId, commandId, tracking: true, cancellationToken);
+        var command = await FindAsync(deviceId, commandId, tracking: true, cancellationToken);
         if (command is null)
             return NotFound();
         if (command.Status != CommandStatus.Pending)
@@ -129,9 +132,9 @@ public sealed class AgentCommandsController(
         return dto;
     }
 
-    private Task<AgentCommand?> FindAsync(Guid agentId, Guid commandId, bool tracking, CancellationToken cancellationToken)
+    private Task<Command?> FindAsync(Guid deviceId, Guid commandId, bool tracking, CancellationToken cancellationToken)
     {
-        var commands = tracking ? db.AgentCommands : db.AgentCommands.AsNoTracking();
-        return commands.SingleOrDefaultAsync(c => c.AgentId == agentId && c.Id == commandId, cancellationToken);
+        var commands = tracking ? db.Commands : db.Commands.AsNoTracking();
+        return commands.SingleOrDefaultAsync(c => c.DeviceId == deviceId && c.Id == commandId, cancellationToken);
     }
 }

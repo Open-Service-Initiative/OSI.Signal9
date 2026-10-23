@@ -6,8 +6,9 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options)
 {
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<TenantClosure> TenantClosures => Set<TenantClosure>();
+    public DbSet<Device> Devices => Set<Device>();
     public DbSet<Agent> Agents => Set<Agent>();
-    public DbSet<AgentCommand> AgentCommands => Set<AgentCommand>();
+    public DbSet<Command> Commands => Set<Command>();
     public DbSet<TelemetrySample> TelemetrySamples => Set<TelemetrySample>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -34,27 +35,39 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options)
             closure.HasOne<Tenant>().WithMany().HasForeignKey(c => c.DescendantId).OnDelete(DeleteBehavior.Cascade);
         });
 
-        modelBuilder.Entity<Agent>(agent =>
+        modelBuilder.Entity<Device>(device =>
         {
-            agent.Property(a => a.MachineName).HasMaxLength(255);
-            agent.HasIndex(a => new { a.TenantId, a.MachineName }).IsUnique();
-            agent.HasIndex(a => a.LastSeenAt);
-            agent.Property(a => a.Domain).HasMaxLength(255);
-            agent.Property(a => a.OperatingSystem).HasMaxLength(100);
-            agent.Property(a => a.OsVersion).HasMaxLength(100);
-            agent.Property(a => a.Architecture).HasMaxLength(20);
-            agent.Property(a => a.ProcessorName).HasMaxLength(255);
-            agent.Property(a => a.IpAddress).HasMaxLength(45);
-            agent.Property(a => a.MacAddress).HasMaxLength(17);
-            agent.Property(a => a.AgentVersion).HasMaxLength(50);
-            agent.Property(a => a.GroupName).HasMaxLength(100);
-            agent.HasOne(a => a.Tenant)
-                .WithMany(t => t.Agents)
-                .HasForeignKey(a => a.TenantId)
+            device.Property(d => d.MachineName).HasMaxLength(255);
+            device.HasIndex(d => new { d.TenantId, d.MachineName });
+            device.Property(d => d.Domain).HasMaxLength(255);
+            device.Property(d => d.OperatingSystem).HasMaxLength(100);
+            device.Property(d => d.OsVersion).HasMaxLength(100);
+            device.Property(d => d.Architecture).HasMaxLength(20);
+            device.Property(d => d.ProcessorName).HasMaxLength(255);
+            device.Property(d => d.IpAddress).HasMaxLength(45);
+            device.Property(d => d.MacAddress).HasMaxLength(17);
+            device.Property(d => d.GroupName).HasMaxLength(100);
+            device.HasOne(d => d.Tenant)
+                .WithMany(t => t.Devices)
+                .HasForeignKey(d => d.TenantId)
                 .OnDelete(DeleteBehavior.Restrict);
+            // A single pointer is what makes "at most one active agent" hold by construction.
+            device.HasOne(d => d.ActiveAgent)
+                .WithOne()
+                .HasForeignKey<Device>(d => d.ActiveAgentId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
         });
 
-        modelBuilder.Entity<AgentCommand>(command =>
+        modelBuilder.Entity<Agent>(agent =>
+        {
+            agent.Property(a => a.AgentVersion).HasMaxLength(50);
+            agent.HasOne(a => a.Device)
+                .WithMany()
+                .HasForeignKey(a => a.DeviceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Command>(command =>
         {
             command.Property(c => c.Type).HasConversion<string>().HasMaxLength(50);
             command.Property(c => c.Priority).HasConversion<string>().HasMaxLength(20);
@@ -62,20 +75,20 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options)
             command.Property(c => c.Parameters).HasMaxLength(4000);
             command.Property(c => c.Output).HasMaxLength(16_000);
             command.Property(c => c.Error).HasMaxLength(4000);
-            command.HasIndex(c => new { c.AgentId, c.Status });
-            command.HasOne<Agent>()
+            command.HasIndex(c => new { c.DeviceId, c.Status });
+            command.HasOne<Device>()
                 .WithMany()
-                .HasForeignKey(c => c.AgentId)
+                .HasForeignKey(c => c.DeviceId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<TelemetrySample>(sample =>
         {
-            sample.HasIndex(s => new { s.AgentId, s.CollectedAt });
+            sample.HasIndex(s => new { s.DeviceId, s.CollectedAt });
             sample.OwnsMany(s => s.Disks, disks => disks.ToJson());
-            sample.HasOne<Agent>()
+            sample.HasOne<Device>()
                 .WithMany()
-                .HasForeignKey(s => s.AgentId)
+                .HasForeignKey(s => s.DeviceId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }

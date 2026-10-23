@@ -1,7 +1,8 @@
-using OSI.Signal9.API.Agents;
+using OSI.Signal9.API.Devices;
 using OSI.Signal9.API.Data;
 using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.Commands;
+using OSI.Signal9.Contracts.Devices;
 using OSI.Signal9.Contracts.Telemetry;
 using OSI.Signal9.Contracts.Tenants;
 
@@ -9,7 +10,7 @@ namespace OSI.Signal9.API.Infrastructure;
 
 internal static class Mappings
 {
-    public static TenantDto ToDto(this Tenant tenant, int agentCount) => new(
+    public static TenantDto ToDto(this Tenant tenant, int deviceCount) => new(
         tenant.Id,
         tenant.ParentTenantId,
         tenant.Name,
@@ -17,36 +18,46 @@ internal static class Mappings
         tenant.ContactEmail,
         tenant.ContactPhone,
         tenant.Plan,
-        tenant.MaxAgents,
+        tenant.MaxDevices,
         tenant.Status,
-        agentCount,
+        deviceCount,
         tenant.CreatedAt.AsUtcOffset(),
         tenant.UpdatedAt.AsUtcOffset());
 
-    public static AgentDto ToDto(this Agent agent, AgentPresence presence) => new(
+    /// <param name="device">A device loaded with its <see cref="Device.ActiveAgent"/>.</param>
+    public static DeviceDto ToDto(this Device device, DevicePresence presence) => new(
+        device.Id,
+        device.TenantId,
+        device.ActiveAgentId,
+        device.MachineName,
+        device.Domain,
+        device.OperatingSystem,
+        device.OsVersion,
+        device.Architecture,
+        device.ProcessorName,
+        device.ProcessorCores,
+        device.TotalMemoryMb,
+        device.IpAddress,
+        device.MacAddress,
+        device.GroupName,
+        device.Tags,
+        device.MaintenanceMode,
+        presence.StatusOf(device),
+        device.CreatedAt.AsUtcOffset(),
+        device.ActiveAgent?.LastSeenAt.AsUtcOffset());
+
+    public static AgentDto ToDto(this Agent agent, Device device) => new(
         agent.Id,
-        agent.TenantId,
-        agent.MachineName,
-        agent.Domain,
-        agent.OperatingSystem,
-        agent.OsVersion,
-        agent.Architecture,
-        agent.ProcessorName,
-        agent.ProcessorCores,
-        agent.TotalMemoryMb,
-        agent.IpAddress,
-        agent.MacAddress,
+        agent.DeviceId,
+        device.TenantId,
         agent.AgentVersion,
-        agent.GroupName,
-        agent.Tags,
-        agent.InMaintenance,
-        presence.StatusOf(agent),
-        agent.FirstSeenAt.AsUtcOffset(),
+        device.ActiveAgentId == agent.Id,
+        agent.EnrolledAt.AsUtcOffset(),
         agent.LastSeenAt.AsUtcOffset());
 
-    public static AgentCommandDto ToDto(this AgentCommand command) => new(
+    public static CommandDto ToDto(this Command command) => new(
         command.Id,
-        command.AgentId,
+        command.DeviceId,
         command.Type,
         command.Parameters,
         command.Priority,
@@ -59,7 +70,7 @@ internal static class Mappings
 
     public static TelemetrySampleDto ToDto(this TelemetrySample sample) => new(
         sample.Id,
-        sample.AgentId,
+        sample.DeviceId,
         sample.CollectedAt.AsUtcOffset(),
         sample.CpuPercent,
         sample.MemoryUsedMb,

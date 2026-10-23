@@ -1,4 +1,4 @@
-using OSI.Signal9.Contracts.Agents;
+using OSI.Signal9.Contracts.Devices;
 using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Telemetry;
 
@@ -16,14 +16,14 @@ public static class HubRoutes
 /// <summary>Methods the API invokes on connected agents.</summary>
 public interface IAgentHubClient
 {
-    Task CommandQueued(AgentCommandDto command);
+    Task CommandQueued(CommandDto command);
 }
 
 /// <summary>Methods the API invokes on connected dashboards.</summary>
 public interface IDashboardHubClient
 {
-    Task AgentChanged(AgentDto agent);
-    Task AgentDeleted(Guid agentId);
+    Task DeviceChanged(DeviceDto device);
+    Task DeviceDeleted(Guid deviceId);
     Task TelemetryReceived(TelemetrySampleDto sample);
-    Task CommandChanged(AgentCommandDto command);
+    Task CommandChanged(CommandDto command);
 }

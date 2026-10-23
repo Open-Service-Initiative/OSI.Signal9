@@ -1,8 +1,9 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using OSI.Signal9.Contracts;
-using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.Commands;
+using OSI.Signal9.Contracts.Devices;
 using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Contracts.Telemetry;
 using OSI.Signal9.Contracts.Tenants;
@@ -28,32 +29,40 @@ public sealed class Signal9ApiClient(HttpClient http)
     public Task DeleteTenantAsync(Guid tenantId, CancellationToken cancellationToken = default) =>
         SendAsync(HttpMethod.Delete, $"api/tenants/{tenantId}", body: null, cancellationToken);
 
-    // Agents
+    // Devices
 
-    public Task<PagedResult<AgentDto>> GetAgentsAsync(
-        AgentStatus? status = null, string? search = null, int page = 1, int pageSize = 100, CancellationToken cancellationToken = default)
+    public Task<PagedResult<DeviceDto>> GetDevicesAsync(
+        DeviceStatus? status = null, string? search = null, int page = 1, int pageSize = 100, CancellationToken cancellationToken = default)
     {
-        var query = $"api/agents?page={page}&pageSize={pageSize}";
+        var query = $"api/v1/devices?page={page}&pageSize={pageSize}";
         if (status is not null)
             query += $"&status={status}";
         if (!string.IsNullOrWhiteSpace(search))
             query += $"&search={Uri.EscapeDataString(search)}";
-        return GetAsync<PagedResult<AgentDto>>(query, cancellationToken);
+        return GetAsync<PagedResult<DeviceDto>>(query, cancellationToken);
     }
 
-    public Task<AgentDto> UpdateAgentAsync(Guid agentId, UpdateAgentRequest request, CancellationToken cancellationToken = default) =>
-        SendAsync<AgentDto>(HttpMethod.Put, $"api/agents/{agentId}", request, cancellationToken);
+    /// <summary>Sends every editable field as a JSON merge patch.</summary>
+    public async Task<DeviceDto> UpdateDeviceAsync(Guid deviceId, UpdateDeviceRequest request, CancellationToken cancellationToken = default)
+    {
+        using var message = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/devices/{deviceId}")
+        {
+            Content = JsonContent.Create(request, new MediaTypeHeaderValue("application/merge-patch+json"), Signal9Json.Options),
+        };
+        using var response = await http.SendAsync(message, cancellationToken);
+        return await ReadAsync<DeviceDto>(response, cancellationToken);
+    }
 
-    public Task DeleteAgentAsync(Guid agentId, CancellationToken cancellationToken = default) =>
-        SendAsync(HttpMethod.Delete, $"api/agents/{agentId}", body: null, cancellationToken);
+    public Task DeleteDeviceAsync(Guid deviceId, CancellationToken cancellationToken = default) =>
+        SendAsync(HttpMethod.Delete, $"api/v1/devices/{deviceId}", body: null, cancellationToken);
 
     // Commands and telemetry
 
-    public Task<AgentCommandDto> CreateCommandAsync(Guid agentId, CreateAgentCommandRequest request, CancellationToken cancellationToken = default) =>
-        SendAsync<AgentCommandDto>(HttpMethod.Post, $"api/agents/{agentId}/commands", request, cancellationToken);
+    public Task<CommandDto> CreateCommandAsync(Guid deviceId, CreateCommandRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<CommandDto>(HttpMethod.Post, $"api/v1/devices/{deviceId}/commands", request, cancellationToken);
 
-    public Task<PagedResult<TelemetrySampleDto>> GetTelemetryAsync(Guid agentId, int pageSize = 20, CancellationToken cancellationToken = default) =>
-        GetAsync<PagedResult<TelemetrySampleDto>>($"api/agents/{agentId}/telemetry?pageSize={pageSize}", cancellationToken);
+    public Task<PagedResult<TelemetrySampleDto>> GetTelemetryAsync(Guid deviceId, int pageSize = 20, CancellationToken cancellationToken = default) =>
+        GetAsync<PagedResult<TelemetrySampleDto>>($"api/v1/devices/{deviceId}/telemetry?pageSize={pageSize}", cancellationToken);
 
     private async Task<T> GetAsync<T>(string uri, CancellationToken cancellationToken)
     {

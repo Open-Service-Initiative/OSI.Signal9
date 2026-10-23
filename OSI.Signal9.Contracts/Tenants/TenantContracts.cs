@@ -27,9 +27,9 @@ public sealed record TenantDto(
     string ContactEmail,
     string? ContactPhone,
     SubscriptionPlan Plan,
-    int MaxAgents,
+    int MaxDevices,
     TenantStatus Status,
-    int AgentCount,
+    int DeviceCount,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
@@ -52,7 +52,7 @@ public sealed record CreateTenantRequest
     public SubscriptionPlan Plan { get; init; } = SubscriptionPlan.Basic;
 
     [Range(1, 100_000)]
-    public int MaxAgents { get; init; } = 25;
+    public int MaxDevices { get; init; } = 25;
 }
 
 /// <summary>
@@ -75,7 +75,7 @@ public sealed record UpdateTenantRequest
     public SubscriptionPlan Plan { get; init; }
 
     [Range(1, 100_000)]
-    public int MaxAgents { get; init; }
+    public int MaxDevices { get; init; }
 
     public TenantStatus Status { get; init; }
 }

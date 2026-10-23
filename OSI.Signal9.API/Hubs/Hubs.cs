@@ -26,6 +26,6 @@ public sealed class AgentHub : Hub<IAgentHubClient>
 }
 
 /// <summary>
-/// Server-to-client only: the dashboard listens for agent, telemetry and command changes.
+/// Server-to-client only: the dashboard listens for device, telemetry and command changes.
 /// </summary>
 public sealed class DashboardHub : Hub<IDashboardHubClient>;

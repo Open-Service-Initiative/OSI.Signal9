@@ -50,14 +50,14 @@ public sealed class AgentWorker(
     private async Task RunSessionAsync(CancellationToken stoppingToken)
     {
         var agent = await api.RegisterAsync(systemInfo.GetRegistration(), stoppingToken);
-        logger.LogInformation("Enrolled as agent {AgentId} in tenant {TenantId}", agent.Id, agent.TenantId);
+        logger.LogInformation("Enrolled as agent {AgentId} of device {DeviceId} in tenant {TenantId}", agent.Id, agent.DeviceId, agent.TenantId);
 
         using var session = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         await using var hub = BuildHubConnection(agent.Id, session);
         await hub.StartAsync(session.Token);
 
-        foreach (var command in await api.GetPendingCommandsAsync(agent.Id, session.Token))
-            await RunCommandAsync(agent.Id, command, session.Token);
+        foreach (var command in await api.GetPendingCommandsAsync(agent.DeviceId, session.Token))
+            await RunCommandAsync(command, session.Token);
 
         var heartbeat = HeartbeatLoopAsync(agent.Id, session.Token);
         var telemetryLoop = TelemetryLoopAsync(agent.Id, session.Token);
@@ -75,9 +75,9 @@ public sealed class AgentWorker(
             .WithAutomaticReconnect()
             .Build();
 
-        hub.On<AgentCommandDto>(nameof(IAgentHubClient.CommandQueued), command =>
+        hub.On<CommandDto>(nameof(IAgentHubClient.CommandQueued), command =>
             // Run off the SignalR receive loop so a slow command doesn't block other messages.
-            _ = Task.Run(() => RunCommandAsync(agentId, command, session.Token), session.Token));
+            _ = Task.Run(() => RunCommandAsync(command, session.Token), session.Token));
         hub.Reconnecting += error =>
         {
             logger.LogWarning(error, "Lost connection to the agent hub; reconnecting");
@@ -88,12 +88,12 @@ public sealed class AgentWorker(
         return hub;
     }
 
-    private async Task RunCommandAsync(Guid agentId, AgentCommandDto command, CancellationToken cancellationToken)
+    private async Task RunCommandAsync(CommandDto command, CancellationToken cancellationToken)
     {
         try
         {
             var result = await executor.ExecuteAsync(command, cancellationToken);
-            await api.SendCommandResultAsync(agentId, command.Id, result, cancellationToken);
+            await api.SendCommandResultAsync(command, result, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -111,7 +111,7 @@ public sealed class AgentWorker(
                 new HeartbeatRequest { IpAddress = ipAddress, AgentVersion = SystemInfoProvider.AgentVersion }, cancellationToken);
             if (!known)
             {
-                logger.LogWarning("The API no longer knows agent {AgentId}; re-enrolling", agentId);
+                logger.LogWarning("Agent {AgentId} is unknown or was replaced; re-enrolling", agentId);
                 return;
             }
         }

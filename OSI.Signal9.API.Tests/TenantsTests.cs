@@ -122,7 +122,7 @@ public sealed class TenantsTests : IDisposable
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
 
         var response = await _client.PutAsJsonAsync($"api/tenants/{tenant.Id}",
-            new UpdateTenantRequest { Name = "Contoso Ltd", ContactEmail = "ops@contoso.example", Plan = SubscriptionPlan.Enterprise, MaxAgents = 500, Status = TenantStatus.Suspended },
+            new UpdateTenantRequest { Name = "Contoso Ltd", ContactEmail = "ops@contoso.example", Plan = SubscriptionPlan.Enterprise, MaxDevices = 500, Status = TenantStatus.Suspended },
             Signal9Json.Options, Ct);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
@@ -143,7 +143,7 @@ public sealed class TenantsTests : IDisposable
     }
 
     [TestMethod]
-    public async Task Delete_tenant_with_agents_returns_409()
+    public async Task Delete_tenant_with_devices_returns_409()
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
         await Signal9ApiFactory.RegisterAsync(_client, tenant.Id, "PC01");
@@ -154,7 +154,7 @@ public sealed class TenantsTests : IDisposable
     }
 
     [TestMethod]
-    public async Task List_is_paged_and_includes_agent_counts()
+    public async Task List_is_paged_and_includes_device_counts()
     {
         await _factory.CreateTenantAsync(_client, "Alpha");
         var bravo = await _factory.CreateTenantAsync(_client, "Bravo");
@@ -166,7 +166,7 @@ public sealed class TenantsTests : IDisposable
         Assert.AreEqual(2, page!.TotalCount);
         Assert.AreEqual(2, page.TotalPages);
         var only = Assert.ContainsSingle(page.Items);
-        Assert.AreEqual(("Bravo", 1), (only.Name, only.AgentCount));
+        Assert.AreEqual(("Bravo", 1), (only.Name, only.DeviceCount));
     }
 
     [TestMethod]

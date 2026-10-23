@@ -14,9 +14,9 @@
     <ErrorAlert @bind-Message="error" />
 
     <div class="row">
-        <StatCard Title="Devices" Value="@totalAgents" Icon="bi-pc-display" Color="bg-primary" />
-        <StatCard Title="Online" Value="@onlineAgents" Icon="bi-check-circle" Color="bg-success" />
-        <StatCard Title="Offline" Value="@offlineAgents" Icon="bi-x-circle" Color="bg-danger" />
+        <StatCard Title="Devices" Value="@totalDevices" Icon="bi-pc-display" Color="bg-primary" />
+        <StatCard Title="Online" Value="@onlineDevices" Icon="bi-check-circle" Color="bg-success" />
+        <StatCard Title="Offline" Value="@offlineDevices" Icon="bi-x-circle" Color="bg-danger" />
         <StatCard Title="Tenants" Value="@totalTenants" Icon="bi-building" Color="bg-info" />
     </div>
 
@@ -26,11 +26,11 @@
             <a href="devices" class="btn btn-sm btn-outline-primary">All devices</a>
         </div>
         <div class="card-body">
-            @if (recentAgents is null)
+            @if (recentDevices is null)
             {
                 <div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>
             }
-            else if (recentAgents.Count == 0)
+            else if (recentDevices.Count == 0)
             {
                 <p class="text-muted mb-0">No devices have enrolled yet. Install the agent on a machine with a tenant code to enroll it.</p>
             }
@@ -42,13 +42,13 @@
                             <tr><th>Device</th><th>Status</th><th>Operating system</th><th>Last seen</th></tr>
                         </thead>
                         <tbody>
-                            @foreach (var agent in recentAgents)
+                            @foreach (var device in recentDevices)
                             {
                                 <tr>
-                                    <td>@agent.MachineName</td>
-                                    <td><AgentStatusBadge Status="agent.Status" /></td>
-                                    <td>@agent.OperatingSystem</td>
-                                    <td>@agent.LastSeenAt.ToLocalTime().ToString("g")</td>
+                                    <td>@device.MachineName</td>
+                                    <td><DeviceStatusBadge Status="device.Status" MaintenanceMode="device.MaintenanceMode" /></td>
+                                    <td>@device.OperatingSystem</td>
+                                    <td>@device.LastSeenAt?.ToLocalTime().ToString("g")</td>
                                 </tr>
                             }
                         </tbody>
@@ -60,14 +60,14 @@
 </div>
 
 @code {
-    private int? totalAgents, onlineAgents, offlineAgents, totalTenants;
-    private List<AgentDto>? recentAgents;
+    private int? totalDevices, onlineDevices, offlineDevices, totalTenants;
+    private List<DeviceDto>? recentDevices;
     private string? error;
 
     protected override async Task OnInitializedAsync()
     {
-        Hub.OnAgentChanged += OnAgentEvent;
-        Hub.OnAgentDeleted += OnAgentEvent;
+        Hub.OnDeviceChanged += OnDeviceEvent;
+        Hub.OnDeviceDeleted += OnDeviceEvent;
         await LoadAsync();
     }
 
@@ -75,27 +75,27 @@
     {
         try
         {
-            // Page totals give the counts without downloading every agent.
-            var all = Api.GetAgentsAsync(pageSize: 100);
-            var online = Api.GetAgentsAsync(AgentStatus.Online, pageSize: 1);
-            var offline = Api.GetAgentsAsync(AgentStatus.Offline, pageSize: 1);
+            // Page totals give the counts without downloading every device.
+            var all = Api.GetDevicesAsync(pageSize: 100);
+            var online = Api.GetDevicesAsync(DeviceStatus.Online, pageSize: 1);
+            var offline = Api.GetDevicesAsync(DeviceStatus.Offline, pageSize: 1);
             var tenants = Api.GetTenantsAsync(pageSize: 1);
             await Task.WhenAll(all, online, offline, tenants);
 
-            totalAgents = all.Result.TotalCount;
-            onlineAgents = online.Result.TotalCount;
-            offlineAgents = offline.Result.TotalCount;
+            totalDevices = all.Result.TotalCount;
+            onlineDevices = online.Result.TotalCount;
+            offlineDevices = offline.Result.TotalCount;
             totalTenants = tenants.Result.TotalCount;
-            recentAgents = all.Result.Items.OrderByDescending(a => a.LastSeenAt).Take(10).ToList();
+            recentDevices = all.Result.Items.OrderByDescending(d => d.LastSeenAt).Take(10).ToList();
         }
         catch (Exception ex)
         {
             error = $"Could not load the dashboard: {ex.Message}";
-            recentAgents ??= [];
+            recentDevices ??= [];
         }
     }
 
-    private Task OnAgentEvent<T>(T _) => InvokeAsync(async () =>
+    private Task OnDeviceEvent<T>(T _) => InvokeAsync(async () =>
     {
         await LoadAsync();
         StateHasChanged();
@@ -103,7 +103,7 @@
 
     public void Dispose()
     {
-        Hub.OnAgentChanged -= OnAgentEvent;
-        Hub.OnAgentDeleted -= OnAgentEvent;
+        Hub.OnDeviceChanged -= OnDeviceEvent;
+        Hub.OnDeviceDeleted -= OnDeviceEvent;
     }
 }

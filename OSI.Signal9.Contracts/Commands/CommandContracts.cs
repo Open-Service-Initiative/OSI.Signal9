@@ -25,9 +25,10 @@ public enum CommandPriority
     High = 2
 }
 
-public sealed record AgentCommandDto(
+/// <summary>A command for a device, run by whichever agent is active on it. It stays in the device's history.</summary>
+public sealed record CommandDto(
     Guid Id,
-    Guid AgentId,
+    Guid DeviceId,
     CommandType Type,
     string? Parameters,
     CommandPriority Priority,
@@ -38,7 +39,7 @@ public sealed record AgentCommandDto(
     string? Output,
     string? Error);
 
-public sealed record CreateAgentCommandRequest
+public sealed record CreateCommandRequest
 {
     [Required]
     public CommandType Type { get; init; }
@@ -54,7 +55,7 @@ public sealed record CreateAgentCommandRequest
 }
 
 /// <summary>
-/// Body of PUT /api/agents/{agentId}/commands/{commandId}/result, sent by the agent when it finishes.
+/// Body of PUT /api/v1/devices/{deviceId}/commands/{commandId}/result, sent by the agent when it finishes.
 /// </summary>
 public sealed record CommandResultRequest
 {
