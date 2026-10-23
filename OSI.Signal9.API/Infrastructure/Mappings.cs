@@ -1,5 +1,5 @@
 using OSI.Signal9.API.Devices;
-using OSI.Signal9.API.Data;
+using OSI.Signal9.Server.Data;
 using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Devices;

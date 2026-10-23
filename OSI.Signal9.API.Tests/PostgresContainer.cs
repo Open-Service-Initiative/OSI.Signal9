@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
-using OSI.Signal9.API.Data;
+using OSI.Signal9.Server.Data;
 using Testcontainers.PostgreSql;
 
 namespace OSI.Signal9.API.Tests;

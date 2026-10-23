@@ -13,7 +13,9 @@ These are Open Service Initiative tenets. Hold every change to them:
 
 ## Projects
 
-- `OSI.Signal9.API`: ASP.NET Core controller API plus SignalR hubs, using EF Core on PostgreSQL (ADR-0011).
+- `OSI.Signal9.Auth`: the OpenIddict authorization server's browser-facing endpoints and discovery (ADR-0002, ADR-0003).
+- `OSI.Signal9.API`: ASP.NET Core controller API plus SignalR hubs and the mTLS token-endpoint aliases.
+- `OSI.Signal9.Server`: shared by Auth and API: the EF Core model and migrations on PostgreSQL (ADR-0011) and the OpenIddict token rules.
 - `OSI.Signal9.Web`: Blazor WebAssembly dashboard.
 - `OSI.Signal9.Agent`: Windows Service on managed devices. It enrolls, sends heartbeats and telemetry, and runs commands.
 - `OSI.Signal9.Contracts`: DTOs, enums and hub interfaces shared by the other projects. It has no server-side dependencies, because it ships in the WASM bundle.
@@ -51,12 +53,12 @@ These rules are Signal9's own, drawn from Google's AIP-122, AIP-159 and AIP-216 
 
 ## Data
 
-- When you change the model, add a migration: `dotnet ef migrations add <Name> --project OSI.Signal9.API --output-dir Data/Migrations`.
+- When you change the model, add a migration: `dotnet ef migrations add <Name> --project OSI.Signal9.Server --output-dir Data/Migrations`.
 - Entities store UTC `DateTime`; contracts expose `DateTimeOffset`.
 
 ## Testing
 
-- `OSI.Signal9.API.Tests` hosts the API in memory, with a `FakeTimeProvider`. Every new endpoint gets a test covering its status codes.
+- `OSI.Signal9.API.Tests` hosts Auth and API in memory together, with a `FakeTimeProvider`; test clients carry a token minted at Auth. Every new endpoint gets a test covering its status codes.
 - Run the tests with `dotnet test --solution OSI.Signal9.slnx`.
 
 ## Commits and pull requests

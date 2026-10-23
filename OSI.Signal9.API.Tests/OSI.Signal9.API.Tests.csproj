@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OSI.Signal9.API\OSI.Signal9.API.csproj" />
+    <ProjectReference Include="..\OSI.Signal9.Auth\OSI.Signal9.Auth.csproj" />
   </ItemGroup>
 
   <ItemGroup>

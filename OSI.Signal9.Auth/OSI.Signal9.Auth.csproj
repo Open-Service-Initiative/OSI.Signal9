@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UserSecretsId>osi-signal9-auth</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OpenIddict.Quartz" />
+    <PackageReference Include="Quartz.Extensions.Hosting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OSI.Signal9.Server\OSI.Signal9.Server.csproj" />
+    <ProjectReference Include="..\OSI.Signal9.ServiceDefaults\OSI.Signal9.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+</Project>

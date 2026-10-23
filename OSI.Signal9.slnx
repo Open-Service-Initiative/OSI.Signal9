@@ -8,7 +8,9 @@
   <Project Path="OSI.Signal9.API/OSI.Signal9.API.csproj" />
   <Project Path="OSI.Signal9.API.Tests/OSI.Signal9.API.Tests.csproj" />
   <Project Path="OSI.Signal9.AppHost/OSI.Signal9.AppHost.csproj" />
+  <Project Path="OSI.Signal9.Auth/OSI.Signal9.Auth.csproj" />
   <Project Path="OSI.Signal9.Contracts/OSI.Signal9.Contracts.csproj" />
+  <Project Path="OSI.Signal9.Server/OSI.Signal9.Server.csproj" />
   <Project Path="OSI.Signal9.ServiceDefaults/OSI.Signal9.ServiceDefaults.csproj" />
   <Project Path="OSI.Signal9.Web/OSI.Signal9.Web.csproj" />
 </Solution>

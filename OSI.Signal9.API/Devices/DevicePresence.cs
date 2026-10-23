@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Options;
-using OSI.Signal9.API.Data;
+using OSI.Signal9.Server.Data;
 using OSI.Signal9.Contracts.Devices;
 
 namespace OSI.Signal9.API.Devices;

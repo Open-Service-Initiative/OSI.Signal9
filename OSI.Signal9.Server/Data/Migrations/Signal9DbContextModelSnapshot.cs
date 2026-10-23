@@ -5,11 +5,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
-using OSI.Signal9.API.Data;
+using OSI.Signal9.Server.Data;
 
 #nullable disable
 
-namespace OSI.Signal9.API.Data.Migrations
+namespace OSI.Signal9.Server.Data.Migrations
 {
     [DbContext(typeof(Signal9DbContext))]
     partial class Signal9DbContextModelSnapshot : ModelSnapshot
@@ -23,7 +23,7 @@ namespace OSI.Signal9.API.Data.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.Agent", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Agent", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -49,7 +49,7 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.ToTable("Agents");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.Command", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Command", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -101,7 +101,7 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.ToTable("Commands");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.Device", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Device", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -177,7 +177,7 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.ToTable("Devices");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.TelemetrySample", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.TelemetrySample", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -214,7 +214,7 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.ToTable("TelemetrySamples");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.Tenant", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Tenant", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -267,7 +267,7 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.ToTable("Tenants");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.TenantClosure", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.TenantClosure", b =>
                 {
                     b.Property<Guid>("AncestorId")
                         .HasColumnType("uuid");
@@ -285,9 +285,217 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.ToTable("TenantClosures");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.Agent", b =>
+            modelBuilder.Entity("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreApplication", b =>
                 {
-                    b.HasOne("OSI.Signal9.API.Data.Device", "Device")
+                    b.Property<string>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ApplicationType")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("ClientId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ClientSecret")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ClientType")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("ConsentType")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("DisplayName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("DisplayNames")
+                        .HasColumnType("text");
+
+                    b.Property<string>("JsonWebKeySet")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Permissions")
+                        .HasColumnType("text");
+
+                    b.Property<string>("PostLogoutRedirectUris")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Properties")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RedirectUris")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Requirements")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Settings")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId")
+                        .IsUnique();
+
+                    b.ToTable("OpenIddictApplications", (string)null);
+                });
+
+            modelBuilder.Entity("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreAuthorization", b =>
+                {
+                    b.Property<string>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ApplicationId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime?>("CreationDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Properties")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Scopes")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Subject")
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
+
+                    b.Property<string>("Type")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApplicationId", "Status", "Subject", "Type");
+
+                    b.ToTable("OpenIddictAuthorizations", (string)null);
+                });
+
+            modelBuilder.Entity("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreScope", b =>
+                {
+                    b.Property<string>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Descriptions")
+                        .HasColumnType("text");
+
+                    b.Property<string>("DisplayName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("DisplayNames")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Properties")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Resources")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("OpenIddictScopes", (string)null);
+                });
+
+            modelBuilder.Entity("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreToken", b =>
+                {
+                    b.Property<string>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ApplicationId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("AuthorizationId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime?>("CreationDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ExpirationDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Payload")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Properties")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("RedemptionDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReferenceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Subject")
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
+
+                    b.Property<string>("Type")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuthorizationId");
+
+                    b.HasIndex("ReferenceId")
+                        .IsUnique();
+
+                    b.HasIndex("ApplicationId", "Status", "Subject", "Type");
+
+                    b.ToTable("OpenIddictTokens", (string)null);
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Agent", b =>
+                {
+                    b.HasOne("OSI.Signal9.Server.Data.Device", "Device")
                         .WithMany()
                         .HasForeignKey("DeviceId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -296,22 +504,22 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.Navigation("Device");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.Command", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Command", b =>
                 {
-                    b.HasOne("OSI.Signal9.API.Data.Device", null)
+                    b.HasOne("OSI.Signal9.Server.Data.Device", null)
                         .WithMany()
                         .HasForeignKey("DeviceId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.Device", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Device", b =>
                 {
-                    b.HasOne("OSI.Signal9.API.Data.Agent", "ActiveAgent")
+                    b.HasOne("OSI.Signal9.Server.Data.Agent", "ActiveAgent")
                         .WithOne()
-                        .HasForeignKey("OSI.Signal9.API.Data.Device", "ActiveAgentId");
+                        .HasForeignKey("OSI.Signal9.Server.Data.Device", "ActiveAgentId");
 
-                    b.HasOne("OSI.Signal9.API.Data.Tenant", "Tenant")
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", "Tenant")
                         .WithMany("Devices")
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -322,15 +530,15 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.Navigation("Tenant");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.TelemetrySample", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.TelemetrySample", b =>
                 {
-                    b.HasOne("OSI.Signal9.API.Data.Device", null)
+                    b.HasOne("OSI.Signal9.Server.Data.Device", null)
                         .WithMany()
                         .HasForeignKey("DeviceId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.OwnsMany("OSI.Signal9.API.Data.DiskUsage", "Disks", b1 =>
+                    b.OwnsMany("OSI.Signal9.Server.Data.DiskUsage", "Disks", b1 =>
                         {
                             b1.Property<Guid>("TelemetrySampleId");
 
@@ -359,9 +567,9 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.Navigation("Disks");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.Tenant", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Tenant", b =>
                 {
-                    b.HasOne("OSI.Signal9.API.Data.Tenant", "ParentTenant")
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", "ParentTenant")
                         .WithMany()
                         .HasForeignKey("ParentTenantId")
                         .OnDelete(DeleteBehavior.Restrict);
@@ -369,24 +577,60 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.Navigation("ParentTenant");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.TenantClosure", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.TenantClosure", b =>
                 {
-                    b.HasOne("OSI.Signal9.API.Data.Tenant", null)
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", null)
                         .WithMany()
                         .HasForeignKey("AncestorId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("OSI.Signal9.API.Data.Tenant", null)
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", null)
                         .WithMany()
                         .HasForeignKey("DescendantId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.Tenant", b =>
+            modelBuilder.Entity("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreAuthorization", b =>
+                {
+                    b.HasOne("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreApplication", "Application")
+                        .WithMany("Authorizations")
+                        .HasForeignKey("ApplicationId");
+
+                    b.Navigation("Application");
+                });
+
+            modelBuilder.Entity("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreToken", b =>
+                {
+                    b.HasOne("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreApplication", "Application")
+                        .WithMany("Tokens")
+                        .HasForeignKey("ApplicationId");
+
+                    b.HasOne("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreAuthorization", "Authorization")
+                        .WithMany("Tokens")
+                        .HasForeignKey("AuthorizationId");
+
+                    b.Navigation("Application");
+
+                    b.Navigation("Authorization");
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Tenant", b =>
                 {
                     b.Navigation("Devices");
+                });
+
+            modelBuilder.Entity("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreApplication", b =>
+                {
+                    b.Navigation("Authorizations");
+
+                    b.Navigation("Tokens");
+                });
+
+            modelBuilder.Entity("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreAuthorization", b =>
+                {
+                    b.Navigation("Tokens");
                 });
 #pragma warning restore 612, 618
         }

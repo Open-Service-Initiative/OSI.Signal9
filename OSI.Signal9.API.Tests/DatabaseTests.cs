@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using OSI.Signal9.API.Data;
+using OSI.Signal9.Server.Data;
 
 namespace OSI.Signal9.API.Tests;
 

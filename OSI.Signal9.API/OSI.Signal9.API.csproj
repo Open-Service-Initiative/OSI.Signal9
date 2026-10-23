@@ -8,16 +8,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Aspire.Azure.Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\OSI.Signal9.Contracts\OSI.Signal9.Contracts.csproj" />
+    <ProjectReference Include="..\OSI.Signal9.Server\OSI.Signal9.Server.csproj" />
     <ProjectReference Include="..\OSI.Signal9.ServiceDefaults\OSI.Signal9.ServiceDefaults.csproj" />
   </ItemGroup>
 

@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using OSI.Signal9.API.Data;
+using OSI.Signal9.Server.Data;
 using OSI.Signal9.API.Infrastructure;
 using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Tenants;

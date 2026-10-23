@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
-namespace OSI.Signal9.API.Data;
+namespace OSI.Signal9.Server.Data;
 
 public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options) : DbContext(options)
 {
@@ -13,6 +13,9 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options)
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        // OpenIddict's applications, authorizations, scopes and tokens, shared by auth and api (ADR-0003).
+        modelBuilder.UseOpenIddict();
+
         modelBuilder.Entity<Tenant>(tenant =>
         {
             tenant.Property(t => t.Name).HasMaxLength(200);

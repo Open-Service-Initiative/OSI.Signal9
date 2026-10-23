@@ -1,7 +1,7 @@
 using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Tenants;
 
-namespace OSI.Signal9.API.Data;
+namespace OSI.Signal9.Server.Data;
 
 // Persistence model. Timestamps are stored as UTC DateTime and exposed as DateTimeOffset in contracts.
 

@@ -6,15 +6,15 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
-using OSI.Signal9.API.Data;
+using OSI.Signal9.Server.Data;
 
 #nullable disable
 
-namespace OSI.Signal9.API.Data.Migrations
+namespace OSI.Signal9.Server.Data.Migrations
 {
     [DbContext(typeof(Signal9DbContext))]
-    [Migration("20261023013153_InitialCreate")]
-    partial class InitialCreate
+    [Migration("20261023014243_AddTenantClosure")]
+    partial class AddTenantClosure
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -26,7 +26,7 @@ namespace OSI.Signal9.API.Data.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.Agent", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Agent", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -106,7 +106,7 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.ToTable("Agents");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.AgentCommand", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.AgentCommand", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -158,7 +158,7 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.ToTable("AgentCommands");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.TelemetrySample", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.TelemetrySample", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -195,7 +195,7 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.ToTable("TelemetrySamples");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.Tenant", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Tenant", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -248,9 +248,27 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.ToTable("Tenants");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.Agent", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.TenantClosure", b =>
                 {
-                    b.HasOne("OSI.Signal9.API.Data.Tenant", "Tenant")
+                    b.Property<Guid>("AncestorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("DescendantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Depth")
+                        .HasColumnType("integer");
+
+                    b.HasKey("AncestorId", "DescendantId");
+
+                    b.HasIndex("DescendantId");
+
+                    b.ToTable("TenantClosures");
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Agent", b =>
+                {
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", "Tenant")
                         .WithMany("Agents")
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -259,24 +277,24 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.Navigation("Tenant");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.AgentCommand", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.AgentCommand", b =>
                 {
-                    b.HasOne("OSI.Signal9.API.Data.Agent", null)
+                    b.HasOne("OSI.Signal9.Server.Data.Agent", null)
                         .WithMany()
                         .HasForeignKey("AgentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.TelemetrySample", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.TelemetrySample", b =>
                 {
-                    b.HasOne("OSI.Signal9.API.Data.Agent", null)
+                    b.HasOne("OSI.Signal9.Server.Data.Agent", null)
                         .WithMany()
                         .HasForeignKey("AgentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.OwnsMany("OSI.Signal9.API.Data.DiskUsage", "Disks", b1 =>
+                    b.OwnsMany("OSI.Signal9.Server.Data.DiskUsage", "Disks", b1 =>
                         {
                             b1.Property<Guid>("TelemetrySampleId");
 
@@ -305,9 +323,9 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.Navigation("Disks");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.Tenant", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Tenant", b =>
                 {
-                    b.HasOne("OSI.Signal9.API.Data.Tenant", "ParentTenant")
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", "ParentTenant")
                         .WithMany()
                         .HasForeignKey("ParentTenantId")
                         .OnDelete(DeleteBehavior.Restrict);
@@ -315,7 +333,22 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.Navigation("ParentTenant");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.Tenant", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.TenantClosure", b =>
+                {
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("AncestorId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("DescendantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Tenant", b =>
                 {
                     b.Navigation("Agents");
                 });

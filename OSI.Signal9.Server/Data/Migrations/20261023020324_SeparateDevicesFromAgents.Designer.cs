@@ -6,15 +6,15 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
-using OSI.Signal9.API.Data;
+using OSI.Signal9.Server.Data;
 
 #nullable disable
 
-namespace OSI.Signal9.API.Data.Migrations
+namespace OSI.Signal9.Server.Data.Migrations
 {
     [DbContext(typeof(Signal9DbContext))]
-    [Migration("20261023014243_AddTenantClosure")]
-    partial class AddTenantClosure
+    [Migration("20261023020324_SeparateDevicesFromAgents")]
+    partial class SeparateDevicesFromAgents
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -26,7 +26,7 @@ namespace OSI.Signal9.API.Data.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.Agent", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Agent", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -36,83 +36,26 @@ namespace OSI.Signal9.API.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
-                    b.Property<string>("Architecture")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uuid");
 
-                    b.Property<string>("Domain")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<DateTime>("FirstSeenAt")
+                    b.Property<DateTime>("EnrolledAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("GroupName")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<bool>("InMaintenance")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("IpAddress")
-                        .HasMaxLength(45)
-                        .HasColumnType("character varying(45)");
 
                     b.Property<DateTime>("LastSeenAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("MacAddress")
-                        .HasMaxLength(17)
-                        .HasColumnType("character varying(17)");
-
-                    b.Property<string>("MachineName")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<string>("OperatingSystem")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("OsVersion")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<int>("ProcessorCores")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("ProcessorName")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.PrimitiveCollection<List<string>>("Tags")
-                        .IsRequired()
-                        .HasColumnType("text[]");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<long>("TotalMemoryMb")
-                        .HasColumnType("bigint");
-
                     b.HasKey("Id");
 
-                    b.HasIndex("LastSeenAt");
-
-                    b.HasIndex("TenantId", "MachineName")
-                        .IsUnique();
+                    b.HasIndex("DeviceId");
 
                     b.ToTable("Agents");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.AgentCommand", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Command", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("AgentId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime?>("CompletedAt")
@@ -120,6 +63,9 @@ namespace OSI.Signal9.API.Data.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Error")
                         .HasMaxLength(4000)
@@ -153,18 +99,91 @@ namespace OSI.Signal9.API.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AgentId", "Status");
+                    b.HasIndex("DeviceId", "Status");
 
-                    b.ToTable("AgentCommands");
+                    b.ToTable("Commands");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.TelemetrySample", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Device", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("AgentId")
+                    b.Property<Guid?>("ActiveAgentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Architecture")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Domain")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("GroupName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)");
+
+                    b.Property<string>("MacAddress")
+                        .HasMaxLength(17)
+                        .HasColumnType("character varying(17)");
+
+                    b.Property<string>("MachineName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<bool>("MaintenanceMode")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("OperatingSystem")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("OsVersion")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("ProcessorCores")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ProcessorName")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.PrimitiveCollection<List<string>>("Tags")
+                        .IsRequired()
+                        .HasColumnType("text[]");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("TotalMemoryMb")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActiveAgentId")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "MachineName");
+
+                    b.ToTable("Devices");
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.TelemetrySample", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CollectedAt")
@@ -172,6 +191,9 @@ namespace OSI.Signal9.API.Data.Migrations
 
                     b.Property<double?>("CpuPercent")
                         .HasColumnType("double precision");
+
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uuid");
 
                     b.Property<long?>("MemoryTotalMb")
                         .HasColumnType("bigint");
@@ -190,12 +212,12 @@ namespace OSI.Signal9.API.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AgentId", "CollectedAt");
+                    b.HasIndex("DeviceId", "CollectedAt");
 
                     b.ToTable("TelemetrySamples");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.Tenant", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Tenant", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -217,7 +239,7 @@ namespace OSI.Signal9.API.Data.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
 
-                    b.Property<int>("MaxAgents")
+                    b.Property<int>("MaxDevices")
                         .HasColumnType("integer");
 
                     b.Property<string>("Name")
@@ -248,7 +270,7 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.ToTable("Tenants");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.TenantClosure", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.TenantClosure", b =>
                 {
                     b.Property<Guid>("AncestorId")
                         .HasColumnType("uuid");
@@ -266,35 +288,52 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.ToTable("TenantClosures");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.Agent", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Agent", b =>
                 {
-                    b.HasOne("OSI.Signal9.API.Data.Tenant", "Tenant")
-                        .WithMany("Agents")
+                    b.HasOne("OSI.Signal9.Server.Data.Device", "Device")
+                        .WithMany()
+                        .HasForeignKey("DeviceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Device");
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Command", b =>
+                {
+                    b.HasOne("OSI.Signal9.Server.Data.Device", null)
+                        .WithMany()
+                        .HasForeignKey("DeviceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Device", b =>
+                {
+                    b.HasOne("OSI.Signal9.Server.Data.Agent", "ActiveAgent")
+                        .WithOne()
+                        .HasForeignKey("OSI.Signal9.Server.Data.Device", "ActiveAgentId");
+
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", "Tenant")
+                        .WithMany("Devices")
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.Navigation("ActiveAgent");
+
                     b.Navigation("Tenant");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.AgentCommand", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.TelemetrySample", b =>
                 {
-                    b.HasOne("OSI.Signal9.API.Data.Agent", null)
+                    b.HasOne("OSI.Signal9.Server.Data.Device", null)
                         .WithMany()
-                        .HasForeignKey("AgentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("OSI.Signal9.API.Data.TelemetrySample", b =>
-                {
-                    b.HasOne("OSI.Signal9.API.Data.Agent", null)
-                        .WithMany()
-                        .HasForeignKey("AgentId")
+                        .HasForeignKey("DeviceId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.OwnsMany("OSI.Signal9.API.Data.DiskUsage", "Disks", b1 =>
+                    b.OwnsMany("OSI.Signal9.Server.Data.DiskUsage", "Disks", b1 =>
                         {
                             b1.Property<Guid>("TelemetrySampleId");
 
@@ -323,9 +362,9 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.Navigation("Disks");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.Tenant", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Tenant", b =>
                 {
-                    b.HasOne("OSI.Signal9.API.Data.Tenant", "ParentTenant")
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", "ParentTenant")
                         .WithMany()
                         .HasForeignKey("ParentTenantId")
                         .OnDelete(DeleteBehavior.Restrict);
@@ -333,24 +372,24 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.Navigation("ParentTenant");
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.TenantClosure", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.TenantClosure", b =>
                 {
-                    b.HasOne("OSI.Signal9.API.Data.Tenant", null)
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", null)
                         .WithMany()
                         .HasForeignKey("AncestorId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("OSI.Signal9.API.Data.Tenant", null)
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", null)
                         .WithMany()
                         .HasForeignKey("DescendantId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("OSI.Signal9.API.Data.Tenant", b =>
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Tenant", b =>
                 {
-                    b.Navigation("Agents");
+                    b.Navigation("Devices");
                 });
 #pragma warning restore 612, 618
         }

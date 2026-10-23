@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace OSI.Signal9.API.Data.Migrations
+namespace OSI.Signal9.Server.Data.Migrations
 {
     /// <inheritdoc />
     public partial class InitialCreate : Migration

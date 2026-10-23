@@ -2,7 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
-using OSI.Signal9.API.Data;
+using OSI.Signal9.Server.Data;
 using OSI.Signal9.API.Hubs;
 using OSI.Signal9.API.Infrastructure;
 using OSI.Signal9.Contracts;

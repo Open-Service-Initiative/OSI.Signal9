@@ -1,0 +1,41 @@
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Time.Testing;
+using OSI.Signal9.Auth;
+
+namespace OSI.Signal9.API.Tests;
+
+/// <summary>Hosts <c>auth</c> in memory, sharing the database and clock of the <see cref="Signal9ApiFactory"/> that owns it.</summary>
+public sealed class Signal9AuthFactory : WebApplicationFactory<AuthHost>
+{
+    private readonly string _connectionString;
+    private readonly FakeTimeProvider _time;
+
+    public Signal9AuthFactory(string connectionString, FakeTimeProvider time)
+    {
+        _connectionString = connectionString;
+        _time = time;
+        ClientOptions.BaseAddress = Signal9ApiFactory.HttpsLocalhost;
+    }
+
+    public const string Issuer = "https://auth.signal9.test/";
+    public const string ApiUri = "https://api.signal9.test/";
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        Signal9ApiFactory.ConfigureSharedHost(builder, _connectionString, _time);
+        // Tests start the pruning job themselves, so it never runs in the middle of another test.
+        builder.ConfigureTestServices(services =>
+        {
+            foreach (var quartz in services.Where(IsQuartzHostedService).ToList())
+                services.Remove(quartz);
+        });
+    }
+
+    private static bool IsQuartzHostedService(ServiceDescriptor service) =>
+        service.ServiceType == typeof(IHostedService)
+        && service.ImplementationType?.Namespace?.StartsWith("Quartz", StringComparison.Ordinal) == true;
+}

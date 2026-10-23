@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using OSI.Signal9.API.Data;
+using OSI.Signal9.Server.Data;
 
 namespace OSI.Signal9.API.Agents;
 

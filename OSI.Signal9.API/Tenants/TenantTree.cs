@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using OSI.Signal9.API.Data;
+using OSI.Signal9.Server.Data;
 
 namespace OSI.Signal9.API.Tenants;
 
