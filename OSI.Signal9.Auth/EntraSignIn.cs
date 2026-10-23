@@ -223,7 +223,7 @@ public sealed record EntraPerson(Guid TenantId, Guid ObjectId)
     /// <summary>
     /// Signal9's subject for the person: stable, unique per (directory, object) and free of personal data.
     /// </summary>
-    public string Subject => $"{TenantId:D}:{ObjectId:D}";
+    public string Subject => PersonSubject.Format(TenantId, ObjectId);
 
     public static EntraPerson? From(ClaimsPrincipal principal) =>
         Guid.TryParse(principal.FindFirst("tid")?.Value, out var tenant)

@@ -6,6 +6,8 @@ using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Devices;
 using OSI.Signal9.Contracts.Telemetry;
 using OSI.Signal9.Contracts.Tenants;
+using OSI.Signal9.Contracts.Roles;
+using OSI.Signal9.Contracts.Users;
 
 namespace OSI.Signal9.API.Infrastructure;
 
@@ -26,6 +28,22 @@ internal static class Mappings
     public static EntityTagHeaderValue ETag(this Command command) => ConditionalRequests.ETag(command.Version);
 
     public static EntityTagHeaderValue ETag(this TelemetrySample sample) => ConditionalRequests.ETag(sample.Version);
+
+    public static EntityTagHeaderValue ETag(this User user) => ConditionalRequests.ETag(user.Version);
+
+    public static EntityTagHeaderValue ETag(this RoleAssignment assignment) => ConditionalRequests.ETag(assignment.Version);
+
+    /// <summary>Roles have no row version: they change only through migrations, so their content is their version.</summary>
+    public static EntityTagHeaderValue ETag(this Role role) =>
+        ConditionalRequests.ETag(0, role.Name, role.Description, role.BuiltIn, string.Join(' ', role.Scopes));
+
+    public static UserDto ToDto(this User user) => new(
+        user.Id, user.TenantId, user.EntraTenantId, user.EntraObjectId, user.DisplayName, user.CreatedAt.AsUtcOffset());
+
+    public static RoleDto ToDto(this Role role) => new(role.Id, role.Name, role.Description, role.BuiltIn, role.Scopes);
+
+    public static RoleAssignmentDto ToDto(this RoleAssignment assignment) => new(
+        assignment.Id, assignment.TenantId, assignment.UserId, assignment.RoleId, assignment.CreatedAt.AsUtcOffset());
 
     public static TenantDto ToDto(this Tenant tenant, int deviceCount) => new(
         tenant.Id,

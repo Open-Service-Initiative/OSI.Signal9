@@ -1,6 +1,7 @@
 using System.Reflection;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using OSI.Signal9.Server.Identity;
 using OSI.Signal9.Server.Keys;
 
 namespace OSI.Signal9.Server.Data;
@@ -25,6 +26,9 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
     public DbSet<TelemetrySample> TelemetrySamples => Set<TelemetrySample>();
     public DbSet<StoredKey> StoredKeys => Set<StoredKey>();
     public DbSet<DashboardSession> DashboardSessions => Set<DashboardSession>();
+    public DbSet<User> Users => Set<User>();
+    public DbSet<Role> Roles => Set<Role>();
+    public DbSet<RoleAssignment> RoleAssignments => Set<RoleAssignment>();
 
     /// <summary>The ASP.NET Core Data Protection key ring, each key wrapped by the key-encryption key (ADR-0008).</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
@@ -41,6 +45,8 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
         modelBuilder.Entity<Agent>().Property(a => a.Version).IsRowVersion();
         modelBuilder.Entity<Command>().Property(c => c.Version).IsRowVersion();
         modelBuilder.Entity<TelemetrySample>().Property(s => s.Version).IsRowVersion();
+        modelBuilder.Entity<User>().Property(u => u.Version).IsRowVersion();
+        modelBuilder.Entity<RoleAssignment>().Property(a => a.Version).IsRowVersion();
 
         modelBuilder.Entity<Tenant>(tenant =>
         {
@@ -133,6 +139,39 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
                 .WithMany()
                 .HasForeignKey(s => s.DeviceId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // The owning tenant governs its users: deleting it deletes them, with all their role assignments (#63).
+        modelBuilder.Entity<User>(user =>
+        {
+            user.Property(u => u.DisplayName).HasMaxLength(200);
+            // One user per Entra identity (story 41).
+            user.HasIndex(u => new { u.EntraTenantId, u.EntraObjectId }).IsUnique();
+            user.HasOne<Tenant>().WithMany().HasForeignKey(u => u.TenantId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Role>(role =>
+        {
+            role.Property(r => r.Name).HasMaxLength(100);
+            role.HasIndex(r => r.Name).IsUnique();
+            role.Property(r => r.Description).HasMaxLength(500);
+            role.HasData(BuiltInRoles.All.Select(r => new Role
+            {
+                Id = r.Id,
+                Name = r.Name,
+                Description = r.Description,
+                BuiltIn = true,
+                Scopes = [.. r.Scopes],
+            }));
+        });
+
+        modelBuilder.Entity<RoleAssignment>(assignment =>
+        {
+            assignment.HasIndex(a => new { a.UserId, a.TenantId, a.RoleId }).IsUnique();
+            assignment.HasIndex(a => a.TenantId);
+            assignment.HasOne<Tenant>().WithMany().HasForeignKey(a => a.TenantId).OnDelete(DeleteBehavior.Cascade);
+            assignment.HasOne(a => a.User).WithMany().HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.Cascade);
+            assignment.HasOne(a => a.Role).WithMany().HasForeignKey(a => a.RoleId).OnDelete(DeleteBehavior.Restrict);
         });
 
         ApplyTenantScope(modelBuilder);

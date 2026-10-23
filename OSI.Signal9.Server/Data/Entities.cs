@@ -126,3 +126,50 @@ public sealed class DiskUsage
     public long TotalBytes { get; set; }
     public long FreeBytes { get; set; }
 }
+
+/// <summary>
+/// A person known to Signal9 (#63): owned by exactly one tenant, and linked to their Entra identity by directory
+/// (<c>tid</c>) and object (<c>oid</c>). Signing in creates no user; a user exists to hold role assignments.
+/// </summary>
+public sealed class User : ITenantOwned
+{
+    public Guid Id { get; set; }
+
+    /// <summary>Row version (PostgreSQL <c>xmin</c>): the concurrency token behind the resource's ETag.</summary>
+    public uint Version { get; set; }
+
+    /// <summary>The owning tenant, which governs the user.</summary>
+    public Guid TenantId { get; set; }
+    public Guid EntraTenantId { get; set; }
+    public Guid EntraObjectId { get; set; }
+    public required string DisplayName { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>A named bundle of scopes (ADR-0010). Stored as data; the built-in roles are seeded and can't be changed.</summary>
+public sealed class Role
+{
+    public Guid Id { get; set; }
+    public required string Name { get; set; }
+    public required string Description { get; set; }
+    public bool BuiltIn { get; set; }
+    public string[] Scopes { get; set; } = [];
+}
+
+/// <summary>Grants one role to one user at one tenant, covering the tenant and all its descendants (ADR-0010).</summary>
+public sealed class RoleAssignment : ITenantOwned
+{
+    public Guid Id { get; set; }
+
+    /// <summary>Row version (PostgreSQL <c>xmin</c>): the concurrency token behind the resource's ETag.</summary>
+    public uint Version { get; set; }
+
+    /// <summary>The tenant the role is granted at.</summary>
+    public Guid TenantId { get; set; }
+    public Guid UserId { get; set; }
+    public Guid RoleId { get; set; }
+    public DateTime CreatedAt { get; set; }
+
+    public User? User { get; set; }
+    public Role? Role { get; set; }
+}

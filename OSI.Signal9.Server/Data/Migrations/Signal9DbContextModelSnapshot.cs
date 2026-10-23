@@ -242,6 +242,99 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.ToTable("Devices");
                 });
 
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Role", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("BuiltIn")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.PrimitiveCollection<string[]>("Scopes")
+                        .IsRequired()
+                        .HasColumnType("text[]");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Roles");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("0199a000-0000-7000-8000-000000000001"),
+                            BuiltIn = true,
+                            Description = "Read-only access to tenants, devices, commands, scripts, telemetry and users.",
+                            Name = "Viewer",
+                            Scopes = new[] { "tenants.read", "devices.read", "commands.read", "scripts.read", "telemetry.read", "users.read" }
+                        },
+                        new
+                        {
+                            Id = new Guid("0199a000-0000-7000-8000-000000000002"),
+                            BuiltIn = true,
+                            Description = "Viewer, plus operating devices: running commands and scripts, enrolling devices and managing users without roles.",
+                            Name = "Technician",
+                            Scopes = new[] { "tenants.read", "devices.read", "commands.read", "scripts.read", "telemetry.read", "users.read", "devices.write", "devices.transfer", "commands.execute", "scripts.write", "scripts.delete", "scripts.execute", "terminal.execute", "users.write", "enrollment.read", "enrollment.write" }
+                        },
+                        new
+                        {
+                            Id = new Guid("0199a000-0000-7000-8000-000000000003"),
+                            BuiltIn = true,
+                            Description = "Technician, plus administering tenants, role assignments, API applications, integrations and the audit log.",
+                            Name = "Administrator",
+                            Scopes = new[] { "tenants.read", "devices.read", "commands.read", "scripts.read", "telemetry.read", "users.read", "devices.write", "devices.transfer", "commands.execute", "scripts.write", "scripts.delete", "scripts.execute", "terminal.execute", "users.write", "enrollment.read", "enrollment.write", "tenants.write", "tenants.delete", "tenants.transfer", "devices.delete", "roleassignments.read", "roleassignments.write", "roles.read", "roles.write", "audit.read", "apiapplications.read", "apiapplications.write", "integrations.read", "integrations.write", "users.transfer" }
+                        });
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.RoleAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RoleId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("UserId", "TenantId", "RoleId")
+                        .IsUnique();
+
+                    b.ToTable("RoleAssignments");
+                });
+
             modelBuilder.Entity("OSI.Signal9.Server.Data.TelemetrySample", b =>
                 {
                     b.Property<Guid>("Id")
@@ -360,6 +453,45 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.HasIndex("DescendantId");
 
                     b.ToTable("TenantClosures");
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.User", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("EntraObjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("EntraTenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("EntraTenantId", "EntraObjectId")
+                        .IsUnique();
+
+                    b.ToTable("Users");
                 });
 
             modelBuilder.Entity("OSI.Signal9.Server.Keys.StoredKey", b =>
@@ -648,6 +780,31 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.Navigation("Tenant");
                 });
 
+            modelBuilder.Entity("OSI.Signal9.Server.Data.RoleAssignment", b =>
+                {
+                    b.HasOne("OSI.Signal9.Server.Data.Role", "Role")
+                        .WithMany()
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("OSI.Signal9.Server.Data.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Role");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("OSI.Signal9.Server.Data.TelemetrySample", b =>
                 {
                     b.HasOne("OSI.Signal9.Server.Data.Device", null)
@@ -706,6 +863,15 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.HasOne("OSI.Signal9.Server.Data.Tenant", null)
                         .WithMany()
                         .HasForeignKey("DescendantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.User", b =>
+                {
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

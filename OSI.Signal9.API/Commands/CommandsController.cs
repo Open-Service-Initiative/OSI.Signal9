@@ -73,12 +73,17 @@ public sealed class CommandsController(
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<CommandDto>> Create(
         Guid deviceId, CreateCommandRequest request, [FromServices] IAuthorizationService authorization,
-        CancellationToken cancellationToken)
+        [FromServices] CallerAccess access, CancellationToken cancellationToken)
     {
         // TODO(#82): ad-hoc code moves to script executions, and RunScript leaves the command contract.
         var terminal = new RequireScopeAttribute(Scopes.Terminal.Execute);
-        if (request.Type == CommandType.RunScript && !(await authorization.AuthorizeAsync(User, null, terminal)).Succeeded)
-            return InsufficientScope.Forbid(Scopes.Terminal.Execute);
+        if (request.Type == CommandType.RunScript)
+        {
+            if (!(await authorization.AuthorizeAsync(User, null, terminal)).Succeeded)
+                return InsufficientScope.Forbid(Scopes.Terminal.Execute);
+            // The role must grant it at the device's tenant too.
+            access.Require(Scopes.Terminal.Execute);
+        }
 
         var device = await db.Devices.AsNoTracking().SingleOrDefaultAsync(d => d.Id == deviceId, cancellationToken);
         if (device is null)

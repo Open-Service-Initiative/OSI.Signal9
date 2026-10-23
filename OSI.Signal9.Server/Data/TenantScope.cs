@@ -15,7 +15,7 @@ public interface IAssignedTenants
     IReadOnlyCollection<Guid> TenantIds { get; }
 }
 
-/// <summary>No assigned tenants: the caller sees nothing. The default until RBAC feeds role assignments in (#114).</summary>
+/// <summary>No assigned tenants: the caller sees nothing. The default outside api, which feeds in role assignments.</summary>
 public sealed class NoAssignedTenants : IAssignedTenants
 {
     public static readonly NoAssignedTenants Instance = new();
@@ -49,6 +49,12 @@ public enum TenantScopeBypass
     /// </summary>
     // TODO(auth): scope agents to their own device once agent identity comes from the token (ADR-0005).
     AgentSelfService,
+
+    /// <summary>
+    /// Reading the caller's own role assignments to work out their access, which the filter itself depends on. Only
+    /// the assignments of the person the access token names are read.
+    /// </summary>
+    CallerRoleAssignments,
 }
 
 /// <summary>

@@ -18,6 +18,7 @@ builder.AddHostHardening();
 
 // Registered before the database, which otherwise defaults to a caller with no assigned tenants.
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<CallerAccess>();
 builder.Services.AddScoped<IAssignedTenants, CallerAssignedTenants>();
 builder.AddSignal9Database();
 builder.AddSignal9ForwardedHeaders();
@@ -85,6 +86,7 @@ app.UseHostHardening();
 
 app.UseRateLimitingAndAuthentication();
 app.UseAuthorization();
+app.UseCallerAccess();
 
 app.MapTokenEndpoint().RequireRateLimiting(RateLimiting.Token);
 // The API description is public (story 132): it shows what each call needs, never data.

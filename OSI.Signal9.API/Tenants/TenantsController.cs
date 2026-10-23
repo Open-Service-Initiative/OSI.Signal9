@@ -73,6 +73,10 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, IAss
             return Problem(statusCode: StatusCodes.Status403Forbidden, title: "Superadministrator required",
                 detail: "Only a Superadministrator can create a root tenant.");
 
+        // A parent the caller can't create tenants beneath is treated as missing, so nothing is learned about it.
+        if (request.ParentTenantId is { } parent && !await db.Tenants.AnyAsync(t => t.Id == parent, cancellationToken))
+            return ParentNotFound(request);
+
         var now = time.GetUtcNow().UtcDateTime;
         var tenant = new Tenant
         {
@@ -91,8 +95,7 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, IAss
         switch (await tree.AddAsync(tenant, cancellationToken))
         {
             case TenantTreeError.ParentNotFound:
-                ModelState.AddModelError(nameof(request.ParentTenantId), "Parent tenant does not exist.");
-                return ValidationProblem(ModelState);
+                return ParentNotFound(request);
             case TenantTreeError.TooDeep:
                 return Problem(statusCode: StatusCodes.Status409Conflict, title: "Tenant tree too deep",
                     detail: "The parent tenant is already at the maximum depth of the tenant tree.");
@@ -100,6 +103,12 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, IAss
 
         this.SetETag(tenant.ETag(deviceCount: 0));
         return CreatedAtRoute(nameof(GetTenant), new { tenantId = tenant.Id }, tenant.ToDto(deviceCount: 0));
+    }
+
+    private ActionResult ParentNotFound(CreateTenantRequest request)
+    {
+        ModelState.AddModelError(nameof(request.ParentTenantId), "Parent tenant does not exist.");
+        return ValidationProblem(ModelState);
     }
 
     /// <summary>

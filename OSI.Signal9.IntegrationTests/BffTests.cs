@@ -5,7 +5,12 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using OSI.Signal9.Contracts;
+using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.Bff;
+using OSI.Signal9.Contracts.Devices;
+using OSI.Signal9.Contracts.Roles;
+using OSI.Signal9.Contracts.Users;
 using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Contracts.Tenants;
 
@@ -49,6 +54,43 @@ public sealed partial class BffTests : IDisposable
         Assert.AreEqual(HttpStatusCode.OK, me.StatusCode);
         Assert.AreEqual($"{user.TenantId:D}:{user.ObjectId:D}", (await me.Content.ReadFromJsonAsync<BffUser>(Ct))!.Subject);
         Assert.AreEqual(HttpStatusCode.OK, tenants.StatusCode, await tenants.Content.ReadAsStringAsync(Ct));
+    }
+
+    [TestMethod]
+    public async Task A_person_with_a_role_assignment_uses_the_dashboard_end_to_end()
+    {
+        using var fixture = _factory.CreateClient();
+        var contoso = await _factory.CreateTenantAsync(fixture, "Contoso");
+        var site = await _factory.CreateTenantAsync(fixture, "Contoso-Site", parentTenantId: contoso.Id);
+        var other = await _factory.CreateTenantAsync(fixture, "Fabrikam");
+        var registered = await Signal9ApiFactory.RegisterAsync(fixture, site.Id, "SITE-PC");
+        var device = (await registered.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options, Ct))!.DeviceId;
+        var person = EntraUser.WithMfa();
+        var user = await (await fixture.PostAsJsonAsync("api/v1/users", new CreateUserRequest
+        {
+            TenantId = contoso.Id,
+            EntraTenantId = person.TenantId,
+            EntraObjectId = person.ObjectId,
+            DisplayName = "Alex Wilber",
+        }, Signal9Json.Options, Ct)).Content.ReadFromJsonAsync<UserDto>(Signal9Json.Options, Ct);
+        var roles = await fixture.GetFromJsonAsync<PagedResult<RoleDto>>("api/v1/roles", Signal9Json.Options, Ct);
+        var assigned = await fixture.PostAsJsonAsync($"api/v1/tenants/{contoso.Id}/role-assignments", new CreateRoleAssignmentRequest
+        {
+            UserId = user!.Id,
+            RoleId = roles!.Items.Single(r => r.Name == "Technician").Id,
+        }, Signal9Json.Options, Ct);
+        Assert.AreEqual(HttpStatusCode.Created, assigned.StatusCode);
+        using var browser = await SignedInAsync(person);
+
+        var tenants = await (await browser.GetAsync("api/v1/tenants")).Content.ReadFromJsonAsync<PagedResult<TenantDto>>(Signal9Json.Options, Ct);
+        var devices = await (await browser.GetAsync("api/v1/devices")).Content.ReadFromJsonAsync<PagedResult<DeviceDto>>(Signal9Json.Options, Ct);
+        var command = await browser.FetchAsync(HttpMethod.Post, $"api/v1/devices/{device}/commands",
+            new StringContent("""{"type":"CollectSystemInfo"}""", Encoding.UTF8, "application/json"));
+
+        CollectionAssert.AreEquivalent(new[] { contoso.Id, site.Id }, tenants!.Items.Select(t => t.Id).ToArray());
+        CollectionAssert.DoesNotContain(tenants.Items.Select(t => t.Id).ToArray(), other.Id);
+        Assert.AreEqual(device, Assert.ContainsSingle(devices!.Items).Id);
+        Assert.AreEqual(HttpStatusCode.Created, command.StatusCode, await command.Content.ReadAsStringAsync(Ct));
     }
 
     [TestMethod]

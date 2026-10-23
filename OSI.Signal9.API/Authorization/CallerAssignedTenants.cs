@@ -4,12 +4,16 @@ using OSI.Signal9.Server.Identity;
 namespace OSI.Signal9.API.Authorization;
 
 /// <summary>
-/// The current caller's authority, from their access token: a Superadministrator has every tenant tree. Anyone else
-/// has no assigned tenants until RBAC feeds role assignments in (#114).
+/// The current caller's authority, for <see cref="TenantScope"/>: a Superadministrator has every tenant tree. Anyone
+/// else has the tenants where their role assignments grant the scopes the endpoint requires (and any it adds with
+/// <see cref="CallerAccess.Require"/>) and their token carries, so everything outside reads as missing.
 /// </summary>
-public sealed class CallerAssignedTenants(IHttpContextAccessor http) : IAssignedTenants
+public sealed class CallerAssignedTenants(IHttpContextAccessor http, CallerAccess access) : IAssignedTenants
 {
     public bool IsSuperadministrator => http.HttpContext?.User is { } user && Superadministrator.Is(user);
 
-    public IReadOnlyCollection<Guid> TenantIds => [];
+    public IReadOnlyCollection<Guid> TenantIds => http.HttpContext is { } context
+        ? access.TenantsGranting(context.User,
+            context.GetEndpoint()?.Metadata.GetOrderedMetadata<RequireScopeAttribute>().Select(r => r.Scopes) ?? [])
+        : [];
 }

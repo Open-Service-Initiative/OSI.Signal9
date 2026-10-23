@@ -94,7 +94,7 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
             services.AddHttpContextAccessor();
             services.RemoveAll<IAssignedTenants>();
             services.AddScoped<IAssignedTenants>(sp =>
-                new FixtureAssignedTenants(sp.GetRequiredService<IHttpContextAccessor>(), this));
+                new FixtureAssignedTenants(sp.GetRequiredService<IHttpContextAccessor>(), sp.GetRequiredService<CallerAccess>(), this));
         });
     }
 
@@ -102,7 +102,8 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
 
     /// <summary>
     /// A client for <c>api</c> standing in for a caller with role assignments at exactly <paramref name="assignedTenants"/>
-    /// (none: a caller who sees nothing), with a token holding these scopes. Role assignments arrive with RBAC (#114).
+    /// (none: a caller who sees nothing) for every scope, with a token holding these scopes: an application standing in
+    /// for a person, for tests of the tenant filter alone.
     /// </summary>
     public async Task<HttpClient> CreateAssignedClientAsync(Guid[] assignedTenants, params string[] scopes)
     {
@@ -110,6 +111,45 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         _assignments[clientId] = assignedTenants;
         await SeedClientAsync(clientId, scopes);
         var token = await RequestTokenAsync(clientId, scopes);
+        var client = CreateAnonymousClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Value);
+        return client;
+    }
+
+    /// <summary>Every catalogue scope a person can be issued through the dashboard or a delegated client.</summary>
+    public static string[] PersonScopes => [.. GrantableScopes.Where(s => s != OSI.Signal9.Server.Identity.Scopes.Agent)];
+
+    private const string PersonClientId = "person-test-app";
+    private readonly SemaphoreSlim _personClientSeeding = new(1, 1);
+    private bool _personClientSeeded;
+
+    /// <summary>
+    /// A client for <c>api</c> with an access token for <paramref name="user"/>, who signs in at Entra through
+    /// <c>auth</c> with a client using authorization code, asking for these scopes (every person scope if none).
+    /// </summary>
+    public async Task<HttpClient> CreatePersonClientAsync(EntraUser user, params string[] scopes)
+    {
+        await _personClientSeeding.WaitAsync();
+        try
+        {
+            if (!_personClientSeeded)
+                await SeedCodeClientAsync(PersonClientId, PersonScopes);
+            _personClientSeeded = true;
+        }
+        finally
+        {
+            _personClientSeeding.Release();
+        }
+
+        using var browser = new Browser(Auth.Server);
+        var flow = new CodeFlow(PersonClientId);
+        var scope = string.Join(' ', ["openid", .. scopes.Length > 0 ? scopes : PersonScopes]);
+        var code = flow.CodeFrom(await browser.AuthorizeAsync(flow.AuthorizeRequest(scope), Entra, user));
+        using var auth = Auth.CreateClient();
+        var response = await auth.PostAsync("connect/token", flow.Redemption(code));
+        response.EnsureSuccessStatusCode();
+        var token = (await response.Content.ReadFromJsonAsync<AccessToken>())!;
+
         var client = CreateAnonymousClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Value);
         return client;
@@ -123,9 +163,10 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
     /// for the fixture's other client-credentials clients (and work outside a request), standing in for a
     /// Superadministrator so tests can work across tenant trees; and api's own for everyone else, such as people.
     /// </summary>
-    private sealed class FixtureAssignedTenants(IHttpContextAccessor http, Signal9ApiFactory factory) : IAssignedTenants
+    private sealed class FixtureAssignedTenants(IHttpContextAccessor http, CallerAccess access, Signal9ApiFactory factory)
+        : IAssignedTenants
     {
-        private readonly CallerAssignedTenants _api = new(http);
+        private readonly CallerAssignedTenants _api = new(http, access);
 
         private IAssignedTenants Current =>
             http.HttpContext?.User.FindFirst(Claims.Subject)?.Value is not { } subject ? AllTenants.Instance
