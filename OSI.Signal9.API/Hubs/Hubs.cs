@@ -1,12 +1,16 @@
 using Microsoft.AspNetCore.SignalR;
+using OSI.Signal9.API.Authorization;
 using OSI.Signal9.Contracts.Hubs;
+using OSI.Signal9.Server.Identity;
 
 namespace OSI.Signal9.API.Hubs;
 
 /// <summary>
-/// Agents connect with ?agentId={id} and are placed in a per-agent group so commands can be pushed to them.
+/// The agent doorbell (ADR-0009). Agents connect with ?agentId={id} and join a per-agent group, which the API rings when
+/// the agent has work. It carries no command content and has no methods for agents to call.
 /// </summary>
 // TODO(auth): authenticate the agent and take its id from the token instead of the query string.
+[RequireScope(Scopes.Agent)]
 public sealed class AgentHub : Hub<IAgentHubClient>
 {
     public static string GroupFor(Guid agentId) => $"agent:{agentId}";
@@ -26,6 +30,7 @@ public sealed class AgentHub : Hub<IAgentHubClient>
 }
 
 /// <summary>
-/// Server-to-client only: the dashboard listens for agent, telemetry and command changes.
+/// Server-to-client only: the dashboard listens for device, telemetry and command changes. Either scope is enough (#63).
 /// </summary>
+[RequireScope(Scopes.Devices.Read, Scopes.Telemetry.Read)]
 public sealed class DashboardHub : Hub<IDashboardHubClient>;

@@ -17,30 +17,24 @@ public enum SubscriptionPlan
 }
 
 /// <summary>
-/// A customer organization. Tenants can be nested one level: an MSP tenant owns client tenants.
+/// A node in the tenant tree, such as a consultancy, an MSP, a client or a site. Tenants nest to a configurable maximum depth.
 /// </summary>
 public sealed record TenantDto(
     Guid Id,
     Guid? ParentTenantId,
-    string Code,
     string Name,
     string? Description,
     string ContactEmail,
     string? ContactPhone,
     SubscriptionPlan Plan,
-    int MaxAgents,
+    int MaxDevices,
     TenantStatus Status,
-    int AgentCount,
+    int DeviceCount,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
 public sealed record CreateTenantRequest
 {
-    /// <summary>Short, unique, URL-safe code agents use to enroll. Immutable after creation.</summary>
-    [Required, StringLength(32, MinimumLength = 2), RegularExpression("^[a-z0-9][a-z0-9-]*$",
-        ErrorMessage = "Code may contain lowercase letters, digits and hyphens.")]
-    public string Code { get; init; } = string.Empty;
-
     [Required, StringLength(200, MinimumLength = 1)]
     public string Name { get; init; } = string.Empty;
 
@@ -58,11 +52,12 @@ public sealed record CreateTenantRequest
     public SubscriptionPlan Plan { get; init; } = SubscriptionPlan.Basic;
 
     [Range(1, 100_000)]
-    public int MaxAgents { get; init; } = 25;
+    public int MaxDevices { get; init; } = 25;
 }
 
 /// <summary>
-/// Full replacement of a tenant's mutable fields (PUT semantics).
+/// A tenant's editable fields: the document a JSON merge patch (RFC 7396) applies to. Status is read-only and changes
+/// through the <c>:suspend</c>, <c>:activate</c> and <c>:cancel</c> actions; the parent changes with a tenant transfer.
 /// </summary>
 public sealed record UpdateTenantRequest
 {
@@ -81,7 +76,5 @@ public sealed record UpdateTenantRequest
     public SubscriptionPlan Plan { get; init; }
 
     [Range(1, 100_000)]
-    public int MaxAgents { get; init; }
-
-    public TenantStatus Status { get; init; }
+    public int MaxDevices { get; init; }
 }

@@ -1,30 +1,41 @@
 @api = https://localhost:7201
 
 ### Create a tenant
-POST {{api}}/api/tenants
+POST {{api}}/api/v1/tenants
 Content-Type: application/json
 
 {
-  "code": "contoso",
   "name": "Contoso",
   "contactEmail": "it@contoso.example",
-  "maxAgents": 25
+  "maxDevices": 25
 }
 
 ### List tenants
-GET {{api}}/api/tenants?page=1&pageSize=25
+GET {{api}}/api/v1/tenants?page=1&pageSize=25
+
+### Update a tenant's fields (JSON merge patch: send only what changes; null clears)
+PATCH {{api}}/api/v1/tenants/<tenant id>
+Content-Type: application/merge-patch+json
+
+{
+  "plan": "Professional",
+  "maxDevices": 50
+}
+
+### Suspend a tenant (then :activate or :cancel)
+POST {{api}}/api/v1/tenants/<tenant id>:suspend
 
 ### Enroll an agent
-POST {{api}}/api/agents
+POST {{api}}/api/v1/agents
 Content-Type: application/json
 
 {
-  "tenantCode": "contoso",
+  "tenantId": "<id of the tenant created above>",
   "machineName": "CONTOSO-PC01",
   "operatingSystem": "Windows 11 Pro",
   "processorCores": 8,
   "totalMemoryMb": 16384
 }
 
-### List online agents
-GET {{api}}/api/agents?status=Online
+### List online devices
+GET {{api}}/api/v1/devices?status=Online

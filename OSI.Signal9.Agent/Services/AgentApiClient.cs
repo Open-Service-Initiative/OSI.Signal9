@@ -16,37 +16,39 @@ public sealed class AgentApiClient(HttpClient http)
 {
     public async Task<AgentDto> RegisterAsync(RegisterAgentRequest request, CancellationToken cancellationToken)
     {
-        using var response = await http.PostAsJsonAsync("api/agents", request, Signal9Json.Options, cancellationToken);
+        using var response = await http.PostAsJsonAsync("api/v1/agents", request, Signal9Json.Options, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
         return (await response.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options, cancellationToken))!;
     }
 
-    /// <returns>False when the API no longer knows this agent and it must re-register.</returns>
-    public async Task<bool> SendHeartbeatAsync(Guid agentId, HeartbeatRequest request, CancellationToken cancellationToken)
+    /// <returns>Null when the API no longer knows this agent, or it was replaced, and it must re-register.</returns>
+    public async Task<HeartbeatResponse?> SendHeartbeatAsync(Guid agentId, HeartbeatRequest request, CancellationToken cancellationToken)
     {
-        using var response = await http.PutAsJsonAsync($"api/agents/{agentId}/heartbeat", request, Signal9Json.Options, cancellationToken);
-        if (response.StatusCode == HttpStatusCode.NotFound)
-            return false;
+        using var response = await http.PutAsJsonAsync($"api/v1/agents/{agentId}/heartbeat", request, Signal9Json.Options, cancellationToken);
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Conflict)
+            return null;
         await EnsureSuccessAsync(response, cancellationToken);
-        return true;
+        return (await response.Content.ReadFromJsonAsync<HeartbeatResponse>(Signal9Json.Options, cancellationToken))!;
     }
 
     public async Task SendTelemetryAsync(Guid agentId, CreateTelemetrySampleRequest sample, CancellationToken cancellationToken)
     {
-        using var response = await http.PostAsJsonAsync($"api/agents/{agentId}/telemetry", sample, Signal9Json.Options, cancellationToken);
+        using var response = await http.PostAsJsonAsync($"api/v1/agents/{agentId}/telemetry", sample, Signal9Json.Options, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<AgentCommandDto>> GetPendingCommandsAsync(Guid agentId, CancellationToken cancellationToken)
+    /// <summary>Lists the agent's pending commands, oldest first, up to one page.</summary>
+    public async Task<IReadOnlyList<CommandDto>> GetPendingCommandsAsync(Guid agentId, CancellationToken cancellationToken)
     {
-        var page = await http.GetFromJsonAsync<PagedResult<AgentCommandDto>>(
-            $"api/agents/{agentId}/commands?status={CommandStatus.Pending}&pageSize=100", Signal9Json.Options, cancellationToken);
+        var page = await http.GetFromJsonAsync<PagedResult<CommandDto>>(
+            $"api/v1/agents/{agentId}/pending-commands?pageSize=100", Signal9Json.Options, cancellationToken);
         return page?.Items ?? [];
     }
 
-    public async Task SendCommandResultAsync(Guid agentId, Guid commandId, CommandResultRequest result, CancellationToken cancellationToken)
+    /// <summary>Reports a command's result at its canonical URL.</summary>
+    public async Task SendCommandResultAsync(CommandDto command, CommandResultRequest result, CancellationToken cancellationToken)
     {
-        using var response = await http.PutAsJsonAsync($"api/agents/{agentId}/commands/{commandId}/result", result, Signal9Json.Options, cancellationToken);
+        using var response = await http.PutAsJsonAsync($"{command.Url.TrimStart('/')}/result", result, Signal9Json.Options, cancellationToken);
         // 409 means the command was cancelled or already reported; nothing more to do.
         if (response.StatusCode != HttpStatusCode.Conflict)
             await EnsureSuccessAsync(response, cancellationToken);

@@ -1,0 +1,212 @@
+@page "/devices"
+@attribute [Authorize]
+@implements IAsyncDisposable
+@inject Signal9ApiClient Api
+@inject DashboardHubConnection Hub
+@inject IDialogService Dialogs
+
+<PageTitle>Devices - Signal9</PageTitle>
+
+<div class="page-header">
+    <FluentText As="TextTag.H1" Size="TextSize.Size800">Devices</FluentText>
+    <FluentSpacer />
+    <span id="live-status" class="live-status">
+        <FluentBadge Appearance="BadgeAppearance.Tint" Color="@LiveColor">@LiveText</FluentBadge>
+    </span>
+</div>
+<p>Machines enroll themselves when the agent is installed with a tenant's enrollment token.</p>
+
+<ProblemBar Error="error" />
+@if (notice is not null)
+{
+    <FluentMessageBar Class="notice-bar" Intent="MessageBarIntent.Success">@notice</FluentMessageBar>
+}
+
+<form class="filters" @onsubmit="ApplyFiltersAsync">
+    <FluentTextInput Id="device-search" Label="Search" Placeholder="Machine name or IP address" @bind-Value="search" />
+    <FluentSelect Id="device-status" TOption="string" TValue="string" Label="Status" @bind-Value="statusFilter">
+        <FluentOption TValue="string" Value="@string.Empty">Any status</FluentOption>
+        @foreach (var status in Enum.GetValues<DeviceStatus>())
+        {
+            <FluentOption TValue="string" Value="@status.ToString()">@status</FluentOption>
+        }
+    </FluentSelect>
+    <FluentButton Id="apply-filters" Type="ButtonType.Submit" Appearance="ButtonAppearance.Primary">Apply</FluentButton>
+</form>
+
+<FluentDataGrid Items="@devices.AsQueryable()" TGridItem="DeviceDto" Loading="loading" ItemKey="@(d => d.Id)">
+    <PropertyColumn Title="Device" Property="@(d => d.MachineName)" />
+    <TemplateColumn Title="Status">
+        <FluentBadge Appearance="BadgeAppearance.Tint" Color="@(context.Status == DeviceStatus.Online ? BadgeColor.Success : BadgeColor.Subtle)">@context.Status</FluentBadge>
+        @if (context.MaintenanceMode)
+        {
+            <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Warning">Maintenance</FluentBadge>
+        }
+    </TemplateColumn>
+    <PropertyColumn Title="Operating system" Property="@(d => d.OperatingSystem)" />
+    <PropertyColumn Title="IP address" Property="@(d => d.IpAddress)" />
+    <PropertyColumn Title="Group" Property="@(d => d.GroupName)" />
+    <TemplateColumn Title="Tags">@string.Join(", ", context.Tags)</TemplateColumn>
+    <TemplateColumn Title="Last seen">@context.LastSeenAt?.ToLocalTime().ToString("g")</TemplateColumn>
+    <TemplateColumn Title="Actions" Align="DataGridCellAlignment.End">
+        <FluentButton Id="@($"edit-{context.Id}")" IconOnly="true" Title="Edit" Appearance="ButtonAppearance.Subtle"
+                      IconStart="@(new Icons.Regular.Size20.Edit())" OnClick="@(() => EditAsync(context))" />
+        <FluentButton Id="@($"collect-{context.Id}")" IconOnly="true" Title="Collect system info" Appearance="ButtonAppearance.Subtle"
+                      IconStart="@(new Icons.Regular.Size20.Info())" OnClick="@(() => QueueAsync(context, CommandType.CollectSystemInfo))" />
+        <FluentButton Id="@($"restart-{context.Id}")" IconOnly="true" Title="Restart machine" Appearance="ButtonAppearance.Subtle"
+                      IconStart="@(new Icons.Regular.Size20.ArrowClockwise())" OnClick="@(() => QueueAsync(context, CommandType.RestartMachine))" />
+        <FluentButton Id="@($"delete-{context.Id}")" IconOnly="true" Title="Delete" Appearance="ButtonAppearance.Subtle"
+                      IconStart="@(new Icons.Regular.Size20.Delete())" OnClick="@(() => DeleteAsync(context))" />
+    </TemplateColumn>
+</FluentDataGrid>
+<FluentPaginator State="pagination" CurrentPageIndexChanged="LoadAsync" />
+
+@code {
+    private const int PageSize = 25;
+
+    private readonly PaginationState pagination = new() { ItemsPerPage = PageSize };
+    private List<DeviceDto> devices = [];
+    private bool loading = true;
+    private ApiException? error;
+    private string? notice;
+
+    private string? search;
+    private string statusFilter = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Hub.OnDeviceChanged += OnDeviceChanged;
+        Hub.OnDeviceDeleted += OnDeviceDeleted;
+        Hub.OnStatusChanged += OnLiveStatusChanged;
+        _ = Hub.StartAsync();
+        await LoadAsync(0);
+    }
+
+    private async Task LoadAsync(int pageIndex)
+    {
+        loading = true;
+        try
+        {
+            DeviceStatus? status = Enum.TryParse<DeviceStatus>(statusFilter, out var parsed) ? parsed : null;
+            var page = await Api.ListDevicesAsync(pageIndex + 1, PageSize, status, search);
+            devices = [.. page.Items];
+            await pagination.SetTotalItemCountAsync(page.TotalCount);
+            error = null;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task ApplyFiltersAsync()
+    {
+        await pagination.SetCurrentPageIndexAsync(0);
+        await LoadAsync(0);
+    }
+
+    private async Task EditAsync(DeviceDto device)
+    {
+        var result = await Dialogs.ShowDialogAsync<DeviceEditDialog>(options =>
+        {
+            options.Header.Title = $"Edit {device.MachineName}";
+            options.Parameters[nameof(DeviceEditDialog.Device)] = device;
+        });
+        if (result.Cancelled || result.Value is not UpdateDeviceRequest request)
+            return;
+
+        await RunAsync(async () => Replace(await Api.UpdateDeviceAsync(device.Id, request)), $"Saved {device.MachineName}.");
+    }
+
+    private async Task QueueAsync(DeviceDto device, CommandType type)
+    {
+        if (type == CommandType.RestartMachine)
+        {
+            var confirm = await Dialogs.ShowConfirmationAsync(
+                $"Restart {device.MachineName}? Anyone using it will lose unsaved work.", "Restart machine", "Restart", "Cancel");
+            if (confirm.Cancelled)
+                return;
+        }
+
+        await RunAsync(() => Api.QueueCommandAsync(device.Id, new CreateCommandRequest { Type = type }),
+            $"Queued {type} for {device.MachineName}.");
+    }
+
+    private async Task DeleteAsync(DeviceDto device)
+    {
+        var confirm = await Dialogs.ShowConfirmationAsync(
+            $"Delete {device.MachineName} with its agents, commands and telemetry? This can't be undone.", "Delete device", "Delete", "Cancel");
+        if (confirm.Cancelled)
+            return;
+
+        await RunAsync(async () =>
+        {
+            await Api.DeleteDeviceAsync(device.Id);
+            await LoadAsync(pagination.CurrentPageIndex);
+        }, $"Deleted {device.MachineName}.");
+    }
+
+    /// <summary>Runs a change, then says how it went.</summary>
+    private async Task RunAsync(Func<Task> change, string done)
+    {
+        notice = null;
+        try
+        {
+            await change();
+            error = null;
+            notice = done;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+    }
+
+    private void Replace(DeviceDto device)
+    {
+        var index = devices.FindIndex(d => d.Id == device.Id);
+        if (index >= 0)
+            devices[index] = device;
+    }
+
+    private Task OnDeviceChanged(DeviceDto device) => InvokeAsync(() =>
+    {
+        Replace(device);
+        StateHasChanged();
+    });
+
+    private Task OnDeviceDeleted(Guid deviceId) => InvokeAsync(() =>
+    {
+        if (devices.RemoveAll(d => d.Id == deviceId) > 0)
+            StateHasChanged();
+    });
+
+    private Task OnLiveStatusChanged() => InvokeAsync(StateHasChanged);
+
+    private string LiveText => Hub.Status switch
+    {
+        LiveStatus.Connected => "Live",
+        LiveStatus.Unavailable => "Live updates unavailable",
+        LiveStatus.Connecting => "Connecting…",
+        _ => "Not live",
+    };
+
+    private BadgeColor LiveColor => Hub.Status switch
+    {
+        LiveStatus.Connected => BadgeColor.Success,
+        LiveStatus.Unavailable => BadgeColor.Warning,
+        _ => BadgeColor.Subtle,
+    };
+
+    public ValueTask DisposeAsync()
+    {
+        Hub.OnDeviceChanged -= OnDeviceChanged;
+        Hub.OnDeviceDeleted -= OnDeviceDeleted;
+        Hub.OnStatusChanged -= OnLiveStatusChanged;
+        return ValueTask.CompletedTask;
+    }
+}

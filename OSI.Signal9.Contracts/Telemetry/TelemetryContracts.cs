@@ -9,7 +9,7 @@ public sealed record DiskUsageDto(
 
 public sealed record TelemetrySampleDto(
     Guid Id,
-    Guid AgentId,
+    Guid DeviceId,
     DateTimeOffset CollectedAt,
     double? CpuPercent,
     long? MemoryUsedMb,

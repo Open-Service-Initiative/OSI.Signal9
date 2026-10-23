@@ -1,0 +1,29 @@
+@* The dashboard's document. Everything interactive runs in WebAssembly; nothing is prerendered on the server. The
+   import map is the page's only inline script, and the Content Security Policy allows it by hash. *@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <title>Signal9</title>
+    <link rel="stylesheet" href="@Assets["_content/Microsoft.FluentUI.AspNetCore.Components/Microsoft.FluentUI.AspNetCore.Components.bundle.scp.css"]" />
+    <link rel="stylesheet" href="@Assets["css/app.css"]" />
+    <link rel="stylesheet" href="@Assets["OSI.Signal9.Web.styles.css"]" />
+    @if (ImportMap is not null)
+    {
+        <script type="importmap">@((MarkupString)ImportMap)</script>
+    }
+</head>
+<body>
+    <Routes @rendermode="new InteractiveWebAssemblyRenderMode(prerender: false)" />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+</body>
+</html>
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    private string? ImportMap => BrowserHardening.ImportMap(HttpContext);
+}

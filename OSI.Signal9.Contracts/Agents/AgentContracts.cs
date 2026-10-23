@@ -3,44 +3,28 @@ using System.ComponentModel.DataAnnotations;
 namespace OSI.Signal9.Contracts.Agents;
 
 /// <summary>
-/// Derived by the API: Maintenance when flagged, otherwise Online/Offline from the last heartbeat.
+/// One installation of the agent software on a device.
 /// </summary>
-public enum AgentStatus
-{
-    Online = 0,
-    Offline = 1,
-    Maintenance = 2
-}
-
+/// <param name="IsActive">Whether this is its device's active agent. A replaced agent is no longer active.</param>
 public sealed record AgentDto(
     Guid Id,
+    Guid DeviceId,
     Guid TenantId,
-    string MachineName,
-    string? Domain,
-    string OperatingSystem,
-    string? OsVersion,
-    string? Architecture,
-    string? ProcessorName,
-    int ProcessorCores,
-    long TotalMemoryMb,
-    string? IpAddress,
-    string? MacAddress,
     string? AgentVersion,
-    string? GroupName,
-    IReadOnlyList<string> Tags,
-    bool InMaintenance,
-    AgentStatus Status,
-    DateTimeOffset FirstSeenAt,
+    bool IsActive,
+    DateTimeOffset EnrolledAt,
     DateTimeOffset LastSeenAt);
 
 /// <summary>
-/// Sent by an agent to enroll itself (POST /api/agents). Re-sending for the same tenant and
-/// machine name updates the existing agent instead of creating a duplicate.
+/// Sent by an agent to register itself (POST /api/v1/agents). Each registration is a new agent, which becomes the
+/// active agent of the tenant's device with the same machine name, or of a new device.
 /// </summary>
+// TODO(enrollment): replaced wholesale by enrollment tokens (#128) and identification (#131), which never match machine names.
 public sealed record RegisterAgentRequest
 {
-    [Required, StringLength(32, MinimumLength = 2)]
-    public string TenantCode { get; init; } = string.Empty;
+    /// <summary>The tenant to enroll in, until enrollment tokens replace it.</summary>
+    [Required]
+    public Guid TenantId { get; init; }
 
     [Required, StringLength(255, MinimumLength = 1)]
     public string MachineName { get; init; } = string.Empty;
@@ -77,22 +61,7 @@ public sealed record RegisterAgentRequest
 }
 
 /// <summary>
-/// Full replacement of the admin-managed fields of an agent (PUT semantics).
-/// Hardware and OS facts are owned by the agent and change only through registration.
-/// </summary>
-public sealed record UpdateAgentRequest
-{
-    [StringLength(100)]
-    public string? GroupName { get; init; }
-
-    [MaxLength(50)]
-    public IReadOnlyList<string> Tags { get; init; } = [];
-
-    public bool InMaintenance { get; init; }
-}
-
-/// <summary>
-/// Body of PUT /api/agents/{agentId}/heartbeat. All fields are optional facts that may have changed.
+/// Body of PUT /api/v1/agents/{agentId}/heartbeat. All fields are optional facts that may have changed.
 /// </summary>
 public sealed record HeartbeatRequest
 {
@@ -102,3 +71,7 @@ public sealed record HeartbeatRequest
     [StringLength(50)]
     public string? AgentVersion { get; init; }
 }
+
+/// <summary>Response to a heartbeat.</summary>
+/// <param name="HasPendingWork">Whether work is waiting for the agent, which it then fetches from its pending-commands list.</param>
+public sealed record HeartbeatResponse(bool HasPendingWork);

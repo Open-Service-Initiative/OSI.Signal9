@@ -1,19 +1,23 @@
-<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <!-- The web host: serves the dashboard and is its backend-for-frontend (ADR-0003). -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UserSecretsId>osi-signal9-web</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\OSI.Signal9.Contracts\OSI.Signal9.Contracts.csproj" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
+    <PackageReference Include="Yarp.ReverseProxy" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" PrivateAssets="all" />
-    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
+    <ProjectReference Include="..\OSI.Signal9.Server\OSI.Signal9.Server.csproj" />
+    <ProjectReference Include="..\OSI.Signal9.ServiceDefaults\OSI.Signal9.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\OSI.Signal9.Web.Client\OSI.Signal9.Web.Client.csproj" />
   </ItemGroup>
 
 </Project>
