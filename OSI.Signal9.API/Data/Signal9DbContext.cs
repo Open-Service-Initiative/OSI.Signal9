@@ -13,8 +13,6 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options)
     {
         modelBuilder.Entity<Tenant>(tenant =>
         {
-            tenant.Property(t => t.Code).HasMaxLength(32);
-            tenant.HasIndex(t => t.Code).IsUnique();
             tenant.Property(t => t.Name).HasMaxLength(200);
             tenant.Property(t => t.Description).HasMaxLength(1000);
             tenant.Property(t => t.ContactEmail).HasMaxLength(255);

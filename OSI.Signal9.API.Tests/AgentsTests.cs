@@ -27,10 +27,10 @@ public sealed class AgentsTests : IDisposable
     [TestMethod]
     public async Task Register_creates_agent_then_reregistering_returns_the_same_agent()
     {
-        await _factory.CreateTenantAsync(_client, "contoso");
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
 
-        var first = await Signal9ApiFactory.RegisterAsync(_client, "contoso", "PC01");
-        var second = await Signal9ApiFactory.RegisterAsync(_client, "contoso", "PC01");
+        var first = await Signal9ApiFactory.RegisterAsync(_client, tenant.Id, "PC01");
+        var second = await Signal9ApiFactory.RegisterAsync(_client, tenant.Id, "PC01");
 
         Assert.AreEqual(HttpStatusCode.Created, first.StatusCode);
         Assert.IsNotNull(first.Headers.Location);
@@ -43,7 +43,7 @@ public sealed class AgentsTests : IDisposable
     [TestMethod]
     public async Task Register_with_unknown_tenant_returns_400()
     {
-        var response = await Signal9ApiFactory.RegisterAsync(_client, "nobody", "PC01");
+        var response = await Signal9ApiFactory.RegisterAsync(_client, Guid.NewGuid(), "PC01");
 
         Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -51,10 +51,10 @@ public sealed class AgentsTests : IDisposable
     [TestMethod]
     public async Task Register_beyond_tenant_limit_returns_409()
     {
-        await _factory.CreateTenantAsync(_client, "contoso", maxAgents: 1);
-        await Signal9ApiFactory.RegisterAsync(_client, "contoso", "PC01");
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso", maxAgents: 1);
+        await Signal9ApiFactory.RegisterAsync(_client, tenant.Id, "PC01");
 
-        var response = await Signal9ApiFactory.RegisterAsync(_client, "contoso", "PC02");
+        var response = await Signal9ApiFactory.RegisterAsync(_client, tenant.Id, "PC02");
 
         Assert.AreEqual(HttpStatusCode.Conflict, response.StatusCode);
     }
@@ -62,7 +62,6 @@ public sealed class AgentsTests : IDisposable
     [TestMethod]
     public async Task Status_goes_offline_without_heartbeats_and_back_online_with_one()
     {
-        await _factory.CreateTenantAsync(_client, "contoso");
         var agent = await RegisterAgentAsync("PC01");
         Assert.AreEqual(AgentStatus.Online, agent.Status);
 
@@ -87,7 +86,6 @@ public sealed class AgentsTests : IDisposable
     [TestMethod]
     public async Task Update_sets_group_tags_and_maintenance()
     {
-        await _factory.CreateTenantAsync(_client, "contoso");
         var agent = await RegisterAgentAsync("PC01");
 
         var response = await _client.PutAsJsonAsync($"api/agents/{agent.Id}",
@@ -103,7 +101,6 @@ public sealed class AgentsTests : IDisposable
     [TestMethod]
     public async Task Delete_removes_agent()
     {
-        await _factory.CreateTenantAsync(_client, "contoso");
         var agent = await RegisterAgentAsync("PC01");
 
         var deleted = await _client.DeleteAsync($"api/agents/{agent.Id}", Ct);
@@ -116,7 +113,6 @@ public sealed class AgentsTests : IDisposable
     [TestMethod]
     public async Task Command_lifecycle()
     {
-        await _factory.CreateTenantAsync(_client, "contoso");
         var agent = await RegisterAgentAsync("PC01");
 
         var created = await _client.PostAsJsonAsync($"api/agents/{agent.Id}/commands",
@@ -143,7 +139,6 @@ public sealed class AgentsTests : IDisposable
     [TestMethod]
     public async Task Pending_command_can_be_cancelled()
     {
-        await _factory.CreateTenantAsync(_client, "contoso");
         var agent = await RegisterAgentAsync("PC01");
         var created = await _client.PostAsJsonAsync($"api/agents/{agent.Id}/commands",
             new CreateAgentCommandRequest { Type = CommandType.RunScript }, Signal9Json.Options, Ct);
@@ -160,7 +155,6 @@ public sealed class AgentsTests : IDisposable
     [TestMethod]
     public async Task Telemetry_is_stored_newest_first_and_counts_as_a_heartbeat()
     {
-        await _factory.CreateTenantAsync(_client, "contoso");
         var agent = await RegisterAgentAsync("PC01");
         _factory.Time.Advance(TimeSpan.FromMinutes(5));
 
@@ -186,7 +180,8 @@ public sealed class AgentsTests : IDisposable
 
     private async Task<AgentDto> RegisterAgentAsync(string machineName)
     {
-        var response = await Signal9ApiFactory.RegisterAsync(_client, "contoso", machineName);
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
+        var response = await Signal9ApiFactory.RegisterAsync(_client, tenant.Id, machineName);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options, Ct))!;
     }

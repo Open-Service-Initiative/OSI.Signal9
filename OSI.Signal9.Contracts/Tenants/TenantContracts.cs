@@ -22,7 +22,6 @@ public enum SubscriptionPlan
 public sealed record TenantDto(
     Guid Id,
     Guid? ParentTenantId,
-    string Code,
     string Name,
     string? Description,
     string ContactEmail,
@@ -36,11 +35,6 @@ public sealed record TenantDto(
 
 public sealed record CreateTenantRequest
 {
-    /// <summary>Short, unique, URL-safe code agents use to enroll. Immutable after creation.</summary>
-    [Required, StringLength(32, MinimumLength = 2), RegularExpression("^[a-z0-9][a-z0-9-]*$",
-        ErrorMessage = "Code may contain lowercase letters, digits and hyphens.")]
-    public string Code { get; init; } = string.Empty;
-
     [Required, StringLength(200, MinimumLength = 1)]
     public string Name { get; init; } = string.Empty;
 

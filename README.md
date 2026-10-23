@@ -6,7 +6,7 @@ Remote monitoring and management (RMM) for MSPs. Pre-alpha: not ready for produc
 
 | Project | What it is |
 | --- | --- |
-| `OSI.Signal9.API` | ASP.NET Core REST API and SignalR hubs. EF Core on Azure SQL. Deployed to Azure Container Apps. |
+| `OSI.Signal9.API` | ASP.NET Core REST API and SignalR hubs. EF Core on PostgreSQL. Deployed to Azure Container Apps. |
 | `OSI.Signal9.Web` | Blazor WebAssembly dashboard. Deployed to Azure Static Web Apps. |
 | `OSI.Signal9.Agent` | Windows Service installed on managed machines. |
 | `OSI.Signal9.Contracts` | Request/response types shared by the API, Web and Agent. |
@@ -16,18 +16,25 @@ Remote monitoring and management (RMM) for MSPs. Pre-alpha: not ready for produc
 
 ## Running locally
 
-Prerequisites: .NET 10 SDK and Docker (for the SQL Server container).
+Prerequisites: .NET 10 SDK and Docker (for the PostgreSQL container).
 
 ```sh
 dotnet run --project OSI.Signal9.AppHost
 ```
 
-This starts SQL Server, the API (`https://localhost:7201`, migrations applied on startup) and the dashboard (`https://localhost:7001`). The OpenAPI document is at `https://localhost:7201/openapi/v1.json`, and `OSI.Signal9.API/OSI.Signal9.API.http` has sample requests.
+This starts PostgreSQL (a `postgres:18` container), the API (`https://localhost:7201`) and the dashboard (`https://localhost:7001`). The OpenAPI document is at `https://localhost:7201/openapi/v1.json`, and `OSI.Signal9.API/OSI.Signal9.API.http` has sample requests.
 
-To enroll a machine, create a tenant in the dashboard, then run the agent with its code:
+The API never applies migrations at startup. The first time, and after pulling new migrations, copy the `signal9` database's connection string from the Aspire dashboard and apply them:
 
 ```sh
-dotnet run --project OSI.Signal9.Agent -- --Agent:TenantCode=<code>
+dotnet tool restore
+dotnet ef database update --project OSI.Signal9.API --connection "<connection string>"
+```
+
+To enroll a machine, create a tenant in the dashboard, then run the agent with the tenant's ID:
+
+```sh
+dotnet run --project OSI.Signal9.Agent -- --Agent:TenantId=<tenant id>
 ```
 
 ## API
@@ -56,6 +63,8 @@ dotnet test --solution OSI.Signal9.slnx
 dotnet tool restore
 dotnet ef migrations add <Name> --project OSI.Signal9.API --output-dir Data/Migrations
 ```
+
+The tests need Docker: they start one PostgreSQL container (Testcontainers) and give each test its own database.
 
 Package versions are managed centrally in `Directory.Packages.props`. CI treats warnings, including vulnerable packages, as errors.
 

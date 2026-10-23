@@ -2,9 +2,9 @@ var builder = DistributedApplication.CreateBuilder(args);
 
 // Local development topology. The Agent is not orchestrated here: it runs as a Windows Service on managed machines.
 
-// Azure SQL when published; a SQL Server container locally.
-var database = builder.AddAzureSqlServer("sql")
-    .RunAsContainer(container => container.WithDataVolume())
+// Azure Database for PostgreSQL Flexible Server when published; a postgres:18 container locally (ADR-0011).
+var database = builder.AddAzurePostgresFlexibleServer("postgres")
+    .RunAsContainer(container => container.WithImageTag("18").WithDataVolume())
     .AddDatabase("signal9");
 
 var api = builder.AddProject<Projects.OSI_Signal9_API>("api")

@@ -56,10 +56,10 @@ public sealed class AgentsController(
     }
 
     /// <summary>
-    /// Enrolls an agent in the tenant identified by <see cref="RegisterAgentRequest.TenantCode"/>.
+    /// Enrolls an agent in the tenant identified by <see cref="RegisterAgentRequest.TenantId"/>.
     /// Returns 201 for a new agent, or 200 when the machine was already enrolled and its facts were refreshed.
     /// </summary>
-    // TODO(auth): replace the tenant code with a per-tenant enrollment secret and issue the agent a credential.
+    // TODO(auth): replace the tenant ID with an enrollment token and issue the agent a credential.
     [HttpPost]
     [Consumes("application/json")]
     [ProducesResponseType<AgentDto>(StatusCodes.Status201Created)]
@@ -68,10 +68,10 @@ public sealed class AgentsController(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<AgentDto>> Register(RegisterAgentRequest request, CancellationToken cancellationToken)
     {
-        var tenant = await db.Tenants.AsNoTracking().SingleOrDefaultAsync(t => t.Code == request.TenantCode, cancellationToken);
+        var tenant = await db.Tenants.AsNoTracking().SingleOrDefaultAsync(t => t.Id == request.TenantId, cancellationToken);
         if (tenant is null || tenant.Status != TenantStatus.Active)
         {
-            ModelState.AddModelError(nameof(request.TenantCode), "No active tenant has this code.");
+            ModelState.AddModelError(nameof(request.TenantId), "No active tenant has this ID.");
             return ValidationProblem(ModelState);
         }
 
@@ -85,7 +85,7 @@ public sealed class AgentsController(
             var enrolled = await db.Agents.CountAsync(a => a.TenantId == tenant.Id, cancellationToken);
             if (enrolled >= tenant.MaxAgents)
                 return Problem(statusCode: StatusCodes.Status409Conflict, title: "Agent limit reached",
-                    detail: $"Tenant '{tenant.Code}' allows at most {tenant.MaxAgents} agents.");
+                    detail: $"Tenant '{tenant.Name}' allows at most {tenant.MaxAgents} agents.");
 
             agent = new Agent
             {

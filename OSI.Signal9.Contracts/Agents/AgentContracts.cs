@@ -39,8 +39,9 @@ public sealed record AgentDto(
 /// </summary>
 public sealed record RegisterAgentRequest
 {
-    [Required, StringLength(32, MinimumLength = 2)]
-    public string TenantCode { get; init; } = string.Empty;
+    /// <summary>The tenant to enroll in, until enrollment tokens replace it.</summary>
+    [Required]
+    public Guid TenantId { get; init; }
 
     [Required, StringLength(255, MinimumLength = 1)]
     public string MachineName { get; init; } = string.Empty;

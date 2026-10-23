@@ -5,7 +5,6 @@ POST {{api}}/api/tenants
 Content-Type: application/json
 
 {
-  "code": "contoso",
   "name": "Contoso",
   "contactEmail": "it@contoso.example",
   "maxAgents": 25
@@ -19,7 +18,7 @@ POST {{api}}/api/agents
 Content-Type: application/json
 
 {
-  "tenantCode": "contoso",
+  "tenantId": "<id of the tenant created above>",
   "machineName": "CONTOSO-PC01",
   "operatingSystem": "Windows 11 Pro",
   "processorCores": 8,

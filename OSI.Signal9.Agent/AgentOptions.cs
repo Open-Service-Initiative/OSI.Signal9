@@ -10,9 +10,9 @@ public sealed class AgentOptions
     [Required]
     public Uri ApiBaseUrl { get; set; } = null!;
 
-    /// <summary>Code of the tenant this machine enrolls into.</summary>
-    [Required, MinLength(2)]
-    public string TenantCode { get; set; } = string.Empty;
+    /// <summary>ID of the tenant this machine enrolls into, until enrollment tokens replace it.</summary>
+    [Required]
+    public Guid? TenantId { get; set; }
 
     [Range(typeof(TimeSpan), "00:00:05", "01:00:00")]
     public TimeSpan HeartbeatInterval { get; set; } = TimeSpan.FromSeconds(30);

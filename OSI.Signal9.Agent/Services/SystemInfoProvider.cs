@@ -21,7 +21,7 @@ public sealed class SystemInfoProvider(IOptions<AgentOptions> options)
         var (ipAddress, macAddress) = GetPrimaryNetworkAddress();
         return new RegisterAgentRequest
         {
-            TenantCode = options.Value.TenantCode,
+            TenantId = options.Value.TenantId!.Value,
             MachineName = Environment.MachineName,
             Domain = OperatingSystem.IsWindows() ? Environment.UserDomainName : null,
             OperatingSystem = RuntimeInformation.OSDescription,

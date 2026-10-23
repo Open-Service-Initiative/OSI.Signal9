@@ -31,7 +31,7 @@
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
                         <thead>
-                            <tr><th>Name</th><th>Code</th><th>Parent</th><th>Plan</th><th>Agents</th><th>Status</th><th>Contact</th><th class="text-end">Actions</th></tr>
+                            <tr><th>Name</th><th>ID</th><th>Parent</th><th>Plan</th><th>Agents</th><th>Status</th><th>Contact</th><th class="text-end">Actions</th></tr>
                         </thead>
                         <tbody>
                             @foreach (var tenant in tenants)
@@ -41,7 +41,7 @@
                                         <div class="fw-semibold">@tenant.Name</div>
                                         <small class="text-muted">@tenant.Description</small>
                                     </td>
-                                    <td><code>@tenant.Code</code></td>
+                                    <td><code>@tenant.Id</code></td>
                                     <td>@NameOf(tenant.ParentTenantId)</td>
                                     <td>@tenant.Plan</td>
                                     <td>@tenant.AgentCount / @tenant.MaxAgents</td>
@@ -75,15 +75,10 @@
                     <div class="modal-body">
                         <ErrorAlert @bind-Message="formError" />
                         <div class="row g-3">
-                            <div class="col-md-8">
+                            <div class="col-12">
                                 <label class="form-label" for="name">Name</label>
                                 <InputText id="name" class="form-control" @bind-Value="form.Name" />
                                 <ValidationMessage For="() => form.Name" />
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label" for="code">Code</label>
-                                <InputText id="code" class="form-control" @bind-Value="form.Code" disabled="@(editing is not null)" />
-                                <ValidationMessage For="() => form.Code" />
                             </div>
                             <div class="col-12">
                                 <label class="form-label" for="description">Description</label>
@@ -188,7 +183,6 @@
         editing = tenant;
         form = new TenantForm
         {
-            Code = tenant.Code,
             Name = tenant.Name,
             Description = tenant.Description,
             ContactEmail = tenant.ContactEmail,
@@ -212,7 +206,6 @@
             {
                 await Api.CreateTenantAsync(new CreateTenantRequest
                 {
-                    Code = form.Code.Trim().ToLowerInvariant(),
                     Name = form.Name,
                     Description = form.Description,
                     ContactEmail = form.ContactEmail,
@@ -267,9 +260,6 @@
 
     private sealed class TenantForm
     {
-        [Required, StringLength(32, MinimumLength = 2), RegularExpression("^[a-zA-Z0-9][a-zA-Z0-9-]*$", ErrorMessage = "Use letters, digits and hyphens.")]
-        public string Code { get; set; } = string.Empty;
-
         [Required, StringLength(200)]
         public string Name { get; set; } = string.Empty;
 

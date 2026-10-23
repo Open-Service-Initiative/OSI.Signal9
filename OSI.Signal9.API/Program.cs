@@ -9,9 +9,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
+// Migrations never run here; see README.md for how to apply them.
 builder.Services.AddDbContext<Signal9DbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("signal9")));
-builder.EnrichSqlServerDbContext<Signal9DbContext>();
+    options.UseNpgsql(builder.Configuration.GetConnectionString("signal9")));
+builder.EnrichAzureNpgsqlDbContext<Signal9DbContext>();
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddOptions<AgentPresenceOptions>().BindConfiguration(AgentPresenceOptions.SectionName);
@@ -41,9 +42,6 @@ app.UseStatusCodePages();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
-
-    await using var scope = app.Services.CreateAsyncScope();
-    await scope.ServiceProvider.GetRequiredService<Signal9DbContext>().Database.MigrateAsync();
 }
 
 app.UseCors();

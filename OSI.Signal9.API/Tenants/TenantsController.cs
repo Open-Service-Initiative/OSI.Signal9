@@ -53,10 +53,6 @@ public sealed class TenantsController(Signal9DbContext db, TimeProvider time) : 
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TenantDto>> Create(CreateTenantRequest request, CancellationToken cancellationToken)
     {
-        if (await db.Tenants.AnyAsync(t => t.Code == request.Code, cancellationToken))
-            return Problem(statusCode: StatusCodes.Status409Conflict, title: "Tenant code already in use",
-                detail: $"A tenant with code '{request.Code}' already exists.");
-
         if (request.ParentTenantId is { } parentId)
         {
             var parent = await db.Tenants.AsNoTracking().SingleOrDefaultAsync(t => t.Id == parentId, cancellationToken);
@@ -73,7 +69,6 @@ public sealed class TenantsController(Signal9DbContext db, TimeProvider time) : 
         {
             Id = Guid.CreateVersion7(),
             ParentTenantId = request.ParentTenantId,
-            Code = request.Code,
             Name = request.Name,
             Description = request.Description,
             ContactEmail = request.ContactEmail,

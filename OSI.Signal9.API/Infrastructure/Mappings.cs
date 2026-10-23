@@ -12,7 +12,6 @@ internal static class Mappings
     public static TenantDto ToDto(this Tenant tenant, int agentCount) => new(
         tenant.Id,
         tenant.ParentTenantId,
-        tenant.Code,
         tenant.Name,
         tenant.Description,
         tenant.ContactEmail,

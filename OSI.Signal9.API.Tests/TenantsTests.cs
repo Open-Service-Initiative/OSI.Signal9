@@ -27,7 +27,7 @@ public sealed class TenantsTests : IDisposable
     public async Task Create_returns_201_with_location_of_the_new_tenant()
     {
         var response = await _client.PostAsJsonAsync("api/tenants",
-            new CreateTenantRequest { Code = "contoso", Name = "Contoso", ContactEmail = "it@contoso.example" }, Signal9Json.Options,
+            new CreateTenantRequest { Name = "Contoso", ContactEmail = "it@contoso.example" }, Signal9Json.Options,
             Ct);
 
         Assert.AreEqual(HttpStatusCode.Created, response.StatusCode);
@@ -40,42 +40,29 @@ public sealed class TenantsTests : IDisposable
     }
 
     [TestMethod]
-    public async Task Create_with_duplicate_code_returns_409()
-    {
-        await _factory.CreateTenantAsync(_client, "contoso");
-
-        var response = await _client.PostAsJsonAsync("api/tenants",
-            new CreateTenantRequest { Code = "contoso", Name = "Other", ContactEmail = "a@b.example" }, Signal9Json.Options,
-            Ct);
-
-        Assert.AreEqual(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.AreEqual("application/problem+json", response.Content.Headers.ContentType?.MediaType);
-    }
-
-    [TestMethod]
     public async Task Create_with_invalid_body_returns_400_validation_problem()
     {
         var response = await _client.PostAsJsonAsync("api/tenants",
-            new CreateTenantRequest { Code = "Not Valid!", Name = "", ContactEmail = "nope" }, Signal9Json.Options,
+            new CreateTenantRequest { Name = "", ContactEmail = "nope" }, Signal9Json.Options,
             Ct);
 
         Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
         var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>(Ct);
-        Assert.Contains("Code", problem!.Errors.Keys);
+        Assert.Contains("Name", problem!.Errors.Keys);
         Assert.Contains("ContactEmail", problem.Errors.Keys);
     }
 
     [TestMethod]
     public async Task Clients_can_only_nest_one_level()
     {
-        var msp = await _factory.CreateTenantAsync(_client, "msp");
+        var msp = await _factory.CreateTenantAsync(_client, "MSP");
         var client = await _client.PostAsJsonAsync("api/tenants",
-            new CreateTenantRequest { Code = "client", Name = "Client", ContactEmail = "a@b.example", ParentTenantId = msp.Id },
+            new CreateTenantRequest { Name = "Client", ContactEmail = "a@b.example", ParentTenantId = msp.Id },
             Signal9Json.Options, Ct);
         var clientTenant = await client.Content.ReadFromJsonAsync<TenantDto>(Signal9Json.Options, Ct);
 
         var grandchild = await _client.PostAsJsonAsync("api/tenants",
-            new CreateTenantRequest { Code = "grandchild", Name = "Grandchild", ContactEmail = "a@b.example", ParentTenantId = clientTenant!.Id },
+            new CreateTenantRequest { Name = "Grandchild", ContactEmail = "a@b.example", ParentTenantId = clientTenant!.Id },
             Signal9Json.Options, Ct);
 
         Assert.AreEqual(HttpStatusCode.Created, client.StatusCode);
@@ -85,7 +72,7 @@ public sealed class TenantsTests : IDisposable
     [TestMethod]
     public async Task Update_replaces_mutable_fields()
     {
-        var tenant = await _factory.CreateTenantAsync(_client, "contoso");
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
 
         var response = await _client.PutAsJsonAsync($"api/tenants/{tenant.Id}",
             new UpdateTenantRequest { Name = "Contoso Ltd", ContactEmail = "ops@contoso.example", Plan = SubscriptionPlan.Enterprise, MaxAgents = 500, Status = TenantStatus.Suspended },
@@ -93,13 +80,13 @@ public sealed class TenantsTests : IDisposable
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         var updated = await response.Content.ReadFromJsonAsync<TenantDto>(Signal9Json.Options, Ct);
-        Assert.AreEqual(("Contoso Ltd", "contoso", SubscriptionPlan.Enterprise, TenantStatus.Suspended), (updated!.Name, updated.Code, updated.Plan, updated.Status));
+        Assert.AreEqual(("Contoso Ltd", SubscriptionPlan.Enterprise, TenantStatus.Suspended), (updated!.Name, updated.Plan, updated.Status));
     }
 
     [TestMethod]
     public async Task Delete_returns_204_then_404()
     {
-        var tenant = await _factory.CreateTenantAsync(_client, "contoso");
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
 
         var deleted = await _client.DeleteAsync($"api/tenants/{tenant.Id}", Ct);
         var fetched = await _client.GetAsync($"api/tenants/{tenant.Id}", Ct);
@@ -111,8 +98,8 @@ public sealed class TenantsTests : IDisposable
     [TestMethod]
     public async Task Delete_tenant_with_agents_returns_409()
     {
-        var tenant = await _factory.CreateTenantAsync(_client, "contoso");
-        await Signal9ApiFactory.RegisterAsync(_client, "contoso", "PC01");
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
+        await Signal9ApiFactory.RegisterAsync(_client, tenant.Id, "PC01");
 
         var response = await _client.DeleteAsync($"api/tenants/{tenant.Id}", Ct);
 
@@ -122,9 +109,9 @@ public sealed class TenantsTests : IDisposable
     [TestMethod]
     public async Task List_is_paged_and_includes_agent_counts()
     {
-        await _factory.CreateTenantAsync(_client, "alpha");
-        await _factory.CreateTenantAsync(_client, "bravo");
-        await Signal9ApiFactory.RegisterAsync(_client, "bravo", "PC01");
+        await _factory.CreateTenantAsync(_client, "Alpha");
+        var bravo = await _factory.CreateTenantAsync(_client, "Bravo");
+        await Signal9ApiFactory.RegisterAsync(_client, bravo.Id, "PC01");
 
         var page = await _client.GetFromJsonAsync<PagedResult<TenantDto>>("api/tenants?page=2&pageSize=1", Signal9Json.Options,
             Ct);
@@ -132,7 +119,7 @@ public sealed class TenantsTests : IDisposable
         Assert.AreEqual(2, page!.TotalCount);
         Assert.AreEqual(2, page.TotalPages);
         var only = Assert.ContainsSingle(page.Items);
-        Assert.AreEqual(("bravo", 1), (only.Code, only.AgentCount));
+        Assert.AreEqual(("Bravo", 1), (only.Name, only.AgentCount));
     }
 
     [TestMethod]

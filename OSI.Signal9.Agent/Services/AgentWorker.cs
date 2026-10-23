@@ -50,7 +50,7 @@ public sealed class AgentWorker(
     private async Task RunSessionAsync(CancellationToken stoppingToken)
     {
         var agent = await api.RegisterAsync(systemInfo.GetRegistration(), stoppingToken);
-        logger.LogInformation("Enrolled as agent {AgentId} in tenant {TenantCode}", agent.Id, _options.TenantCode);
+        logger.LogInformation("Enrolled as agent {AgentId} in tenant {TenantId}", agent.Id, agent.TenantId);
 
         using var session = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         await using var hub = BuildHubConnection(agent.Id, session);
