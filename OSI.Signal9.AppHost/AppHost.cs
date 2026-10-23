@@ -13,6 +13,21 @@ var auth = builder.AddProject<Projects.OSI_Signal9_Auth>("auth")
     .WaitFor(database)
     .WithExternalHttpEndpoints();
 
+// People sign in at auth through the operator's own multi-tenant Entra app registration (ADR-0002). Its credential is a
+// certificate locally and a federated identity credential backed by auth's managed identity when published
+// (stories 124, 125); never a secret.
+var entraClientId = builder.AddParameter("entra-client-id");
+auth.WithEnvironment("Entra__ClientId", entraClientId);
+if (builder.ExecutionContext.IsRunMode)
+{
+    auth.WithEnvironment("Entra__ClientCredentials__0__SourceType", "Path")
+        .WithEnvironment("Entra__ClientCredentials__0__CertificateDiskPath", LocalEntraCredential.EnsureCertificate());
+}
+else
+{
+    auth.WithEnvironment("Entra__ClientCredentials__0__SourceType", "SignedAssertionFromManagedIdentity");
+}
+
 var api = builder.AddProject<Projects.OSI_Signal9_API>("api")
     .WithReference(database)
     .WaitFor(database)

@@ -53,11 +53,14 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
 
     public FakeTimeProvider Time { get; } = new(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
 
+    /// <summary>The stand-in for Entra that people sign in at through <c>auth</c>.</summary>
+    public FakeEntra Entra { get; } = new();
+
     /// <summary>Connection string of this factory's database.</summary>
     public string ConnectionString { get; }
 
     /// <summary>The <c>auth</c> host, sharing this factory's database and clock.</summary>
-    public Signal9AuthFactory Auth => _auth ??= new Signal9AuthFactory(ConnectionString, Time, settings: _settings);
+    public Signal9AuthFactory Auth => _auth ??= new Signal9AuthFactory(ConnectionString, Time, settings: _settings, entra: Entra);
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -311,6 +314,33 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
                 Permissions.Endpoints.Introspection,
                 Permissions.GrantTypes.ClientCredentials,
             },
+        };
+        foreach (var name in scopes)
+            descriptor.Permissions.Add(Permissions.Prefixes.Scope + name);
+        await CreateApplicationAsync(descriptor);
+    }
+
+    /// <summary>
+    /// Seeds a confidential client that signs people in with authorization code at <see cref="CodeFlow.RedirectUri"/>,
+    /// requires PKCE, authenticates with <see cref="ClientSecret"/> and may request the given scopes.
+    /// </summary>
+    public async Task SeedCodeClientAsync(string clientId, params string[] scopes)
+    {
+        var descriptor = new OpenIddictApplicationDescriptor
+        {
+            ClientId = clientId,
+            ClientSecret = ClientSecret,
+            ClientType = ClientTypes.Confidential,
+            RedirectUris = { new Uri(CodeFlow.RedirectUri) },
+            Permissions =
+            {
+                Permissions.Endpoints.Authorization,
+                Permissions.Endpoints.Token,
+                Permissions.Endpoints.Introspection,
+                Permissions.GrantTypes.AuthorizationCode,
+                Permissions.ResponseTypes.Code,
+            },
+            Requirements = { Requirements.Features.ProofKeyForCodeExchange },
         };
         foreach (var name in scopes)
             descriptor.Permissions.Add(Permissions.Prefixes.Scope + name);

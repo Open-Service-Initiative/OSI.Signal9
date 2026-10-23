@@ -1,0 +1,204 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Identity.Abstractions;
+using Microsoft.Identity.Web;
+using Microsoft.Identity.Web.TokenCacheProviders.InMemory;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+
+namespace OSI.Signal9.Auth;
+
+/// <summary>
+/// People sign in at <c>auth</c> through the operator's own multi-tenant Entra app registration (ADR-0002, stories
+/// 38-44), with Microsoft.Identity.Web. Entra's code is redeemed by MSAL with the registration's credential: a federated
+/// identity credential backed by managed identity on Azure, a certificate locally (stories 124, 125), never a secret.
+/// A sign-in becomes a short session cookie at auth, which only the authorize endpoint reads; it creates no user
+/// record (story 42).
+/// </summary>
+public static class EntraSignIn
+{
+    public const string SectionName = "Entra";
+
+    /// <summary>The session at auth between Entra sign-in and the authorization response.</summary>
+    public const string CookieScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+
+    public const string ChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
+
+    /// <summary>
+    /// Set on the authorize request auth returns to when Entra sign-in was refused, so the authorize endpoint answers
+    /// the client with <c>access_denied</c>. Its value is one of <see cref="Rejection"/>'s names, never free text.
+    /// </summary>
+    public const string RejectionParameter = "signal9_sign_in_rejected";
+
+    public static WebApplicationBuilder AddSignal9EntraSignIn(this WebApplicationBuilder builder)
+    {
+        var section = builder.Configuration.GetSection(SectionName);
+        ValidateRegistration(section);
+        var allowedTenants = section.GetSection("AllowedTenantIds").Get<Guid[]>() ?? [];
+
+        builder.Services.AddAuthentication(CookieScheme)
+            .AddMicrosoftIdentityWebApp(
+                options =>
+                {
+                    section.Bind(options);
+                    options.Instance ??= "https://login.microsoftonline.com/";
+                    // Work and school accounts from any directory: the registration is multi-tenant (story 39).
+                    options.TenantId ??= "organizations";
+                    // The authorization code flow with PKCE upstream too (RFC 9700 §2.1.1).
+                    options.ResponseType = OpenIdConnectResponseType.Code;
+                    options.UsePkce = true;
+                    // Entra's own claim names (tid, oid, amr, sid), not WS-Federation URIs.
+                    options.MapInboundClaims = false;
+                },
+                cookies =>
+                {
+                    cookies.Cookie.Name = "__Host-signal9-sign-in";
+                    cookies.Cookie.Path = "/";
+                    cookies.Cookie.HttpOnly = true;
+                    cookies.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+                    // Lax, so the cookie comes along when a client's site sends the browser to authorize.
+                    cookies.Cookie.SameSite = SameSiteMode.Lax;
+                    cookies.ExpireTimeSpan = TimeSpan.FromHours(1);
+                    cookies.SlidingExpiration = true;
+                },
+                openIdConnectScheme: ChallengeScheme,
+                cookieScheme: CookieScheme)
+            .EnableTokenAcquisitionToCallDownstreamApi()
+            .AddInMemoryTokenCaches();
+
+        builder.Services.Configure<OpenIdConnectOptions>(ChallengeScheme, options =>
+        {
+            options.MapInboundClaims = false;
+            var tokenValidated = options.Events.OnTokenValidated;
+            options.Events.OnTokenValidated = async context =>
+            {
+                await tokenValidated(context);
+                if (context.Result is null && Check(context.Principal!, allowedTenants, context.HttpContext) is { } rejection)
+                {
+                    if (ReturnRejected(context.HttpContext, context.Properties, rejection))
+                        context.HandleResponse();
+                    else
+                        context.Fail(Describe(rejection));
+                }
+            };
+
+            var remoteFailure = options.Events.OnRemoteFailure;
+            options.Events.OnRemoteFailure = async context =>
+            {
+                await remoteFailure(context);
+                if (context.Result is null && ReturnRejected(context.HttpContext, context.Properties, Rejection.Failed))
+                    context.HandleResponse();
+            };
+        });
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Sends the browser back to the authorize request it came from, which answers the client with
+    /// <c>access_denied</c> (RFC 6749 §4.1.2.1). Without that request there's no client to tell.
+    /// </summary>
+    private static bool ReturnRejected(HttpContext context, AuthenticationProperties? properties, Rejection rejection)
+    {
+        if (properties?.RedirectUri is not { } returnUrl
+            || !returnUrl.StartsWith(AuthorizationEndpoint.ReturnPath, StringComparison.Ordinal))
+            return false;
+
+        context.Response.Redirect(QueryHelpers.AddQueryString(returnUrl, RejectionParameter, rejection.ToString()));
+        return true;
+    }
+
+    /// <summary>Why a sign-in at Entra didn't let the person in.</summary>
+    public enum Rejection
+    {
+        /// <summary>Entra failed the sign-in, or it couldn't be completed.</summary>
+        Failed,
+
+        /// <summary>The sign-in didn't include MFA (stories 43, 44).</summary>
+        NoMfa,
+
+        /// <summary>The person's directory isn't on the operator's allow-list (story 40).</summary>
+        UntrustedDirectory,
+
+        /// <summary>The ID token doesn't name the directory and object (story 41).</summary>
+        NoIdentity,
+    }
+
+    /// <summary>The OAuth error description the client gets for each <see cref="Rejection"/>.</summary>
+    public static string Describe(Rejection rejection) => rejection switch
+    {
+        Rejection.NoMfa => "The sign-in didn't use multi-factor authentication.",
+        Rejection.UntrustedDirectory => "The person's Entra directory isn't trusted by this deployment.",
+        Rejection.NoIdentity => "The sign-in didn't identify the person's directory and object.",
+        _ => "The sign-in at Entra didn't complete.",
+    };
+
+    private static Rejection? Check(ClaimsPrincipal principal, Guid[] allowedTenants, HttpContext context)
+    {
+        if (EntraPerson.From(principal) is not { } person)
+            return Rejection.NoIdentity;
+
+        // Entra writes "mfa" only when MFA was performed. Windows Integrated Authentication ("wia"), a certificate
+        // alone ("rsa") and "wiaormfa" don't count (stories 43, 44).
+        if (!principal.FindAll("amr").Any(claim => claim.Value == "mfa"))
+            return Rejection.NoMfa;
+
+        if (allowedTenants.Length > 0 && !allowedTenants.Contains(person.TenantId))
+            return Rejection.UntrustedDirectory;
+
+        // Front-channel logout finds sessions by sid (proof #1 checks Entra always sends it).
+        if (principal.FindFirst("sid") is null)
+        {
+            context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(EntraSignIn))
+                .LogWarning("Entra sign-in for {Person} carried no sid.", person.Subject);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The registration must name its client and authenticate with a certificate or managed identity: no secrets
+    /// (story 124).
+    /// </summary>
+    private static void ValidateRegistration(IConfigurationSection section)
+    {
+        if (string.IsNullOrWhiteSpace(section["ClientId"]))
+            throw new InvalidOperationException($"{SectionName}:ClientId must name the operator's Entra app registration.");
+
+        var credentials = section.GetSection("ClientCredentials").Get<CredentialDescription[]>() ?? [];
+        if (credentials.Length == 0)
+            throw new InvalidOperationException($"{SectionName}:ClientCredentials must give a certificate or a managed identity.");
+
+        if (!string.IsNullOrEmpty(section["ClientSecret"])
+            || credentials.Any(c => c.SourceType is not (CredentialSource.SignedAssertionFromManagedIdentity
+                or CredentialSource.Certificate or CredentialSource.Path or CredentialSource.StoreWithThumbprint
+                or CredentialSource.StoreWithDistinguishedName or CredentialSource.KeyVault
+                or CredentialSource.Base64Encoded)))
+        {
+            throw new InvalidOperationException(
+                $"{SectionName}:ClientCredentials may only be a certificate or a managed identity's federated credential, never a client secret.");
+        }
+    }
+
+}
+
+/// <summary>
+/// A person as Entra identifies them: their directory (<c>tid</c>) and their object in it (<c>oid</c>), never an email
+/// or UPN, which can be renamed or recycled (story 41).
+/// </summary>
+public sealed record EntraPerson(Guid TenantId, Guid ObjectId)
+{
+    /// <summary>
+    /// Signal9's subject for the person: stable, unique per (directory, object) and free of personal data.
+    /// </summary>
+    public string Subject => $"{TenantId:D}:{ObjectId:D}";
+
+    public static EntraPerson? From(ClaimsPrincipal principal) =>
+        Guid.TryParse(principal.FindFirst("tid")?.Value, out var tenant)
+        && Guid.TryParse(principal.FindFirst("oid")?.Value, out var objectId)
+        && tenant != Guid.Empty && objectId != Guid.Empty
+            ? new EntraPerson(tenant, objectId)
+            : null;
+}

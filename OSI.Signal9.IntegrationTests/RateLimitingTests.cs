@@ -114,6 +114,26 @@ public sealed class RateLimitingTests
     }
 
     [TestMethod]
+    public async Task Authorization_endpoint_limit_is_per_ip()
+    {
+        using var factory = new Signal9ApiFactory(settings: Limit("Authorize", 2));
+        await factory.SeedCodeClientAsync("code-app", "tenants.read");
+        using var auth = factory.Auth.CreateClient();
+        var authorize = new CodeFlow("code-app").AuthorizeRequest();
+
+        Assert.AreEqual(HttpStatusCode.Redirect, (await GetAsync(auth, authorize)).StatusCode);
+        Assert.AreEqual(HttpStatusCode.Redirect, (await GetAsync(auth, authorize)).StatusCode);
+        var limited = await GetAsync(auth, authorize);
+        var otherIp = await GetAsync(auth, authorize, ip: "198.51.100.7");
+        var otherEndpoint = await GetAsync(auth, ".well-known/openid-configuration");
+
+        Assert.AreEqual(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.AreEqual("application/problem+json", limited.Content.Headers.ContentType?.MediaType);
+        Assert.AreEqual(HttpStatusCode.Redirect, otherIp.StatusCode);
+        Assert.AreEqual(HttpStatusCode.OK, otherEndpoint.StatusCode);
+    }
+
+    [TestMethod]
     public async Task Api_limit_is_per_caller()
     {
         using var factory = new Signal9ApiFactory(settings: Limit("Api", 2));

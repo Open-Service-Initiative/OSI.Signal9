@@ -56,6 +56,21 @@ The `KeyEncryption` section chooses the key-encryption key on `auth` and `api`:
 | `Certificate:Path` | A PKCS#12 file, or a PEM certificate with `Certificate:KeyPath`. The key must be RSA-3072 or larger. |
 | `Certificate:KeyPath`, `Certificate:Password` | The PEM private key, and the password of the PKCS#12 file or encrypted PEM key, if any. |
 
+## Sign-in with Entra
+
+People sign in at auth through your own multi-tenant Entra app registration, with MFA mandatory (ADR-0002). Register an app for "Accounts in any organizational directory", with the web redirect URI `https://<auth host>/signin-oidc`, and add `amr` (and `sid`) as optional claims of its ID token. A sign-in is refused unless its `amr` contains `mfa`. People are identified by their directory and object IDs, never by email or UPN, and signing in alone creates no user record.
+
+The app registration's credential is never a secret. Locally it's a certificate the AppHost creates on first run at `Signal9/entra-credential.pfx` under your local application data folder: upload `entra-credential.cer`, next to it, to the registration's certificates, and enter the registration's client ID as the AppHost's `entra-client-id` parameter. When published, it's a federated identity credential backed by auth's managed identity.
+
+The `Entra` section on auth:
+
+| Setting | Meaning |
+| --- | --- |
+| `ClientId` | The app registration's application (client) ID. |
+| `ClientCredentials` | Microsoft.Identity.Web credential descriptions: `SignedAssertionFromManagedIdentity` (with `ManagedIdentityClientId` for a user-assigned identity) on Azure, or a certificate (`Path`, `StoreWithThumbprint`, `KeyVault`, ...). auth refuses to start with a client secret. |
+| `TenantId` | `organizations` by default: work and school accounts from any directory. |
+| `AllowedTenantIds` | Optional, recommended: the Entra directory IDs whose people may sign in. Empty allows every directory. |
+
 ## Client certificates (mTLS)
 
 Agents and API applications that authenticate with a certificate use the api host's RFC 8705 aliases (`connect/token`, `connect/revoke`, `connect/introspect`), which auth's discovery document lists under `mtls_endpoint_aliases`. Access tokens issued there are bound to the certificate (`cnf`), and api refuses them without it. auth never asks for client certificates.
@@ -105,6 +120,7 @@ Rate limiting is off until configured. Each policy has a `RateLimiting:<policy>`
 | --- | --- | --- |
 | `Global` | every request on the host | client IP |
 | `Token` | the token endpoint on auth and its mTLS alias on api | `client_id` and client IP |
+| `Authorize` | the authorization endpoint on auth | client IP |
 | `Api` | api's resources and hubs | caller (the access token's subject), or client IP without a token |
 
 ```json

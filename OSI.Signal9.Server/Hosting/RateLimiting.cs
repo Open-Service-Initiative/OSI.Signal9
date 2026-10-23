@@ -28,6 +28,9 @@ public static class RateLimiting
     /// <summary>The token endpoints, per <c>client_id</c> and client IP together.</summary>
     public const string Token = "Token";
 
+    /// <summary>The authorization endpoint, per client IP.</summary>
+    public const string Authorize = "Authorize";
+
     /// <summary>The api's resources, per caller: the access token's subject, or the client IP without one.</summary>
     public const string Api = "Api";
 
@@ -51,6 +54,7 @@ public static class RateLimiting
                 Partition(context, Global, ClientIp(context)));
         });
         services.AddRateLimitPolicy(Token, context => $"{ClientId(context)} {ClientIp(context)}");
+        services.AddRateLimitPolicy(Authorize, ClientIp);
         services.AddRateLimitPolicy(Api, Caller);
         return services;
     }

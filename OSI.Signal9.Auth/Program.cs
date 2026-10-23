@@ -1,7 +1,9 @@
+using OSI.Signal9.Auth;
 using OSI.Signal9.Server.Data;
 using OSI.Signal9.Server.Hosting;
 using OSI.Signal9.Server.Identity;
 using Quartz;
+using static OpenIddict.Abstractions.OpenIddictConstants;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,6 +12,7 @@ builder.AddHostHardening();
 builder.AddSignal9Database();
 builder.AddSignal9ForwardedHeaders();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.AddSignal9EntraSignIn();
 
 var identity = builder.Configuration.GetIdentityOptions();
 
@@ -20,12 +23,19 @@ builder.Services.AddSignal9OpenIddict()
     .AddCore(core => core.UseQuartz())
     .AddServer(server => server
         .UseSignal9TokenRules(identity, builder.Configuration)
+        // People sign in here only, so only auth has the authorization endpoint and the code flow (#109).
+        .SetAuthorizationEndpointUris(AuthorizationEndpoint.Path)
+        .AllowAuthorizationCodeFlow()
+        .SetAuthorizationCodeLifetime(AuthorizationServer.AuthorizationCodeLifetime)
+        // PKCE with S256 only (RFC 9700 §2.1.1); "plain" is refused.
+        .Configure(options => options.CodeChallengeMethods.Remove(CodeChallengeMethods.Plain))
         .SetTokenEndpointUris(AuthorizationServer.TokenEndpoint)
         .SetRevocationEndpointUris(AuthorizationServer.RevocationEndpoint)
         .SetIntrospectionEndpointUris(AuthorizationServer.IntrospectionEndpoint)
         .SetMtlsTokenEndpointAliasUri(new Uri(identity.ApiUri, AuthorizationServer.TokenEndpoint))
         .SetMtlsRevocationEndpointAliasUri(new Uri(identity.ApiUri, AuthorizationServer.RevocationEndpoint))
-        .SetMtlsIntrospectionEndpointAliasUri(new Uri(identity.ApiUri, AuthorizationServer.IntrospectionEndpoint)));
+        .SetMtlsIntrospectionEndpointAliasUri(new Uri(identity.ApiUri, AuthorizationServer.IntrospectionEndpoint))
+        .UseAspNetCore().EnableAuthorizationEndpointPassthrough());
 
 builder.Services.AddAuthorization();
 
@@ -42,6 +52,7 @@ app.UseHostHardening();
 app.UseRateLimitingAndAuthentication();
 app.UseAuthorization();
 
+app.MapAuthorizationEndpoint().RequireRateLimiting(RateLimiting.Authorize);
 app.MapTokenEndpoint().RequireRateLimiting(RateLimiting.Token);
 
 app.Run();

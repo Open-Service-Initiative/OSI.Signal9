@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Microsoft.AspNetCore;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -30,6 +31,9 @@ public static class AuthorizationServer
     public const string IntrospectionEndpoint = "connect/introspect";
 
     public static readonly TimeSpan AccessTokenLifetime = TimeSpan.FromMinutes(10);
+
+    /// <summary>Authorization codes last 5 minutes and work once (RFC 6749 §4.1.2).</summary>
+    public static readonly TimeSpan AuthorizationCodeLifetime = TimeSpan.FromMinutes(5);
 
     /// <summary>Reads and validates the <see cref="IdentityOptions"/> section.</summary>
     public static IdentityOptions GetIdentityOptions(this IConfiguration configuration)
@@ -71,13 +75,22 @@ public static class AuthorizationServer
 
     /// <summary>
     /// Handles token requests that OpenIddict has already authenticated and validated, issuing identity-only
-    /// tokens: subject, client and scopes, never roles or tenant access (ADR-0007).
+    /// tokens: subject, client and scopes, never roles or tenant access (ADR-0007). An authorization code's principal
+    /// was built at the authorization endpoint; OpenIddict has checked its PKCE verifier and that it wasn't used before.
     /// </summary>
     public static IEndpointConventionBuilder MapTokenEndpoint(this IEndpointRouteBuilder endpoints) =>
-        endpoints.MapPost(TokenEndpoint, (HttpContext context) =>
+        endpoints.MapPost(TokenEndpoint, async (HttpContext context) =>
         {
             var request = context.GetOpenIddictServerRequest()
                 ?? throw new InvalidOperationException("The OpenIddict server request can't be retrieved.");
+
+            if (request.IsAuthorizationCodeGrantType())
+            {
+                var code = await context.AuthenticateAsync(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+                return Results.SignIn(code.Principal!, properties: null,
+                    OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+            }
+
             if (!request.IsClientCredentialsGrantType())
                 throw new InvalidOperationException($"The grant type '{request.GrantType}' isn't handled.");
 
