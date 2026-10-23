@@ -76,3 +76,7 @@ The default five labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready
 ### Domain docs
 
 Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Decisions
+
+Answer from the spec, ADRs, glossary and code; architecture, design and other one-way choices require human maintainer review. See `docs/agents/decisions.md`.
