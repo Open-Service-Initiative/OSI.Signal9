@@ -16,7 +16,8 @@ These are Open Service Initiative tenets. Hold every change to them:
 - `OSI.Signal9.Auth`: the OpenIddict authorization server's browser-facing endpoints and discovery (ADR-0002, ADR-0003).
 - `OSI.Signal9.API`: ASP.NET Core controller API plus SignalR hubs and the mTLS token-endpoint aliases.
 - `OSI.Signal9.Server`: shared by Auth and API: the EF Core model and migrations on PostgreSQL (ADR-0011) and the OpenIddict token rules.
-- `OSI.Signal9.Web`: Blazor WebAssembly dashboard.
+- `OSI.Signal9.Web`: the dashboard's ASP.NET Core host and backend-for-frontend (ADR-0003): sign-in, the server-side token store, and the YARP proxy to `api`.
+- `OSI.Signal9.Web.Client`: the Blazor WebAssembly dashboard on Fluent UI Blazor v5. It holds no tokens and calls only `web`.
 - `OSI.Signal9.Agent`: Windows Service on managed devices. It enrolls, sends heartbeats and telemetry, and runs commands.
 - `OSI.Signal9.Contracts`: DTOs, enums and hub interfaces shared by the other projects. It has no server-side dependencies, because it ships in the WASM bundle.
 - `OSI.Signal9.AppHost` / `OSI.Signal9.ServiceDefaults`: Aspire orchestration, used for local development and deployment.
@@ -66,7 +67,7 @@ These rules are Signal9's own, drawn from Google's AIP-122, AIP-159 and AIP-216 
 Unit and integration tests live in separate projects, all on MSTest. A new test goes in the unit suite for the project it covers; it goes in the integration suite only when it needs a host or the database.
 
 - `OSI.Signal9.Agent.Tests`: agent unit tests (command executor, collectors, session logic), with no API host or database. OS and machine interactions go behind fakes.
-- `OSI.Signal9.Web.Tests`: dashboard component tests with bUnit, created with the first components (#112).
+- `OSI.Signal9.Web.Tests`: dashboard component tests with bUnit.
 - `OSI.Signal9.IntegrationTests`: hosts Auth and API in memory together against the shared Testcontainers PostgreSQL fixture, with a `FakeTimeProvider`; test clients carry a token minted at Auth. The end-to-end agent ↔ API tests, which drive the real agent session over the in-memory transport, live here too. Every new endpoint gets a test here covering its status codes.
 
 Run every suite with `dotnet test --solution OSI.Signal9.slnx`; CI publishes each suite's results separately.

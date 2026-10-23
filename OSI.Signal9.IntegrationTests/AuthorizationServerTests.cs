@@ -174,9 +174,11 @@ public sealed class AuthorizationServerTests : IDisposable
     [TestMethod]
     public async Task Quartz_prunes_expired_tokens_and_revoked_authorizations_hourly()
     {
-        await _factory.SeedClientAsync("reporting-app");
-        await _factory.RequestTokenAsync("reporting-app");
-        await using var services = _factory.Auth.Services.CreateAsyncScope();
+        // OpenIddict's pruning job judges age on the real clock, so these entries are made a month ago.
+        await using var factory = new Signal9ApiFactory(start: DateTimeOffset.UtcNow.AddDays(-30));
+        await factory.SeedClientAsync("reporting-app");
+        await factory.RequestTokenAsync("reporting-app");
+        await using var services = factory.Auth.Services.CreateAsyncScope();
         var tokens = services.ServiceProvider.GetRequiredService<IOpenIddictTokenManager>();
         var authorizations = services.ServiceProvider.GetRequiredService<IOpenIddictAuthorizationManager>();
         await authorizations.CreateAsync(new OpenIddictAuthorizationDescriptor
@@ -184,11 +186,11 @@ public sealed class AuthorizationServerTests : IDisposable
             Subject = "someone",
             Status = OpenIddictConstants.Statuses.Revoked,
             Type = OpenIddictConstants.AuthorizationTypes.AdHoc,
-            CreationDate = _factory.Time.GetUtcNow(),
+            CreationDate = factory.Time.GetUtcNow(),
         }, Ct);
         // OpenIddict keeps entries for at least 14 days before pruning them.
-        _factory.Time.Advance(TimeSpan.FromDays(15));
-        var scheduler = await _factory.Auth.Services.GetRequiredService<ISchedulerFactory>().GetScheduler(Ct);
+        factory.Time.Advance(TimeSpan.FromDays(15));
+        var scheduler = await factory.Auth.Services.GetRequiredService<ISchedulerFactory>().GetScheduler(Ct);
 
         var trigger = Assert.ContainsSingle(await scheduler.GetTriggersOfJob(OpenIddictQuartzJob.Identity, Ct));
         Assert.AreEqual(TimeSpan.FromHours(1), Assert.IsInstanceOfType<ISimpleTrigger>(trigger).RepeatInterval);

@@ -16,7 +16,7 @@ namespace OSI.Signal9.Auth;
 /// </summary>
 public static class AuthorizationEndpoint
 {
-    public const string Path = "connect/authorize";
+    public const string Path = AuthorizationServer.AuthorizationEndpoint;
 
     /// <summary>Where a sign-in at Entra returns to: only ever this endpoint.</summary>
     public const string ReturnPath = "/" + Path + "?";

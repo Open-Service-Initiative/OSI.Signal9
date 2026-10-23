@@ -132,6 +132,34 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.ToTable("Commands");
                 });
 
+            modelBuilder.Entity("OSI.Signal9.Server.Data.DashboardSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("AccessTokenExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<byte[]>("ProtectedTokens")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Subject");
+
+                    b.ToTable("DashboardSessions");
+                });
+
             modelBuilder.Entity("OSI.Signal9.Server.Data.Device", b =>
                 {
                     b.Property<Guid>("Id")

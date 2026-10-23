@@ -1,0 +1,56 @@
+@page "/"
+@inject Signal9ApiClient Api
+@inject BffSession Session
+
+<PageTitle>Signal9</PageTitle>
+
+<FluentText As="TextTag.H1" Size="TextSize.Size800">Signal9</FluentText>
+
+<AuthorizeView>
+    <Authorized>
+        <p>Welcome back, @context.User.Identity?.Name.</p>
+        <ProblemBar Error="error" />
+        <div class="summary">
+            <FluentCard Class="summary-card">
+                <FluentText Size="TextSize.Size300">Devices</FluentText>
+                <FluentText Id="device-count" Size="TextSize.Size800" Weight="TextWeight.Semibold" Block="true">@(deviceCount?.ToString() ?? "–")</FluentText>
+                <FluentLink Href="/devices">View devices</FluentLink>
+            </FluentCard>
+            <FluentCard Class="summary-card">
+                <FluentText Size="TextSize.Size300">Tenants</FluentText>
+                <FluentText Id="tenant-count" Size="TextSize.Size800" Weight="TextWeight.Semibold" Block="true">@(tenantCount?.ToString() ?? "–")</FluentText>
+                <FluentLink Href="/tenants">View tenants</FluentLink>
+            </FluentCard>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <p>Remote monitoring and management for your devices and tenants.</p>
+        <FluentButton Id="home-sign-in" Appearance="ButtonAppearance.Primary" OnClick="Session.SignIn">Sign in</FluentButton>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private int? deviceCount;
+    private int? tenantCount;
+    private ApiException? error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if ((await AuthenticationState).User.Identity?.IsAuthenticated != true)
+            return;
+        try
+        {
+            // A one-item page is enough: the totals are what's wanted.
+            var devices = Api.ListDevicesAsync(1, 1);
+            var tenants = Api.ListTenantsAsync(1, 1);
+            deviceCount = (await devices).TotalCount;
+            tenantCount = (await tenants).TotalCount;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+    }
+}

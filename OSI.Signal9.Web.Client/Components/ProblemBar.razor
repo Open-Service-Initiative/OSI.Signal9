@@ -1,0 +1,20 @@
+@* Shows an API refusal. A 401 shows nothing: the session ended, and the sign-in prompt takes over. *@
+@if (Error is { SessionEnded: false })
+{
+    <FluentMessageBar Class="error-bar" Intent="MessageBarIntent.Error" Title="@Error.Title">
+        @Error.Detail
+        @if (Error.Errors.Count > 0)
+        {
+            <ul>
+                @foreach (var message in Error.Errors)
+                {
+                    <li>@message</li>
+                }
+            </ul>
+        }
+    </FluentMessageBar>
+}
+
+@code {
+    [Parameter] public ApiException? Error { get; set; }
+}

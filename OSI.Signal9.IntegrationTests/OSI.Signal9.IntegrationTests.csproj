@@ -20,6 +20,7 @@
     <ProjectReference Include="..\OSI.Signal9.API\OSI.Signal9.API.csproj" />
     <ProjectReference Include="..\OSI.Signal9.Auth\OSI.Signal9.Auth.csproj" />
     <ProjectReference Include="..\OSI.Signal9.Agent\OSI.Signal9.Agent.csproj" />
+    <ProjectReference Include="..\OSI.Signal9.Web\OSI.Signal9.Web.csproj" />
   </ItemGroup>
 
   <ItemGroup>

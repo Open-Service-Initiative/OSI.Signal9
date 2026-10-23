@@ -3,7 +3,6 @@ using OSI.Signal9.Server.Data;
 using OSI.Signal9.Server.Hosting;
 using OSI.Signal9.Server.Identity;
 using Quartz;
-using static OpenIddict.Abstractions.OpenIddictConstants;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,11 +23,8 @@ builder.Services.AddSignal9OpenIddict()
     .AddServer(server => server
         .UseSignal9TokenRules(identity, builder.Configuration)
         // People sign in here only, so only auth has the authorization endpoint and the code flow (#109).
-        .SetAuthorizationEndpointUris(AuthorizationEndpoint.Path)
-        .AllowAuthorizationCodeFlow()
-        .SetAuthorizationCodeLifetime(AuthorizationServer.AuthorizationCodeLifetime)
-        // PKCE with S256 only (RFC 9700 §2.1.1); "plain" is refused.
-        .Configure(options => options.CodeChallengeMethods.Remove(CodeChallengeMethods.Plain))
+        .SetAuthorizationEndpointUris(AuthorizationServer.AuthorizationEndpoint)
+        .UseSignal9CodeFlow()
         .SetTokenEndpointUris(AuthorizationServer.TokenEndpoint)
         .SetRevocationEndpointUris(AuthorizationServer.RevocationEndpoint)
         .SetIntrospectionEndpointUris(AuthorizationServer.IntrospectionEndpoint)

@@ -8,6 +8,19 @@ public enum StoredKeyUse
 
     /// <summary>Encrypts tokens (RSA-OAEP key wrapping).</summary>
     Encryption,
+
+    /// <summary>
+    /// The <c>web</c> host's TLS client certificate, which it authenticates to <c>api</c> with
+    /// (<c>self_signed_tls_client_auth</c>), so its tokens are bound to it (ADR-0003, ADR-0004).
+    /// </summary>
+    WebClient,
+}
+
+/// <summary>The keys a host manages: generates when due, loads and removes once retired.</summary>
+public sealed class StoredKeysOptions
+{
+    /// <summary>The authorization server's own keys, which <c>auth</c> and <c>api</c> manage.</summary>
+    public StoredKeyUse[] Uses { get; set; } = [StoredKeyUse.Signing, StoredKeyUse.Encryption];
 }
 
 /// <summary>

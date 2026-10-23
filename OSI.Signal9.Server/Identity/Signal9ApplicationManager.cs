@@ -13,16 +13,25 @@ namespace OSI.Signal9.Server.Identity;
 /// OpenIddict's application manager, with <c>tls_client_auth</c> as RFC 8705 §2.1.2 defines it: a CA-issued
 /// certificate is accepted when it chains to a trusted authority and matches the subject the client registered.
 /// OpenIddict's default instead matches the certificate against the client's redirect URI hosts, which an
-/// application acting as itself doesn't have.
+/// application acting as itself doesn't have. Client certificates are checked for validity on the hosts'
+/// <see cref="TimeProvider"/>, the clock every other expiry uses.
 /// </summary>
 public sealed class Signal9ApplicationManager<TApplication>(
     IOpenIddictApplicationCache<TApplication> cache,
     ILogger<OpenIddictApplicationManager<TApplication>> logger,
     IOptionsMonitor<OpenIddictCoreOptions> options,
-    IOpenIddictApplicationStore<TApplication> store)
+    IOpenIddictApplicationStore<TApplication> store,
+    TimeProvider time)
     : OpenIddictApplicationManager<TApplication>(cache, logger, options, store)
     where TApplication : class
 {
+    public override ValueTask<bool> ValidateSelfSignedTlsClientCertificateAsync(TApplication application,
+        X509Certificate2 certificate, X509ChainPolicy policy, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        return base.ValidateSelfSignedTlsClientCertificateAsync(application, certificate, Now(policy), cancellationToken);
+    }
+
     public override async ValueTask<bool> ValidatePublicKeyInfrastructureTlsClientCertificateAsync(
         TApplication application, X509Certificate2 certificate, X509ChainPolicy policy,
         CancellationToken cancellationToken = default)
@@ -30,6 +39,7 @@ public sealed class Signal9ApplicationManager<TApplication>(
         ArgumentNullException.ThrowIfNull(application);
         ArgumentNullException.ThrowIfNull(certificate);
         ArgumentNullException.ThrowIfNull(policy);
+        policy = Now(policy);
 
         var clientId = await GetClientIdAsync(application, cancellationToken);
         if (TlsClientSubject.From(await GetPropertiesAsync(application, cancellationToken)) is not { } subject)
@@ -68,6 +78,15 @@ public sealed class Signal9ApplicationManager<TApplication>(
             foreach (var element in chain.ChainElements)
                 element.Certificate.Dispose();
         }
+    }
+
+    /// <summary>OpenIddict's chain policy, checking validity at the current time on <see cref="TimeProvider"/>.</summary>
+    private X509ChainPolicy Now(X509ChainPolicy policy)
+    {
+        var copy = policy.Clone();
+        copy.VerificationTime = time.GetUtcNow().LocalDateTime;
+        copy.VerificationTimeIgnored = false;
+        return copy;
     }
 
     /// <summary>

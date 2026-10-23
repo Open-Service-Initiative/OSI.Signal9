@@ -14,4 +14,6 @@
   <Project Path="OSI.Signal9.Server/OSI.Signal9.Server.csproj" />
   <Project Path="OSI.Signal9.ServiceDefaults/OSI.Signal9.ServiceDefaults.csproj" />
   <Project Path="OSI.Signal9.Web/OSI.Signal9.Web.csproj" />
+  <Project Path="OSI.Signal9.Web.Client/OSI.Signal9.Web.Client.csproj" />
+  <Project Path="OSI.Signal9.Web.Tests/OSI.Signal9.Web.Tests.csproj" />
 </Solution>

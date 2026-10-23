@@ -38,8 +38,11 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
 
     /// <param name="migrated">Whether the database starts with the schema applied, or empty.</param>
     /// <param name="settings">Configuration for both hosts, on top of the fixture's own.</param>
-    public Signal9ApiFactory(bool migrated = true, IReadOnlyDictionary<string, string?>? settings = null)
+    /// <param name="start">When the shared clock starts, if not now.</param>
+    public Signal9ApiFactory(bool migrated = true, IReadOnlyDictionary<string, string?>? settings = null,
+        DateTimeOffset? start = null)
     {
+        Time = new FakeTimeProvider(DateTimeOffset.FromUnixTimeSeconds((start ?? DateTimeOffset.UtcNow).ToUnixTimeSeconds()));
         _migrated = migrated;
         _settings = settings ?? new Dictionary<string, string?>();
         ConnectionString = PostgresContainer.CreateDatabase(migrated);
@@ -50,8 +53,18 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
 
     private AccessToken? _defaultToken;
     private Signal9AuthFactory? _auth;
+    private Signal9WebFactory? _web;
+    private readonly List<Signal9WebFactory> _webReplicas = [];
 
-    public FakeTimeProvider Time { get; } = new(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
+    /// <summary>
+    /// The clock every host shares. It starts at the real time unless a test says otherwise, in whole seconds as
+    /// certificates hold it, because X.509 certificates made with the real clock (the tests', and Entra's tokens) must
+    /// be valid on it too.
+    /// </summary>
+    public FakeTimeProvider Time { get; }
+
+    /// <summary>The configuration every host gets on top of the fixture's own.</summary>
+    internal IReadOnlyDictionary<string, string?> Settings => _settings;
 
     /// <summary>The stand-in for Entra that people sign in at through <c>auth</c>.</summary>
     public FakeEntra Entra { get; } = new();
@@ -61,6 +74,17 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
 
     /// <summary>The <c>auth</c> host, sharing this factory's database and clock.</summary>
     public Signal9AuthFactory Auth => _auth ??= new Signal9AuthFactory(ConnectionString, Time, settings: _settings, entra: Entra);
+
+    /// <summary>The <c>web</c> host, the dashboard's backend-for-frontend, sharing this factory's database and clock.</summary>
+    public Signal9WebFactory Web => _web ??= new Signal9WebFactory(this);
+
+    /// <summary>Another <c>web</c> replica sharing the database, as when the dashboard scales out (story 54).</summary>
+    public Signal9WebFactory CreateWebReplica()
+    {
+        var replica = new Signal9WebFactory(this);
+        _webReplicas.Add(replica);
+        return replica;
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -411,6 +435,10 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
     // Dispose() goes through DisposeAsync() too.
     public override async ValueTask DisposeAsync()
     {
+        foreach (var replica in _webReplicas)
+            await replica.DisposeAsync();
+        if (_web is not null)
+            await _web.DisposeAsync();
         if (_auth is not null)
             await _auth.DisposeAsync();
         await base.DisposeAsync();

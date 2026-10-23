@@ -16,6 +16,12 @@ public sealed class IdentityOptions
     public Uri ApiUri { get; set; } = null!;
 
     /// <summary>
+    /// The base address of the <c>web</c> host, the dashboard's backend-for-frontend. Only web reads it, to register its
+    /// redirect URI.
+    /// </summary>
+    public Uri? WebUri { get; set; }
+
+    /// <summary>
     /// PEM-encoded root (and optionally intermediate) certificate authorities trusted to issue client certificates for
     /// <c>tls_client_auth</c>. With none, only <c>self_signed_tls_client_auth</c> is offered.
     /// </summary>

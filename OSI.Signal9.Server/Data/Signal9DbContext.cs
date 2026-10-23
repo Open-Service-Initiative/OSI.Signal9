@@ -24,6 +24,7 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
     public DbSet<Command> Commands => Set<Command>();
     public DbSet<TelemetrySample> TelemetrySamples => Set<TelemetrySample>();
     public DbSet<StoredKey> StoredKeys => Set<StoredKey>();
+    public DbSet<DashboardSession> DashboardSessions => Set<DashboardSession>();
 
     /// <summary>The ASP.NET Core Data Protection key ring, each key wrapped by the key-encryption key (ADR-0008).</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
@@ -115,6 +116,13 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
             key.Property(k => k.Use).HasConversion<string>().HasMaxLength(20);
             key.Property(k => k.KekId).HasMaxLength(500);
             key.HasIndex(k => new { k.Use, k.ActivatesAt });
+        });
+
+        modelBuilder.Entity<DashboardSession>(session =>
+        {
+            session.Property(s => s.Subject).HasMaxLength(200);
+            // Sessions are looked up by person for sign-out everywhere (#119).
+            session.HasIndex(s => s.Subject);
         });
 
         modelBuilder.Entity<TelemetrySample>(sample =>

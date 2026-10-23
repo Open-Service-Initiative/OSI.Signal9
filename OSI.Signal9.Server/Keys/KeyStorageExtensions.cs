@@ -43,16 +43,28 @@ public static class KeyStorageExtensions
     }
 
     /// <summary>
-    /// Stores the authorization server's keys and the Data Protection key ring in the database, both wrapped by the
-    /// key-encryption key (ADR-0008).
+    /// Stores the authorization server's signing and encryption keys and the Data Protection key ring in the database,
+    /// both wrapped by the key-encryption key (ADR-0008).
     /// </summary>
     public static IServiceCollection AddSignal9Keys(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddSignal9KeyEncryption(configuration);
-        services.TryAddSingleton<StoredKeys>();
+        services.AddSignal9StoredKeys(configuration, StoredKeyUse.Signing, StoredKeyUse.Encryption);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<OpenIddictServerOptions>, ConfigureStoredKeys>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOptionsChangeTokenSource<OpenIddictServerOptions>, StoredKeysChangeTokenSource>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOptionsChangeTokenSource<OpenIddictValidationOptions>, LocalServerKeysChangeTokenSource>());
+        return services;
+    }
+
+    /// <summary>
+    /// Stores the keys of the given uses and the Data Protection key ring in the database, both wrapped by the
+    /// key-encryption key (ADR-0008). A host manages only its own uses' keys.
+    /// </summary>
+    public static IServiceCollection AddSignal9StoredKeys(this IServiceCollection services, IConfiguration configuration,
+        params StoredKeyUse[] uses)
+    {
+        services.AddSignal9KeyEncryption(configuration);
+        services.TryAddSingleton<StoredKeys>();
+        services.Configure<StoredKeysOptions>(options => options.Uses = uses);
 
         // Data Protection protects only cookies and the token cache.
         services.AddDataProtection()

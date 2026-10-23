@@ -1,6 +1,6 @@
 # Signal9
 
-Remote monitoring and management (RMM) for MSPs. Pre-alpha: not ready for production use. Authentication is being built (#63): every API endpoint now requires an access token carrying its scope, which the dashboard and agent don't send yet.
+Remote monitoring and management (RMM) for MSPs. Pre-alpha: not ready for production use. Authentication is being built (#63): every API endpoint now requires an access token carrying its scope. The dashboard signs people in through web, which holds their tokens; the agent doesn't send one yet.
 
 ## Projects
 
@@ -9,13 +9,15 @@ Remote monitoring and management (RMM) for MSPs. Pre-alpha: not ready for produc
 | `OSI.Signal9.Auth` | The OAuth authorization server (OpenIddict): discovery and token endpoints. |
 | `OSI.Signal9.API` | ASP.NET Core REST API and SignalR hubs, plus the authorization server's mTLS token, revocation and introspection endpoints. Deployed to Azure Container Apps. |
 | `OSI.Signal9.Server` | Server code shared by Auth and API: EF Core on PostgreSQL, migrations, the OpenIddict token rules and the stored keys. |
-| `OSI.Signal9.Web` | Blazor WebAssembly dashboard. Deployed to Azure Static Web Apps. |
+| `OSI.Signal9.Web` | The dashboard's host and backend-for-frontend: signs people in at auth, keeps their tokens server-side and forwards `/api`, `/hubs/dashboard` and `/docs` to api. |
+| `OSI.Signal9.Web.Client` | The dashboard: a Blazor WebAssembly app on Fluent UI Blazor v5, served by web. |
 | `OSI.Signal9.Agent` | Windows Service installed on managed machines. |
 | `OSI.Signal9.Contracts` | Request/response types shared by the API, Web and Agent. |
 | `OSI.Signal9.AppHost` | Aspire orchestration for local development. |
 | `OSI.Signal9.ServiceDefaults` | Aspire defaults: OpenTelemetry, health checks, resilience. |
 | `OSI.Signal9.IntegrationTests` | Integration tests: Auth and API in memory against PostgreSQL, and the agent end to end against them. |
 | `OSI.Signal9.Agent.Tests` | Agent unit tests, with no API host or database. |
+| `OSI.Signal9.Web.Tests` | Dashboard component tests with bUnit. |
 
 ## Running locally
 
@@ -25,7 +27,7 @@ Prerequisites: .NET 10 SDK and Docker (for the PostgreSQL container).
 dotnet run --project OSI.Signal9.AppHost
 ```
 
-This starts PostgreSQL (a `postgres:18` container), the authorization server (`https://localhost:7101`), the API (`https://localhost:7201`) and the dashboard (`https://localhost:7001`). The OpenAPI document is at `https://localhost:7201/openapi/v1.json`, and `OSI.Signal9.API/OSI.Signal9.API.http` has sample requests.
+This starts PostgreSQL (a `postgres:18` container), the authorization server (`https://localhost:7101`), the API (`https://localhost:7201`) and web, the dashboard (`https://localhost:7001`). The OpenAPI document is at `https://localhost:7201/openapi/v1.json`, and `OSI.Signal9.API/OSI.Signal9.API.http` has sample requests.
 
 The hosts never apply migrations at startup. The first time, and after pulling new migrations, copy the `signal9` database's connection string from the Aspire dashboard and apply them:
 
@@ -55,6 +57,15 @@ The `KeyEncryption` section chooses the key-encryption key on `auth` and `api`:
 | `KeyVault:ManagedIdentityClientId` | A user-assigned identity's client ID, or empty for the system-assigned identity. |
 | `Certificate:Path` | A PKCS#12 file, or a PEM certificate with `Certificate:KeyPath`. The key must be RSA-3072 or larger. |
 | `Certificate:KeyPath`, `Certificate:Password` | The PEM private key, and the password of the PKCS#12 file or encrypted PEM key, if any. |
+
+## Dashboard (web)
+
+Browsers only ever talk to web and auth (ADR-0003). web is a confidential client of auth (`signal9-web`) using authorization code with PKCE. It redeems codes at api's mTLS token alias with its own client certificate, so its access tokens are bound to it, and keeps them in the database, encrypted with Data Protection. The browser gets only a `__Host-Http-signal9` cookie (Secure, HttpOnly, SameSite=Strict) holding an encrypted session ticket. web generates its certificate itself, stores it wrapped by the key-encryption key, rotates it with the signing keys' schedule and registers it at the authorization server on its own.
+
+- Every state-changing request to web must send `X-CSRF: 1`. There's no CORS on any host.
+- web forwards only `/api/*`, `/hubs/dashboard` and `/docs/*` to api, at `Identity:ApiUri`.
+- web sends a strict Content Security Policy: scripts from web only (plus WebAssembly and the import map's hash), no other origins.
+- `Identity:WebUri` is web's public address; its redirect URI is `{WebUri}signin-oidc`.
 
 ## Sign-in with Entra
 
@@ -119,7 +130,7 @@ Single resources and write responses carry a strong `ETag`. Send it back in `If-
 
 A device is the managed machine; an agent is one installation on it. Telemetry and command history belong to the device and survive the agent being replaced.
 
-Hubs: `/hubs/agents` and `/hubs/dashboard` (live updates for the dashboard). The agent hub is a doorbell (ADR-0009): it rings a device's active agent when a command is queued, carries no command content and accepts no calls. The agent fetches its pending commands over REST when the doorbell rings, every time it (re)connects and when a heartbeat response says work is waiting.
+Hubs: `/hubs/agents` and `/hubs/dashboard` (live updates for the dashboard, reached through web). The agent hub is a doorbell (ADR-0009): it rings a device's active agent when a command is queued, carries no command content and accepts no calls. The agent fetches its pending commands over REST when the doorbell rings, every time it (re)connects and when a heartbeat response says work is waiting.
 
 ## Operations
 

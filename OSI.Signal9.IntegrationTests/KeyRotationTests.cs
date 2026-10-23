@@ -21,12 +21,17 @@ public sealed class KeyRotationTests : IDisposable
 {
     private readonly Signal9ApiFactory _factory = new();
     private readonly TestContext _testContext;
+    private readonly DateTimeOffset _start;
 
-    public KeyRotationTests(TestContext testContext) => _testContext = testContext;
+    public KeyRotationTests(TestContext testContext)
+    {
+        _testContext = testContext;
+        _start = _factory.Time.GetUtcNow();
+    }
 
     private CancellationToken Ct => _testContext.CancellationToken;
 
-    private DateTimeOffset Start => new(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
+    private DateTimeOffset Start => _start;
 
     [TestMethod]
     public async Task The_next_key_is_published_14_days_before_it_activates_and_lasts_90_days()

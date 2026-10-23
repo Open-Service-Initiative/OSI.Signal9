@@ -24,8 +24,11 @@ namespace OSI.Signal9.Server.Keys;
 /// changes, when a key is published, activates, retires or is removed, so options built from the keys are rebuilt.
 /// </remarks>
 public sealed class StoredKeys(IServiceScopeFactory scopes, KeyEncryptionKey kek, TimeProvider time,
-    ILogger<StoredKeys> logger) : IDisposable
+    IOptions<StoredKeysOptions> options, ILogger<StoredKeys> logger) : IDisposable
 {
+    /// <summary>The uses this host manages; it never generates, loads or removes the others' keys.</summary>
+    private readonly StoredKeyUse[] _uses = options.Value.Uses;
+
     /// <summary>Key of the transaction-level advisory lock held while keys are generated or removed.</summary>
     public const long LockKey = 0x5167_6E39_4B65_7973; // "Sig9Keys"
 
@@ -66,7 +69,7 @@ public sealed class StoredKeys(IServiceScopeFactory scopes, KeyEncryptionKey kek
         if (Due(db).Any)
             UpdateDue(db);
 
-        var keys = db.StoredKeys.AsNoTracking().OrderBy(k => k.ActivatesAt).ToList();
+        var keys = db.StoredKeys.AsNoTracking().Where(k => _uses.Contains(k.Use)).OrderBy(k => k.ActivatesAt).ToList();
         ScheduleReload(NextChange(keys, time.GetUtcNow().UtcDateTime));
         return [.. keys.Select(key => (key.Use, Open(key)))];
     }
@@ -85,10 +88,10 @@ public sealed class StoredKeys(IServiceScopeFactory scopes, KeyEncryptionKey kek
     private Pending Due(Signal9DbContext db)
     {
         var now = time.GetUtcNow();
-        var keys = db.StoredKeys.ToList();
+        var keys = db.StoredKeys.Where(k => _uses.Contains(k.Use)).ToList();
 
         var generate = new List<(StoredKeyUse, DateTimeOffset)>();
-        foreach (var use in Enum.GetValues<StoredKeyUse>())
+        foreach (var use in _uses)
         {
             var latest = keys.Where(k => k.Use == use).Select(k => (DateTime?)k.ExpiresAt).Max();
             if (latest is not { } expiresAt || expiresAt <= now.UtcDateTime)
@@ -198,8 +201,11 @@ public sealed class StoredKeys(IServiceScopeFactory scopes, KeyEncryptionKey kek
             HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, critical: true));
         request.CertificateExtensions.Add(new X509KeyUsageExtension(
-            use == StoredKeyUse.Signing ? X509KeyUsageFlags.DigitalSignature : X509KeyUsageFlags.KeyEncipherment,
+            use == StoredKeyUse.Encryption ? X509KeyUsageFlags.KeyEncipherment : X509KeyUsageFlags.DigitalSignature,
             critical: true));
+        // A TLS client certificate must say so, or chain validation refuses it (RFC 5280 §4.2.1.12).
+        if (use == StoredKeyUse.WebClient)
+            request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([new Oid("1.3.6.1.5.5.7.3.2")], critical: false));
         request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, critical: false));
         using var certificate = request.CreateSelfSigned(activatesAt, activatesAt + ActivePeriod);
 
@@ -255,7 +261,7 @@ internal sealed class ConfigureStoredKeys(StoredKeys keys) : IConfigureOptions<O
             var key = new X509SecurityKey(certificate);
             if (use == StoredKeyUse.Signing)
                 options.SigningCredentials.Add(new SigningCredentials(key, SecurityAlgorithms.RsaSha256));
-            else
+            else if (use == StoredKeyUse.Encryption)
                 options.EncryptionCredentials.Add(new EncryptingCredentials(key, SecurityAlgorithms.RsaOAEP,
                     SecurityAlgorithms.Aes256CbcHmacSha512));
         }

@@ -40,13 +40,6 @@ builder.Services.AddOpenApi(options => options
 builder.Services.AddSignalR()
     .AddJsonProtocol(options => Signal9Json.Configure(options.PayloadSerializerOptions));
 
-var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
-builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
-    .WithOrigins(allowedOrigins)
-    .AllowAnyHeader()
-    .AllowAnyMethod()
-    .AllowCredentials()));
-
 // api runs the authorization server's RFC 8705 mTLS aliases (token, revocation, introspection), at the same paths
 // auth advertises for them. Discovery and the key set are served only by auth.
 builder.Services.AddSignal9OpenIddict()
@@ -54,6 +47,11 @@ builder.Services.AddSignal9OpenIddict()
         .UseSignal9TokenRules(identity, builder.Configuration)
         .SetConfigurationEndpointUris(Array.Empty<Uri>())
         .SetJsonWebKeySetEndpointUris(Array.Empty<Uri>())
+        // web redeems its authorization codes here, with its certificate, so its tokens are bound to it (ADR-0003).
+        // OpenIddict allows the code flow only on a server with an authorization endpoint (ID0077), so api names
+        // auth's: an absolute URI on another host, which api never serves.
+        .SetAuthorizationEndpointUris(new Uri(identity.Issuer, AuthorizationServer.AuthorizationEndpoint))
+        .UseSignal9CodeFlow()
         .SetTokenEndpointUris(AuthorizationServer.TokenEndpoint)
         .SetRevocationEndpointUris(AuthorizationServer.RevocationEndpoint)
         .SetIntrospectionEndpointUris(AuthorizationServer.IntrospectionEndpoint))
@@ -85,7 +83,6 @@ app.UseSignal9ClientCertificates();
 app.UseSignal9ForwardedHeaders();
 app.UseHostHardening();
 
-app.UseCors();
 app.UseRateLimitingAndAuthentication();
 app.UseAuthorization();
 

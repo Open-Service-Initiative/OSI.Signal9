@@ -36,15 +36,24 @@ var api = builder.AddProject<Projects.OSI_Signal9_API>("api")
     .WaitFor(database)
     .WithExternalHttpEndpoints();
 
+// The dashboard's backend-for-frontend (ADR-0003): browsers only ever talk to web and auth.
+var web = builder.AddProject<Projects.OSI_Signal9_Web>("web")
+    .WithReference(database)
+    .WaitFor(database)
+    .WaitFor(auth)
+    .WaitFor(api)
+    .WithExternalHttpEndpoints();
+
 var issuer = ReferenceExpression.Create($"{auth.GetEndpoint("https")}/");
 var apiUri = ReferenceExpression.Create($"{api.GetEndpoint("https")}/");
-foreach (var host in new IResourceBuilder<ProjectResource>[] { auth, api })
+web.WithEnvironment("Identity__WebUri", ReferenceExpression.Create($"{web.GetEndpoint("https")}/"));
+foreach (var host in new IResourceBuilder<ProjectResource>[] { auth, api, web })
 {
     host.WithEnvironment("Identity__Issuer", issuer)
         .WithEnvironment("Identity__ApiUri", apiUri);
 
-    // Locally a certificate is the key-encryption key that wraps the stored keys (ADR-0008); when published it's a
-    // Key Vault key reached by managed identity, which #77 provisions.
+    // Locally a certificate is the key-encryption key that wraps the stored keys and web's client certificate
+    // (ADR-0008); when published it's a Key Vault key reached by managed identity, which #77 provisions.
     if (builder.ExecutionContext.IsRunMode)
     {
         host.WithEnvironment("KeyEncryption__Provider", "Certificate")
@@ -57,10 +66,5 @@ foreach (var host in new IResourceBuilder<ProjectResource>[] { auth, api })
     host.WithEnvironment("HealthProbes__Port", probes.Property(EndpointProperty.TargetPort))
         .WithHttpHealthCheck("/health", endpointName: "probes");
 }
-
-// The Blazor WebAssembly app reads the API address from wwwroot/appsettings.*.json, so this only starts it.
-builder.AddProject<Projects.OSI_Signal9_Web>("web")
-    .WaitFor(api)
-    .WithExternalHttpEndpoints();
 
 builder.Build().Run();

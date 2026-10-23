@@ -9,7 +9,7 @@ internal static class TestCertificates
 {
     private static readonly Oid ClientAuthentication = new("1.3.6.1.5.5.7.3.2");
 
-    // X.509 chain building checks validity against the real clock, not the test's FakeTimeProvider.
+    // Chain building checks validity on the hosts' clock, which the fixture starts at the real time.
     private static DateTimeOffset Now => DateTimeOffset.UtcNow;
 
     /// <summary>The test certificate authority, trusted by the fixture for <c>tls_client_auth</c>.</summary>

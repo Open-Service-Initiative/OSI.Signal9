@@ -1,0 +1,20 @@
+@* The dashboard's root: web renders it interactive on WebAssembly, without prerendering. *@
+<Router AppAssembly="typeof(Routes).Assembly">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)">
+            <NotAuthorized>
+                <SignInPrompt />
+            </NotAuthorized>
+            <Authorizing>
+                <FluentSpinner />
+            </Authorizing>
+        </AuthorizeRouteView>
+    </Found>
+    <NotFound>
+        <LayoutView Layout="typeof(MainLayout)">
+            <PageTitle>Not found - Signal9</PageTitle>
+            <FluentText As="TextTag.H1" Size="TextSize.Size800">Not found</FluentText>
+            <p>There's nothing at this address.</p>
+        </LayoutView>
+    </NotFound>
+</Router>

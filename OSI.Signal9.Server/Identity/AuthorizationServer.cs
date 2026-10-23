@@ -26,6 +26,9 @@ public static class AuthorizationServer
     /// <summary>The audience of every access token: the <c>api</c> host's resources.</summary>
     public const string ApiAudience = "signal9-api";
 
+    /// <summary>The authorization endpoint, on <c>auth</c> only.</summary>
+    public const string AuthorizationEndpoint = "connect/authorize";
+
     public const string TokenEndpoint = "connect/token";
     public const string RevocationEndpoint = "connect/revoke";
     public const string IntrospectionEndpoint = "connect/introspect";
@@ -72,6 +75,15 @@ public static class AuthorizationServer
         server.UseAspNetCore().EnableTokenEndpointPassthrough();
         return server;
     }
+
+    /// <summary>
+    /// The authorization code flow, as auth issues codes and auth and api redeem them: codes last 5 minutes, and PKCE
+    /// is S256 only (RFC 9700 §2.1.1); "plain" is refused.
+    /// </summary>
+    public static OpenIddictServerBuilder UseSignal9CodeFlow(this OpenIddictServerBuilder server) =>
+        server.AllowAuthorizationCodeFlow()
+            .SetAuthorizationCodeLifetime(AuthorizationCodeLifetime)
+            .Configure(options => options.CodeChallengeMethods.Remove(CodeChallengeMethods.Plain));
 
     /// <summary>
     /// Handles token requests that OpenIddict has already authenticated and validated, issuing identity-only
