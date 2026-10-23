@@ -9,7 +9,7 @@ namespace OSI.Signal9.API.Tenants;
 
 [ApiController]
 [Route("api/tenants")]
-public sealed class TenantsController(Signal9DbContext db, TimeProvider time) : ControllerBase
+public sealed class TenantsController(Signal9DbContext db, TenantTree tree, TimeProvider time) : ControllerBase
 {
     /// <summary>Lists tenants, optionally filtered by parent or status.</summary>
     [HttpGet]
@@ -53,17 +53,6 @@ public sealed class TenantsController(Signal9DbContext db, TimeProvider time) : 
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TenantDto>> Create(CreateTenantRequest request, CancellationToken cancellationToken)
     {
-        if (request.ParentTenantId is { } parentId)
-        {
-            var parent = await db.Tenants.AsNoTracking().SingleOrDefaultAsync(t => t.Id == parentId, cancellationToken);
-            if (parent is null)
-                ModelState.AddModelError(nameof(request.ParentTenantId), "Parent tenant does not exist.");
-            else if (parent.ParentTenantId is not null)
-                ModelState.AddModelError(nameof(request.ParentTenantId), "Tenants can only be nested one level deep.");
-            if (!ModelState.IsValid)
-                return ValidationProblem(ModelState);
-        }
-
         var now = time.GetUtcNow().UtcDateTime;
         var tenant = new Tenant
         {
@@ -79,8 +68,15 @@ public sealed class TenantsController(Signal9DbContext db, TimeProvider time) : 
             CreatedAt = now,
             UpdatedAt = now,
         };
-        db.Tenants.Add(tenant);
-        await db.SaveChangesAsync(cancellationToken);
+        switch (await tree.AddAsync(tenant, cancellationToken))
+        {
+            case TenantTreeError.ParentNotFound:
+                ModelState.AddModelError(nameof(request.ParentTenantId), "Parent tenant does not exist.");
+                return ValidationProblem(ModelState);
+            case TenantTreeError.TooDeep:
+                return Problem(statusCode: StatusCodes.Status409Conflict, title: "Tenant tree too deep",
+                    detail: "The parent tenant is already at the maximum depth of the tenant tree.");
+        }
 
         return CreatedAtRoute(nameof(GetTenant), new { tenantId = tenant.Id }, tenant.ToDto(agentCount: 0));
     }
@@ -110,26 +106,26 @@ public sealed class TenantsController(Signal9DbContext db, TimeProvider time) : 
         return tenant.ToDto(agentCount);
     }
 
-    /// <summary>Deletes a tenant. Tenants that still own agents or client tenants cannot be deleted.</summary>
+    /// <summary>Deletes a tenant. Tenants that still own agents or child tenants cannot be deleted.</summary>
     [HttpDelete("{tenantId:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete(Guid tenantId, CancellationToken cancellationToken)
     {
-        var tenant = await db.Tenants.SingleOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
-        if (tenant is null)
-            return NotFound();
-
         if (await db.Agents.AnyAsync(a => a.TenantId == tenantId, cancellationToken))
             return Problem(statusCode: StatusCodes.Status409Conflict, title: "Tenant has agents",
                 detail: "Delete or move the tenant's agents before deleting the tenant.");
-        if (await db.Tenants.AnyAsync(t => t.ParentTenantId == tenantId, cancellationToken))
-            return Problem(statusCode: StatusCodes.Status409Conflict, title: "Tenant has client tenants",
-                detail: "Delete the tenant's client tenants before deleting it.");
 
-        db.Tenants.Remove(tenant);
-        await db.SaveChangesAsync(cancellationToken);
+        switch (await tree.RemoveAsync(tenantId, cancellationToken))
+        {
+            case TenantTreeError.TenantNotFound:
+                return NotFound();
+            case TenantTreeError.HasChildTenants:
+                return Problem(statusCode: StatusCodes.Status409Conflict, title: "Tenant has child tenants",
+                    detail: "Delete or transfer the tenant's child tenants before deleting it.");
+        }
+
         return NoContent();
     }
 }

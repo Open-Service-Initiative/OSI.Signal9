@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Serialization;
@@ -53,20 +54,61 @@ public sealed class TenantsTests : IDisposable
     }
 
     [TestMethod]
-    public async Task Clients_can_only_nest_one_level()
+    public async Task Tenants_nest_to_the_default_maximum_depth_of_20()
     {
-        var msp = await _factory.CreateTenantAsync(_client, "MSP");
-        var client = await _client.PostAsJsonAsync("api/tenants",
-            new CreateTenantRequest { Name = "Client", ContactEmail = "a@b.example", ParentTenantId = msp.Id },
-            Signal9Json.Options, Ct);
-        var clientTenant = await client.Content.ReadFromJsonAsync<TenantDto>(Signal9Json.Options, Ct);
+        Guid? parentId = null;
+        for (var level = 1; level <= 20; level++)
+        {
+            var created = await CreateAsync(_client, $"Level {level}", parentId);
+            Assert.AreEqual(HttpStatusCode.Created, created.StatusCode, $"level {level}");
+            parentId = (await created.Content.ReadFromJsonAsync<TenantDto>(Signal9Json.Options, Ct))!.Id;
+        }
 
-        var grandchild = await _client.PostAsJsonAsync("api/tenants",
-            new CreateTenantRequest { Name = "Grandchild", ContactEmail = "a@b.example", ParentTenantId = clientTenant!.Id },
-            Signal9Json.Options, Ct);
+        var tooDeep = await CreateAsync(_client, "Level 21", parentId);
 
-        Assert.AreEqual(HttpStatusCode.Created, client.StatusCode);
-        Assert.AreEqual(HttpStatusCode.BadRequest, grandchild.StatusCode);
+        Assert.AreEqual(HttpStatusCode.Conflict, tooDeep.StatusCode);
+        Assert.AreEqual("application/problem+json", tooDeep.Content.Headers.ContentType?.MediaType);
+        var problem = await tooDeep.Content.ReadFromJsonAsync<ProblemDetails>(Ct);
+        Assert.AreEqual("Tenant tree too deep", problem!.Title);
+    }
+
+    [TestMethod]
+    public async Task Maximum_depth_is_configurable()
+    {
+        using var host = _factory.WithWebHostBuilder(builder => builder.UseSetting("TenantTree:MaxDepth", "2"));
+        using var client = host.CreateClient();
+        var root = await CreateAsync(client, "Root", null);
+        var rootId = (await root.Content.ReadFromJsonAsync<TenantDto>(Signal9Json.Options, Ct))!.Id;
+        var child = await CreateAsync(client, "Child", rootId);
+        var childId = (await child.Content.ReadFromJsonAsync<TenantDto>(Signal9Json.Options, Ct))!.Id;
+
+        var grandchild = await CreateAsync(client, "Grandchild", childId);
+        var secondChild = await CreateAsync(client, "Second child", rootId);
+
+        Assert.AreEqual(HttpStatusCode.Created, child.StatusCode);
+        Assert.AreEqual(HttpStatusCode.Conflict, grandchild.StatusCode);
+        Assert.AreEqual(HttpStatusCode.Created, secondChild.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task Create_under_a_missing_parent_returns_400()
+    {
+        var response = await CreateAsync(_client, "Orphan", Guid.NewGuid());
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>(Ct);
+        Assert.Contains("ParentTenantId", problem!.Errors.Keys);
+    }
+
+    [TestMethod]
+    public async Task Delete_tenant_with_child_tenants_returns_409()
+    {
+        var parent = await _factory.CreateTenantAsync(_client, "MSP");
+        await CreateAsync(_client, "Client", parent.Id);
+
+        var response = await _client.DeleteAsync($"api/tenants/{parent.Id}", Ct);
+
+        Assert.AreEqual(HttpStatusCode.Conflict, response.StatusCode);
     }
 
     [TestMethod]
@@ -129,6 +171,11 @@ public sealed class TenantsTests : IDisposable
 
         Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
     }
+
+    private Task<HttpResponseMessage> CreateAsync(HttpClient client, string name, Guid? parentTenantId) =>
+        client.PostAsJsonAsync("api/tenants",
+            new CreateTenantRequest { Name = name, ContactEmail = "it@tenant.example", ParentTenantId = parentTenantId },
+            Signal9Json.Options, Ct);
 
     public void Dispose()
     {

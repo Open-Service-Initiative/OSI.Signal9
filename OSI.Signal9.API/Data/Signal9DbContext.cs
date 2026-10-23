@@ -5,6 +5,7 @@ namespace OSI.Signal9.API.Data;
 public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options) : DbContext(options)
 {
     public DbSet<Tenant> Tenants => Set<Tenant>();
+    public DbSet<TenantClosure> TenantClosures => Set<TenantClosure>();
     public DbSet<Agent> Agents => Set<Agent>();
     public DbSet<AgentCommand> AgentCommands => Set<AgentCommand>();
     public DbSet<TelemetrySample> TelemetrySamples => Set<TelemetrySample>();
@@ -23,6 +24,14 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options)
                 .WithMany()
                 .HasForeignKey(t => t.ParentTenantId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<TenantClosure>(closure =>
+        {
+            closure.HasKey(c => new { c.AncestorId, c.DescendantId });
+            closure.HasIndex(c => c.DescendantId);
+            closure.HasOne<Tenant>().WithMany().HasForeignKey(c => c.AncestorId).OnDelete(DeleteBehavior.Cascade);
+            closure.HasOne<Tenant>().WithMany().HasForeignKey(c => c.DescendantId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Agent>(agent =>

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using OSI.Signal9.API.Agents;
 using OSI.Signal9.API.Data;
 using OSI.Signal9.API.Hubs;
+using OSI.Signal9.API.Tenants;
 using OSI.Signal9.Contracts.Hubs;
 using OSI.Signal9.Contracts.Serialization;
 
@@ -17,6 +18,9 @@ builder.EnrichAzureNpgsqlDbContext<Signal9DbContext>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddOptions<AgentPresenceOptions>().BindConfiguration(AgentPresenceOptions.SectionName);
 builder.Services.AddSingleton<AgentPresence>();
+builder.Services.AddOptions<TenantTreeOptions>().BindConfiguration(TenantTreeOptions.SectionName)
+    .ValidateDataAnnotations().ValidateOnStart();
+builder.Services.AddScoped<TenantTree>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(options => Signal9Json.Configure(options.JsonSerializerOptions));

@@ -245,6 +245,24 @@ namespace OSI.Signal9.API.Data.Migrations
                     b.ToTable("Tenants");
                 });
 
+            modelBuilder.Entity("OSI.Signal9.API.Data.TenantClosure", b =>
+                {
+                    b.Property<Guid>("AncestorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("DescendantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Depth")
+                        .HasColumnType("integer");
+
+                    b.HasKey("AncestorId", "DescendantId");
+
+                    b.HasIndex("DescendantId");
+
+                    b.ToTable("TenantClosures");
+                });
+
             modelBuilder.Entity("OSI.Signal9.API.Data.Agent", b =>
                 {
                     b.HasOne("OSI.Signal9.API.Data.Tenant", "Tenant")
@@ -310,6 +328,21 @@ namespace OSI.Signal9.API.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("ParentTenant");
+                });
+
+            modelBuilder.Entity("OSI.Signal9.API.Data.TenantClosure", b =>
+                {
+                    b.HasOne("OSI.Signal9.API.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("AncestorId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("OSI.Signal9.API.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("DescendantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("OSI.Signal9.API.Data.Tenant", b =>

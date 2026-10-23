@@ -23,6 +23,18 @@ public sealed class Tenant
     public List<Agent> Agents { get; set; } = [];
 }
 
+/// <summary>
+/// One row of the tenant closure table: <see cref="AncestorId"/> is <see cref="Depth"/> levels above
+/// <see cref="DescendantId"/>, and every tenant is paired with itself at depth 0. Derived from the parent
+/// pointers and written only by <see cref="Tenants.TenantTree"/>.
+/// </summary>
+public sealed class TenantClosure
+{
+    public Guid AncestorId { get; set; }
+    public Guid DescendantId { get; set; }
+    public int Depth { get; set; }
+}
+
 public sealed class Agent
 {
     public Guid Id { get; set; }

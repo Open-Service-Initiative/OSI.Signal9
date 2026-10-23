@@ -113,7 +113,7 @@
                                     <label class="form-label" for="parent">Parent tenant</label>
                                     <InputSelect id="parent" class="form-select" @bind-Value="form.ParentTenantId">
                                         <option value="">None</option>
-                                        @foreach (var parent in tenants!.Where(t => t.ParentTenantId is null))
+                                        @foreach (var parent in tenants!)
                                         {
                                             <option value="@parent.Id">@parent.Name</option>
                                         }

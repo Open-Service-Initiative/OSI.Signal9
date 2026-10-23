@@ -17,7 +17,7 @@ public enum SubscriptionPlan
 }
 
 /// <summary>
-/// A customer organization. Tenants can be nested one level: an MSP tenant owns client tenants.
+/// A node in the tenant tree, such as a consultancy, an MSP, a client or a site. Tenants nest to a configurable maximum depth.
 /// </summary>
 public sealed record TenantDto(
     Guid Id,
