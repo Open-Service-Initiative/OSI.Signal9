@@ -30,6 +30,8 @@ public static class BffAuthentication
         var identity = builder.Configuration.GetIdentityOptions();
 
         builder.Services.AddScoped<DashboardSessions>();
+        builder.Services.AddSingleton<WebTokenClient>();
+        builder.Services.AddHostedService<DashboardSessionSweeper>();
         builder.Services.AddAuthentication(CookieScheme)
             .AddCookie(CookieScheme, cookies =>
             {
@@ -38,9 +40,10 @@ public static class BffAuthentication
                 cookies.Cookie.HttpOnly = true;
                 cookies.Cookie.SecurePolicy = CookieSecurePolicy.Always;
                 cookies.Cookie.SameSite = SameSiteMode.Strict;
-                // An hour idle, as on auth; the 12-hour absolute cap and refresh come with #118.
-                cookies.ExpireTimeSpan = TimeSpan.FromHours(1);
-                cookies.SlidingExpiration = true;
+                // The ticket lasts as long as the session can (story 48). The hour idle is judged by the session itself,
+                // to the minute, since a sliding cookie is only renewed once half its time is up.
+                cookies.ExpireTimeSpan = AuthorizationServer.DashboardSessionLifetime;
+                cookies.SlidingExpiration = false;
                 cookies.Events = new CookieAuthenticationEvents
                 {
                     // The dashboard calls web with fetch, so a missing session is a status code, never a redirect.
@@ -54,11 +57,11 @@ public static class BffAuthentication
                         context.Response.StatusCode = StatusCodes.Status403Forbidden;
                         return Task.CompletedTask;
                     },
-                    // A ticket whose session has ended (signed out, on any replica) is worth nothing.
+                    // A ticket whose session has ended (signed out on any replica, idle or capped) is worth nothing.
                     OnValidatePrincipal = async context =>
                     {
                         var sessions = context.HttpContext.RequestServices.GetRequiredService<DashboardSessions>();
-                        if (!await sessions.ExistsAsync(context.Principal!, context.HttpContext.RequestAborted))
+                        if (!await sessions.ValidateAsync(context.Principal!, context.HttpContext.RequestAborted))
                         {
                             context.RejectPrincipal();
                             await context.HttpContext.SignOutAsync(CookieScheme);
@@ -85,6 +88,7 @@ public static class BffAuthentication
                 oidc.MapInboundClaims = false;
                 oidc.DisableTelemetry = true;
                 oidc.Scope.Clear();
+                // offline_access brings the refresh token web keeps the session going with (#118).
                 foreach (var scope in WebClientRegistration.Scopes)
                     oidc.Scope.Add(scope);
                 oidc.TokenValidationParameters.NameClaimType = "sub";

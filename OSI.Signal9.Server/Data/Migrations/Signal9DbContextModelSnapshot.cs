@@ -144,6 +144,9 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<byte[]>("ProtectedTokens")
                         .IsRequired()
                         .HasColumnType("bytea");

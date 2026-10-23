@@ -35,6 +35,24 @@ public static class AuthorizationServer
 
     public static readonly TimeSpan AccessTokenLifetime = TimeSpan.FromMinutes(10);
 
+    /// <summary>
+    /// How long a rotated refresh token keeps working, so a client whose response was lost can retry. Reuse after it
+    /// revokes the whole chain (RFC 9700 §4.14.2).
+    /// </summary>
+    public static readonly TimeSpan RefreshTokenReuseLeeway = TimeSpan.FromSeconds(30);
+
+    /// <summary>The dashboard's backend-for-frontend, <c>web</c>, as registered at the authorization server.</summary>
+    public const string DashboardClientId = "signal9-web";
+
+    /// <summary>
+    /// A dashboard session's absolute cap (story 48): web's session, and its refresh tokens, which rotate but never
+    /// slide past it. auth's own session has the same cap, so reaching it means a fresh sign-in at Entra (story 49).
+    /// </summary>
+    public static readonly TimeSpan DashboardSessionLifetime = TimeSpan.FromHours(12);
+
+    /// <summary>A dashboard session ends after this long without use (story 48), at web and at auth.</summary>
+    public static readonly TimeSpan DashboardSessionIdleTimeout = TimeSpan.FromHours(1);
+
     /// <summary>Authorization codes last 5 minutes and work once (RFC 6749 §4.1.2).</summary>
     public static readonly TimeSpan AuthorizationCodeLifetime = TimeSpan.FromMinutes(5);
 
@@ -65,6 +83,11 @@ public static class AuthorizationServer
         server.SetIssuer(identity.Issuer)
             .AllowClientCredentialsFlow()
             .SetAccessTokenLifetime(AccessTokenLifetime)
+            // The shared refresh policy: opaque reference tokens, so they can be revoked, rotated on every use (the
+            // default) with a 30-second reuse leeway; reuse after it revokes the chain (RFC 9700 §4.14.2).
+            .AllowRefreshTokenFlow()
+            .UseReferenceRefreshTokens()
+            .SetRefreshTokenReuseLeeway(RefreshTokenReuseLeeway)
             // Only catalogue scopes are issued; anything else is invalid_scope.
             .RegisterScopes([.. Scopes.All.Keys])
             .UseSignal9ProofOfPossession(identity);
@@ -91,15 +114,23 @@ public static class AuthorizationServer
     /// was built at the authorization endpoint; OpenIddict has checked its PKCE verifier and that it wasn't used before.
     /// </summary>
     public static IEndpointConventionBuilder MapTokenEndpoint(this IEndpointRouteBuilder endpoints) =>
-        endpoints.MapPost(TokenEndpoint, async (HttpContext context) =>
+        endpoints.MapPost(TokenEndpoint, async (HttpContext context, TimeProvider time) =>
         {
             var request = context.GetOpenIddictServerRequest()
                 ?? throw new InvalidOperationException("The OpenIddict server request can't be retrieved.");
 
-            if (request.IsAuthorizationCodeGrantType())
+            if (request.IsAuthorizationCodeGrantType() || request.IsRefreshTokenGrantType())
             {
-                var code = await context.AuthenticateAsync(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
-                return Results.SignIn(code.Principal!, properties: null,
+                var grant = await context.AuthenticateAsync(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+                var principal = grant.Principal!;
+                if (request.ClientId == DashboardClientId)
+                {
+                    // web's refresh tokens end with the session: 12 hours from sign-in, however often they rotate.
+                    principal.SetRefreshTokenLifetime(request.IsRefreshTokenGrantType()
+                        ? principal.GetExpirationDate()!.Value - time.GetUtcNow()
+                        : DashboardSessionLifetime);
+                }
+                return Results.SignIn(principal, properties: null,
                     OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
             }
 

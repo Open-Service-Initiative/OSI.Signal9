@@ -29,7 +29,7 @@ public static class BffEndpoints
         // Needs the CSRF header like any POST, so another site can't sign the person out.
         app.MapPost(BffRoutes.Logout, async (HttpContext context, DashboardSessions sessions) =>
         {
-            await sessions.EndAsync(context.User, context.RequestAborted);
+            await sessions.EndAsync(context.User);
             await context.SignOutAsync(BffAuthentication.CookieScheme);
             return TypedResults.NoContent();
         }).AllowAnonymous();
