@@ -54,17 +54,18 @@ public sealed class TenantsTests : IDisposable
     }
 
     [TestMethod]
-    public async Task Tenants_nest_to_the_default_maximum_depth_of_20()
+    public async Task Tenants_nest_to_the_default_maximum_depth_of_20_below_the_root()
     {
+        // The root is at depth 0, so a full chain is 21 tenants deep.
         Guid? parentId = null;
-        for (var level = 1; level <= 20; level++)
+        for (var depth = 0; depth <= 20; depth++)
         {
-            var created = await CreateAsync(_client, $"Level {level}", parentId);
-            Assert.AreEqual(HttpStatusCode.Created, created.StatusCode, $"level {level}");
+            var created = await CreateAsync(_client, $"Depth {depth}", parentId);
+            Assert.AreEqual(HttpStatusCode.Created, created.StatusCode, $"depth {depth}");
             parentId = (await created.Content.ReadFromJsonAsync<TenantDto>(Signal9Json.Options, Ct))!.Id;
         }
 
-        var tooDeep = await CreateAsync(_client, "Level 21", parentId);
+        var tooDeep = await CreateAsync(_client, "Depth 21", parentId);
 
         Assert.AreEqual(HttpStatusCode.Conflict, tooDeep.StatusCode);
         Assert.AreEqual("application/problem+json", tooDeep.Content.Headers.ContentType?.MediaType);
@@ -83,10 +84,14 @@ public sealed class TenantsTests : IDisposable
         var childId = (await child.Content.ReadFromJsonAsync<TenantDto>(Signal9Json.Options, Ct))!.Id;
 
         var grandchild = await CreateAsync(client, "Grandchild", childId);
+        var grandchildId = (await grandchild.Content.ReadFromJsonAsync<TenantDto>(Signal9Json.Options, Ct))!.Id;
+
+        var greatGrandchild = await CreateAsync(client, "Great-grandchild", grandchildId);
         var secondChild = await CreateAsync(client, "Second child", rootId);
 
         Assert.AreEqual(HttpStatusCode.Created, child.StatusCode);
-        Assert.AreEqual(HttpStatusCode.Conflict, grandchild.StatusCode);
+        Assert.AreEqual(HttpStatusCode.Created, grandchild.StatusCode);
+        Assert.AreEqual(HttpStatusCode.Conflict, greatGrandchild.StatusCode);
         Assert.AreEqual(HttpStatusCode.Created, secondChild.StatusCode);
     }
 

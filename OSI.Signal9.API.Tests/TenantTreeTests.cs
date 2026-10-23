@@ -40,9 +40,10 @@ public sealed class TenantTreeTests : IDisposable
     [TestMethod]
     public async Task Moving_a_subtree_beyond_the_maximum_depth_is_refused()
     {
-        // An 11-level chain moved under level 10 of another would make 21 levels; under level 9, exactly 20.
-        var left = await ChainAsync("Left", 10);
-        var right = await ChainAsync("Right", 11);
+        // Right's leaf is 11 below its root. Moved under Left's depth-9 leaf, that leaf would sit at depth 21;
+        // under Left's depth-8 tenant, at exactly the maximum of 20.
+        var left = await ChainAsync("Left", deepest: 9);
+        var right = await ChainAsync("Right", deepest: 11);
 
         Assert.AreEqual(TenantTreeError.TooDeep, await MoveAsync(right[0], left[^1]));
         Assert.AreEqual(TenantTreeError.None, await MoveAsync(right[0], left[^2]));
@@ -111,11 +112,12 @@ public sealed class TenantTreeTests : IDisposable
         return (await response.Content.ReadFromJsonAsync<TenantDto>(Signal9Json.Options, Ct))!.Id;
     }
 
-    private async Task<List<Guid>> ChainAsync(string name, int levels)
+    // A chain of tenants from a root at depth 0 down to depth `deepest`.
+    private async Task<List<Guid>> ChainAsync(string name, int deepest)
     {
         List<Guid> chain = [];
-        for (var level = 1; level <= levels; level++)
-            chain.Add(await CreateAsync($"{name} {level}", chain.Count == 0 ? null : chain[^1]));
+        for (var depth = 0; depth <= deepest; depth++)
+            chain.Add(await CreateAsync($"{name} {depth}", chain.Count == 0 ? null : chain[^1]));
         return chain;
     }
 

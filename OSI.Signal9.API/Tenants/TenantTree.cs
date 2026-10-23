@@ -9,7 +9,10 @@ public sealed class TenantTreeOptions
 {
     public const string SectionName = "TenantTree";
 
-    /// <summary>The most levels a tenant tree may have, counting its root tenant as level 1.</summary>
+    /// <summary>
+    /// The deepest a tenant may sit below its root. Depth is zero-indexed: a root tenant has depth 0, and a
+    /// tenant's depth is its closure-table distance from its root.
+    /// </summary>
     [Range(1, 1000)]
     public int MaxDepth { get; set; } = 20;
 }
@@ -43,7 +46,7 @@ public sealed class TenantTree(Signal9DbContext db, IOptions<TenantTreeOptions> 
                 parentAncestors = await db.TenantClosures.Where(c => c.DescendantId == parentId).ToListAsync(cancellationToken);
                 if (parentAncestors.Count == 0)
                     return TenantTreeError.ParentNotFound;
-                if (parentAncestors.Max(c => c.Depth) + 2 > options.Value.MaxDepth)
+                if (parentAncestors.Max(c => c.Depth) + 1 > options.Value.MaxDepth)
                     return TenantTreeError.TooDeep;
             }
 
@@ -68,7 +71,8 @@ public sealed class TenantTree(Signal9DbContext db, IOptions<TenantTreeOptions> 
                 return TenantTreeError.Cycle;
 
             var subtree = await db.TenantClosures.Where(c => c.AncestorId == tenantId).ToListAsync(cancellationToken);
-            if (parentAncestors.Max(c => c.Depth) + 1 + subtree.Max(c => c.Depth) + 1 > options.Value.MaxDepth)
+            // The subtree's deepest tenant would sit one below the new parent, plus its own height.
+            if (parentAncestors.Max(c => c.Depth) + 1 + subtree.Max(c => c.Depth) > options.Value.MaxDepth)
                 return TenantTreeError.TooDeep;
 
             // Unlink the subtree from its old ancestors, then link it under the new parent's ancestors.
