@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
@@ -47,6 +48,34 @@ public sealed class TenantTreeTests : IDisposable
 
         Assert.AreEqual(TenantTreeError.TooDeep, await MoveAsync(right[0], left[^1]));
         Assert.AreEqual(TenantTreeError.None, await MoveAsync(right[0], left[^2]));
+    }
+
+    [TestMethod]
+    public async Task A_maximum_depth_of_zero_refuses_moving_a_root_under_another()
+    {
+        using var host = _factory.WithWebHostBuilder(builder => builder.UseSetting("TenantTree:MaxDepth", "0"));
+        var left = await CreateAsync("Left");
+        var right = await CreateAsync("Right");
+
+        using var scope = host.Services.CreateScope();
+        var tree = scope.ServiceProvider.GetRequiredService<TenantTree>();
+
+        Assert.AreEqual(TenantTreeError.TooDeep, await tree.MoveAsync(right, left, Ct));
+        Assert.IsNull((await GetAsync(right)).ParentTenantId);
+    }
+
+    [TestMethod]
+    [DataRow(-1, false)]
+    [DataRow(0, true)]
+    [DataRow(1000, true)]
+    [DataRow(1001, false)]
+    public void Maximum_depth_must_be_between_0_and_1000(int maxDepth, bool valid)
+    {
+        var options = new TenantTreeOptions { MaxDepth = maxDepth };
+
+        var isValid = Validator.TryValidateObject(options, new ValidationContext(options), null, validateAllProperties: true);
+
+        Assert.AreEqual(valid, isValid);
     }
 
     [TestMethod]

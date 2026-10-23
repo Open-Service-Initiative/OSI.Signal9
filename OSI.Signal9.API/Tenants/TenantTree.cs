@@ -11,9 +11,9 @@ public sealed class TenantTreeOptions
 
     /// <summary>
     /// The deepest a tenant may sit below its root. Depth is zero-indexed: a root tenant has depth 0, and a
-    /// tenant's depth is its closure-table distance from its root.
+    /// tenant's depth is its closure-table distance from its root. Zero allows root tenants only (a flat deployment).
     /// </summary>
-    [Range(1, 1000)]
+    [Range(0, 1000)]
     public int MaxDepth { get; set; } = 20;
 }
 

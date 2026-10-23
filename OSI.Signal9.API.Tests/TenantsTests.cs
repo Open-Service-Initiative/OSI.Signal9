@@ -96,6 +96,25 @@ public sealed class TenantsTests : IDisposable
     }
 
     [TestMethod]
+    public async Task A_maximum_depth_of_zero_allows_only_root_tenants()
+    {
+        using var host = _factory.WithWebHostBuilder(builder => builder.UseSetting("TenantTree:MaxDepth", "0"));
+        using var client = host.CreateClient();
+        var root = await CreateAsync(client, "Root", null);
+        var rootId = (await root.Content.ReadFromJsonAsync<TenantDto>(Signal9Json.Options, Ct))!.Id;
+        var secondRoot = await CreateAsync(client, "Second root", null);
+
+        var child = await CreateAsync(client, "Child", rootId);
+
+        Assert.AreEqual(HttpStatusCode.Created, root.StatusCode);
+        Assert.AreEqual(HttpStatusCode.Created, secondRoot.StatusCode);
+        Assert.AreEqual(HttpStatusCode.Conflict, child.StatusCode);
+        Assert.AreEqual("application/problem+json", child.Content.Headers.ContentType?.MediaType);
+        var problem = await child.Content.ReadFromJsonAsync<ProblemDetails>(Ct);
+        Assert.AreEqual("Tenant tree too deep", problem!.Title);
+    }
+
+    [TestMethod]
     public async Task Create_under_a_missing_parent_returns_400()
     {
         var response = await CreateAsync(_client, "Orphan", Guid.NewGuid());
