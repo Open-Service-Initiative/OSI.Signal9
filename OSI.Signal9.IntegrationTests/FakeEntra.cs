@@ -36,6 +36,9 @@ public sealed class FakeEntra
     /// <summary>The operator's multi-tenant app registration.</summary>
     public Guid ClientId { get; } = Guid.NewGuid();
 
+    /// <summary>The directory the app registration belongs to: the operator's own, which deployed Signal9.</summary>
+    public Guid DeployingTenantId { get; } = Guid.NewGuid();
+
     /// <summary>The certificate registered as the app registration's credential (story 125).</summary>
     public X509Certificate2 CredentialCertificate { get; }
 

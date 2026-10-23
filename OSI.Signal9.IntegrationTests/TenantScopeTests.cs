@@ -265,6 +265,8 @@ public sealed class TenantScopeTests : IDisposable
 
     private sealed class FixedAssignedTenants(Guid[] ids) : IAssignedTenants
     {
+        public bool IsSuperadministrator => false;
+
         public IReadOnlyCollection<Guid> TenantIds => ids;
     }
 

@@ -70,6 +70,17 @@ The `Entra` section on auth:
 | `ClientCredentials` | Microsoft.Identity.Web credential descriptions: `SignedAssertionFromManagedIdentity` (with `ManagedIdentityClientId` for a user-assigned identity) on Azure, or a certificate (`Path`, `StoreWithThumbprint`, `KeyVault`, ...). auth refuses to start with a client secret. |
 | `TenantId` | `organizations` by default: work and school accounts from any directory. |
 | `AllowedTenantIds` | Optional, recommended: the Entra directory IDs whose people may sign in. Empty allows every directory. |
+| `DeployingTenantId` | Required: the directory ID of your own Entra tenant, which holds the app registration. Only its people can be Superadministrators. |
+
+### Superadministrator
+
+Superadministrator is the single deployment-wide authority: full authority over every tenant tree, including the `deployment.*` scopes, and the only person who can create root tenants (ADR-0006). It's the app role `Superadministrator` on your app registration, honoured only for people from `DeployingTenantId`: any consenting directory can assign the same role to its own people, and that's ignored. auth reads the role from Entra each time it issues a token, so removing the assignment (or letting a PIM activation lapse) takes effect at the person's next token, at the latest when their current one expires 10 minutes later.
+
+Until first-run setup (#77) makes the deployer Superadministrator, assign it by hand in local development:
+
+1. In the app registration's **App roles**, create a role with the value `Superadministrator`, allowed for **Users/Groups**.
+2. In **Enterprise applications**, open the registration's application in your own tenant, and under **Users and groups** assign yourself (or a PIM-eligible group) to the role.
+3. Enter your tenant's directory ID as the AppHost's `entra-deploying-tenant-id` parameter, then sign in again.
 
 ## Client certificates (mTLS)
 

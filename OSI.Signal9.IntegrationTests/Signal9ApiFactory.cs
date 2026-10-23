@@ -15,9 +15,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
 using Microsoft.IdentityModel.Tokens;
-using Npgsql;
 using OpenIddict.Abstractions;
 using OSI.Signal9.API;
+using OSI.Signal9.API.Authorization;
 using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Contracts.Tenants;
@@ -91,30 +91,41 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         return client;
     }
 
+    /// <summary>The applications the fixture seeds to act as themselves, with client credentials.</summary>
+    private readonly ConcurrentDictionary<string, bool> _applications = new();
+
     /// <summary>
-    /// The fixture's assigned tenants: those given to <see cref="CreateAssignedClientAsync"/>'s client, and for every
-    /// other caller (and work outside a request) every root tenant, standing in for a Superadministrator so tests can
-    /// work across tenant trees.
+    /// The fixture's assigned tenants: those given to <see cref="CreateAssignedClientAsync"/>'s client; every tenant
+    /// for the fixture's other client-credentials clients (and work outside a request), standing in for a
+    /// Superadministrator so tests can work across tenant trees; and api's own for everyone else, such as people.
     /// </summary>
     private sealed class FixtureAssignedTenants(IHttpContextAccessor http, Signal9ApiFactory factory) : IAssignedTenants
     {
-        public IReadOnlyCollection<Guid> TenantIds =>
-            http.HttpContext?.User.FindFirst(Claims.Subject)?.Value is { } clientId
-            && factory._assignments.TryGetValue(clientId, out var assigned)
-                ? assigned
-                : factory.RootTenantIds();
-    }
+        private readonly CallerAssignedTenants _api = new(http);
 
-    private Guid[] RootTenantIds()
-    {
-        using var connection = new NpgsqlConnection(ConnectionString);
-        connection.Open();
-        using var command = new NpgsqlCommand("""SELECT "Id" FROM "Tenants" WHERE "ParentTenantId" IS NULL""", connection);
-        using var reader = command.ExecuteReader();
-        List<Guid> ids = [];
-        while (reader.Read())
-            ids.Add(reader.GetGuid(0));
-        return [.. ids];
+        private IAssignedTenants Current =>
+            http.HttpContext?.User.FindFirst(Claims.Subject)?.Value is not { } subject ? AllTenants.Instance
+            : factory._assignments.TryGetValue(subject, out var assigned) ? new Fixed(assigned)
+            : factory._applications.ContainsKey(subject) ? AllTenants.Instance
+            : _api;
+
+        public bool IsSuperadministrator => Current.IsSuperadministrator;
+
+        public IReadOnlyCollection<Guid> TenantIds => Current.TenantIds;
+
+        private sealed record Fixed(IReadOnlyCollection<Guid> TenantIds) : IAssignedTenants
+        {
+            public bool IsSuperadministrator => false;
+        }
+
+        private sealed class AllTenants : IAssignedTenants
+        {
+            public static readonly AllTenants Instance = new();
+
+            public bool IsSuperadministrator => true;
+
+            public IReadOnlyCollection<Guid> TenantIds => [];
+        }
     }
 
     /// <summary>The internal port both hosts serve their health probes on.</summary>
@@ -349,6 +360,8 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
 
     private async Task CreateApplicationAsync(OpenIddictApplicationDescriptor descriptor)
     {
+        if (descriptor.Permissions.Contains(Permissions.GrantTypes.ClientCredentials))
+            _applications[descriptor.ClientId!] = true;
         await using var scope = Auth.Services.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>().CreateAsync(descriptor);
     }

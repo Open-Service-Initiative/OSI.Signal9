@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Mvc;
+using OpenIddict.Abstractions;
 using OpenIddict.Validation.AspNetCore;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
@@ -32,7 +33,10 @@ internal sealed class InsufficientScopeResultHandler : IAuthorizationMiddlewareR
 
     public Task HandleAsync(RequestDelegate next, HttpContext context, AuthorizationPolicy policy, PolicyAuthorizationResult authorizeResult)
     {
+        // Only a requirement whose scopes the token lacks is insufficient_scope; one refused although the token has a
+        // scope (deployment.* for someone who isn't a Superadministrator) is a plain 403.
         var missing = authorizeResult.AuthorizationFailure?.FailedRequirements.OfType<RequireScopeAttribute>()
+            .Where(r => !r.Scopes.Any(context.User.HasScope))
             .SelectMany(r => r.Scopes).Distinct().ToList();
         if (authorizeResult.Forbidden && missing is { Count: > 0 })
             return context.ForbidAsync(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme, InsufficientScope.Properties(missing));

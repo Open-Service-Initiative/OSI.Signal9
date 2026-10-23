@@ -16,6 +16,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 builder.AddHostHardening();
 
+// Registered before the database, which otherwise defaults to a caller with no assigned tenants.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IAssignedTenants, CallerAssignedTenants>();
 builder.AddSignal9Database();
 builder.AddSignal9ForwardedHeaders();
 builder.AddSignal9ClientCertificates();

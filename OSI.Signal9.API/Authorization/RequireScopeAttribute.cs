@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using OpenIddict.Abstractions;
+using OSI.Signal9.Server.Data;
 
 namespace OSI.Signal9.API.Authorization;
 
@@ -23,13 +24,23 @@ public sealed class RequireScopeAttribute(params string[] scopes)
     public override string ToString() => $"RequireScope({string.Join(" or ", Scopes)})";
 }
 
-/// <summary>Succeeds when the caller's access token carries one of the required scopes.</summary>
+/// <summary>
+/// Succeeds when the caller's access token carries one of the required scopes. A <c>deployment.*</c> scope counts only
+/// for a Superadministrator (#63): an API application can hold it, but only acting for one.
+/// </summary>
 internal sealed class RequireScopeHandler : AuthorizationHandler<RequireScopeAttribute>
 {
+    public const string DeploymentPrefix = "deployment.";
+
     protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, RequireScopeAttribute requirement)
     {
-        if (requirement.Scopes.Any(context.User.HasScope))
+        if (requirement.Scopes.Any(scope => context.User.HasScope(scope)
+                && (!scope.StartsWith(DeploymentPrefix, StringComparison.Ordinal) || IsSuperadministrator(context))))
             context.Succeed(requirement);
         return Task.CompletedTask;
     }
+
+    // Fails closed outside an HTTP request.
+    private static bool IsSuperadministrator(AuthorizationHandlerContext context) =>
+        context.Resource is HttpContext http && http.RequestServices.GetRequiredService<IAssignedTenants>().IsSuperadministrator;
 }

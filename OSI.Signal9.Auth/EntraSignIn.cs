@@ -7,6 +7,7 @@ using Microsoft.Identity.Abstractions;
 using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.TokenCacheProviders.InMemory;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using OSI.Signal9.Server.Identity;
 
 namespace OSI.Signal9.Auth;
 
@@ -32,11 +33,18 @@ public static class EntraSignIn
     /// </summary>
     public const string RejectionParameter = "signal9_sign_in_rejected";
 
+    /// <summary>
+    /// Kept in the session at auth from Entra's sign-in until the authorization endpoint first issues from it, so it
+    /// knows the session's app roles are as Entra just sent them.
+    /// </summary>
+    public const string FreshSignInItem = ".signal9.fresh";
+
     public static WebApplicationBuilder AddSignal9EntraSignIn(this WebApplicationBuilder builder)
     {
         var section = builder.Configuration.GetSection(SectionName);
         ValidateRegistration(section);
         var allowedTenants = section.GetSection("AllowedTenantIds").Get<Guid[]>() ?? [];
+        builder.Services.AddSingleton(new DeployingDirectory(section.GetValue<Guid>("DeployingTenantId")));
 
         builder.Services.AddAuthentication(CookieScheme)
             .AddMicrosoftIdentityWebApp(
@@ -75,13 +83,17 @@ public static class EntraSignIn
             options.Events.OnTokenValidated = async context =>
             {
                 await tokenValidated(context);
-                if (context.Result is null && Check(context.Principal!, allowedTenants, context.HttpContext) is { } rejection)
+                if (context.Result is not null)
+                    return;
+                if (Check(context.Principal!, allowedTenants, context.HttpContext) is { } rejection)
                 {
                     if (ReturnRejected(context.HttpContext, context.Properties, rejection))
                         context.HandleResponse();
                     else
                         context.Fail(Describe(rejection));
+                    return;
                 }
+                context.Properties!.Items[FreshSignInItem] = "true";
             };
 
             var remoteFailure = options.Events.OnRemoteFailure;
@@ -167,6 +179,9 @@ public static class EntraSignIn
         if (string.IsNullOrWhiteSpace(section["ClientId"]))
             throw new InvalidOperationException($"{SectionName}:ClientId must name the operator's Entra app registration.");
 
+        if (!Guid.TryParse(section["DeployingTenantId"], out var deploying) || deploying == Guid.Empty)
+            throw new InvalidOperationException($"{SectionName}:DeployingTenantId must be the directory ID of the operator's own Entra tenant.");
+
         var credentials = section.GetSection("ClientCredentials").Get<CredentialDescription[]>() ?? [];
         if (credentials.Length == 0)
             throw new InvalidOperationException($"{SectionName}:ClientCredentials must give a certificate or a managed identity.");
@@ -182,6 +197,21 @@ public static class EntraSignIn
         }
     }
 
+}
+
+/// <summary>
+/// The operator's own Entra directory, which deployed Signal9 and holds its app registration. Only its people can be
+/// Superadministrators: any consenting directory can assign the registration's app roles to its own people (story 58).
+/// </summary>
+public sealed record DeployingDirectory(Guid TenantId)
+{
+    /// <summary>
+    /// Whether a sign-in at Entra makes the person a Superadministrator: it carries the app role, and comes from this
+    /// directory.
+    /// </summary>
+    public bool IsSuperadministrator(ClaimsPrincipal signIn) =>
+        EntraPerson.From(signIn)?.TenantId == TenantId
+        && signIn.FindAll("roles").Any(claim => claim.Value == Superadministrator.AppRole);
 }
 
 /// <summary>

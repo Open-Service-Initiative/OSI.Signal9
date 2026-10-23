@@ -43,6 +43,7 @@ public sealed class Signal9AuthFactory : WebApplicationFactory<AuthHost>
     {
         // The operator's app registration, with a certificate credential as in local development (story 125).
         builder.UseSetting("Entra:ClientId", Entra.ClientId.ToString());
+        builder.UseSetting("Entra:DeployingTenantId", Entra.DeployingTenantId.ToString());
         builder.UseSetting("Entra:ClientCredentials:0:SourceType", "Path");
         builder.UseSetting("Entra:ClientCredentials:0:CertificateDiskPath", Entra.CredentialPath);
         Signal9ApiFactory.ConfigureSharedHost(builder, _connectionString, _time, _settings, _kekPath);

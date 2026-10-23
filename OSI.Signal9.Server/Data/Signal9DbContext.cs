@@ -14,6 +14,9 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
     /// </summary>
     public Guid[] AssignedTenantIds => [.. assignedTenants.TenantIds ?? []];
 
+    /// <summary>Whether the caller sees every tenant tree, read by <see cref="TenantScope"/> like <see cref="AssignedTenantIds"/>.</summary>
+    public bool SeesEveryTenant => assignedTenants.IsSuperadministrator;
+
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<TenantClosure> TenantClosures => Set<TenantClosure>();
     public DbSet<Device> Devices => Set<Device>();
@@ -127,11 +130,12 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
         ApplyTenantScope(modelBuilder);
     }
 
-    // TenantScope keeps a row when its owning tenant's closure rows include one of the caller's assigned tenants as an
-    // ancestor. The closure table itself is never filtered, so the filter can't recurse.
+    // TenantScope keeps every row for a Superadministrator, and otherwise a row when its owning tenant's closure rows
+    // include one of the caller's assigned tenants as an ancestor. The closure table itself is never filtered, so the
+    // filter can't recurse.
     private void ApplyTenantScope(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<Tenant>().HasQueryFilter(TenantScope.Filter, t =>
+        modelBuilder.Entity<Tenant>().HasQueryFilter(TenantScope.Filter, t => SeesEveryTenant ||
             TenantClosures.Any(c => c.DescendantId == t.Id && AssignedTenantIds.Contains(c.AncestorId)));
 
         foreach (var type in modelBuilder.Model.GetEntityTypes().Where(t => t.BaseType is null && !t.IsOwned()).ToList())
@@ -149,7 +153,7 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
     // The filters must reference this context's members, never locals: EF parameterizes members per query, but would
     // freeze a captured value into the cached model.
     private void ScopeTenantOwned<T>(ModelBuilder modelBuilder) where T : class, ITenantOwned =>
-        modelBuilder.Entity<T>().HasQueryFilter(TenantScope.Filter, e =>
+        modelBuilder.Entity<T>().HasQueryFilter(TenantScope.Filter, e => SeesEveryTenant ||
             TenantClosures.Any(c =>
                 c.DescendantId == EF.Property<Guid>(e, nameof(ITenantOwned.TenantId)) && AssignedTenantIds.Contains(c.AncestorId)));
 

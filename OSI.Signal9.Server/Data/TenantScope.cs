@@ -3,11 +3,15 @@ using Microsoft.EntityFrameworkCore;
 namespace OSI.Signal9.Server.Data;
 
 /// <summary>
-/// The tenants the current caller has role assignments at. <see cref="TenantScope"/> shows the caller only rows owned
-/// by these tenants and their descendants; an empty set shows nothing.
+/// The tenants the current caller has authority over. <see cref="TenantScope"/> shows a Superadministrator every
+/// tenant tree, and anyone else only rows owned by the tenants they have role assignments at and their descendants;
+/// an empty set shows nothing.
 /// </summary>
 public interface IAssignedTenants
 {
+    /// <summary>Whether the caller is a Superadministrator, with authority over every tenant tree (ADR-0006).</summary>
+    bool IsSuperadministrator { get; }
+
     IReadOnlyCollection<Guid> TenantIds { get; }
 }
 
@@ -15,6 +19,8 @@ public interface IAssignedTenants
 public sealed class NoAssignedTenants : IAssignedTenants
 {
     public static readonly NoAssignedTenants Instance = new();
+
+    public bool IsSuperadministrator => false;
 
     public IReadOnlyCollection<Guid> TenantIds => [];
 }

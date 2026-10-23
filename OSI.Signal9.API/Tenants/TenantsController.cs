@@ -12,7 +12,8 @@ namespace OSI.Signal9.API.Tenants;
 
 [ApiController]
 [Route("api/v1/tenants")]
-public sealed class TenantsController(Signal9DbContext db, TenantTree tree, TimeProvider time) : ControllerBase
+public sealed class TenantsController(Signal9DbContext db, TenantTree tree, IAssignedTenants caller, TimeProvider time)
+    : ControllerBase
 {
     /// <summary>Lists tenants, optionally filtered by parent or status.</summary>
     [RequireScope(Scopes.Tenants.Read)]
@@ -52,17 +53,25 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, Time
         return found is null ? NotFound() : this.Conditional(found.Tenant.ToDto(found.DeviceCount), found.Tenant.ETag(found.DeviceCount));
     }
 
+    /// <summary>
+    /// Creates a tenant under <c>parentTenantId</c>, or a root tenant without one. Only a Superadministrator creates
+    /// root tenants: nobody else has authority above every tenant tree (403).
+    /// </summary>
     [RequireScope(Scopes.Tenants.Write)]
     [HttpPost]
     [OptimisticConcurrency]
     [Consumes("application/json")]
     [ProducesResponseType<TenantDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TenantDto>> Create(CreateTenantRequest request, CancellationToken cancellationToken)
     {
         if (this.Preconditions(current: null) is { } refused)
             return refused;
+        if (request.ParentTenantId is null && !caller.IsSuperadministrator)
+            return Problem(statusCode: StatusCodes.Status403Forbidden, title: "Superadministrator required",
+                detail: "Only a Superadministrator can create a root tenant.");
 
         var now = time.GetUtcNow().UtcDateTime;
         var tenant = new Tenant

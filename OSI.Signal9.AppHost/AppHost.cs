@@ -17,7 +17,10 @@ var auth = builder.AddProject<Projects.OSI_Signal9_Auth>("auth")
 // certificate locally and a federated identity credential backed by auth's managed identity when published
 // (stories 124, 125); never a secret.
 var entraClientId = builder.AddParameter("entra-client-id");
-auth.WithEnvironment("Entra__ClientId", entraClientId);
+// The operator's own directory: only its people can be Superadministrators (ADR-0006).
+var entraDeployingTenantId = builder.AddParameter("entra-deploying-tenant-id");
+auth.WithEnvironment("Entra__ClientId", entraClientId)
+    .WithEnvironment("Entra__DeployingTenantId", entraDeployingTenantId);
 if (builder.ExecutionContext.IsRunMode)
 {
     auth.WithEnvironment("Entra__ClientCredentials__0__SourceType", "Path")
