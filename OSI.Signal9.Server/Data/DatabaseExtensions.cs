@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 namespace OSI.Signal9.Server.Data;
@@ -16,6 +17,8 @@ public static class DatabaseExtensions
         builder.Services.AddDbContext<Signal9DbContext>(options =>
             options.UseNpgsql(builder.Configuration.GetConnectionString("signal9")));
         builder.EnrichAzureNpgsqlDbContext<Signal9DbContext>();
+        // Fails closed: until RBAC feeds in role assignments (#114), callers see no tenant-owned rows.
+        builder.Services.TryAddSingleton<IAssignedTenants>(NoAssignedTenants.Instance);
         return builder;
     }
 }

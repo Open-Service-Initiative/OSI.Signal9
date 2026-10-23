@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
@@ -7,17 +8,20 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
 using Microsoft.IdentityModel.Tokens;
+using Npgsql;
 using OpenIddict.Abstractions;
 using OSI.Signal9.API;
 using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Contracts.Tenants;
+using OSI.Signal9.Server.Data;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
 namespace OSI.Signal9.IntegrationTests;
@@ -58,6 +62,56 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         ConfigureSharedHost(builder, ConnectionString, Time, _settings);
+        builder.ConfigureTestServices(services =>
+        {
+            services.AddHttpContextAccessor();
+            services.RemoveAll<IAssignedTenants>();
+            services.AddScoped<IAssignedTenants>(sp =>
+                new FixtureAssignedTenants(sp.GetRequiredService<IHttpContextAccessor>(), this));
+        });
+    }
+
+    private readonly ConcurrentDictionary<string, Guid[]> _assignments = new();
+
+    /// <summary>
+    /// A client for <c>api</c> standing in for a caller with role assignments at exactly <paramref name="assignedTenants"/>
+    /// (none: a caller who sees nothing), with a token holding these scopes. Role assignments arrive with RBAC (#114).
+    /// </summary>
+    public async Task<HttpClient> CreateAssignedClientAsync(Guid[] assignedTenants, params string[] scopes)
+    {
+        var clientId = $"assigned-client-{Interlocked.Increment(ref _clients)}";
+        _assignments[clientId] = assignedTenants;
+        await SeedClientAsync(clientId, scopes);
+        var token = await RequestTokenAsync(clientId, scopes);
+        var client = CreateAnonymousClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Value);
+        return client;
+    }
+
+    /// <summary>
+    /// The fixture's assigned tenants: those given to <see cref="CreateAssignedClientAsync"/>'s client, and for every
+    /// other caller (and work outside a request) every root tenant, standing in for a Superadministrator so tests can
+    /// work across tenant trees.
+    /// </summary>
+    private sealed class FixtureAssignedTenants(IHttpContextAccessor http, Signal9ApiFactory factory) : IAssignedTenants
+    {
+        public IReadOnlyCollection<Guid> TenantIds =>
+            http.HttpContext?.User.FindFirst(Claims.Subject)?.Value is { } clientId
+            && factory._assignments.TryGetValue(clientId, out var assigned)
+                ? assigned
+                : factory.RootTenantIds();
+    }
+
+    private Guid[] RootTenantIds()
+    {
+        using var connection = new NpgsqlConnection(ConnectionString);
+        connection.Open();
+        using var command = new NpgsqlCommand("""SELECT "Id" FROM "Tenants" WHERE "ParentTenantId" IS NULL""", connection);
+        using var reader = command.ExecuteReader();
+        List<Guid> ids = [];
+        while (reader.Read())
+            ids.Add(reader.GetGuid(0));
+        return [.. ids];
     }
 
     /// <summary>The internal port both hosts serve their health probes on.</summary>
@@ -291,10 +345,16 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         return new FormUrlEncodedContent(form);
     }
 
-    public async Task<TenantDto> CreateTenantAsync(HttpClient client, string name, int maxDevices = 25)
+    public async Task<TenantDto> CreateTenantAsync(HttpClient client, string name, int maxDevices = 25, Guid? parentTenantId = null)
     {
         var response = await client.PostAsJsonAsync("api/v1/tenants",
-            new CreateTenantRequest { Name = name, ContactEmail = $"it@{name.ToLowerInvariant()}.example", MaxDevices = maxDevices },
+            new CreateTenantRequest
+            {
+                Name = name,
+                ContactEmail = $"it@{name.ToLowerInvariant()}.example",
+                MaxDevices = maxDevices,
+                ParentTenantId = parentTenantId,
+            },
             Signal9Json.Options);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<TenantDto>(Signal9Json.Options))!;

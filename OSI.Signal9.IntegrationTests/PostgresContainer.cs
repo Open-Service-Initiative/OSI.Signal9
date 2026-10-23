@@ -26,7 +26,7 @@ public static class PostgresContainer
 
         await ExecuteAsync($"CREATE DATABASE {TemplateDatabase}", testContext.CancellationToken);
         var options = new DbContextOptionsBuilder<Signal9DbContext>().UseNpgsql(ConnectionStringFor(TemplateDatabase)).Options;
-        await using (var db = new Signal9DbContext(options))
+        await using (var db = new Signal9DbContext(options, NoAssignedTenants.Instance))
             await db.Database.MigrateAsync(testContext.CancellationToken);
 
         // A template database can't be copied while anyone is connected to it.

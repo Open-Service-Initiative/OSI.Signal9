@@ -10,5 +10,5 @@ namespace OSI.Signal9.Server.Data;
 internal sealed class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<Signal9DbContext>
 {
     public Signal9DbContext CreateDbContext(string[] args) =>
-        new(new DbContextOptionsBuilder<Signal9DbContext>().UseNpgsql().Options);
+        new(new DbContextOptionsBuilder<Signal9DbContext>().UseNpgsql().Options, NoAssignedTenants.Instance);
 }

@@ -57,7 +57,8 @@ public sealed class CommandsController(
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<CommandDto>> GetCommand(Guid deviceId, Guid commandId, CancellationToken cancellationToken)
     {
-        var command = await FindAsync(deviceId, commandId, tracking: false, cancellationToken);
+        var command = await db.Commands.AsNoTracking()
+            .SingleOrDefaultAsync(c => c.DeviceId == deviceId && c.Id == commandId, cancellationToken);
         return command is null ? NotFound() : this.Conditional(command.ToDto(), command.ETag());
     }
 
@@ -118,7 +119,7 @@ public sealed class CommandsController(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public Task<ActionResult<CommandDto>> PutResult(
         Guid deviceId, Guid commandId, CommandResultRequest request, CancellationToken cancellationToken) =>
-        CompleteAsync(deviceId, commandId, cancellationToken, command =>
+        CompleteAsync(deviceId, commandId, TenantScopeBypass.AgentSelfService, cancellationToken, command =>
         {
             command.Status = request.Succeeded ? CommandStatus.Completed : CommandStatus.Failed;
             command.Output = request.Output;
@@ -133,12 +134,15 @@ public sealed class CommandsController(
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public Task<ActionResult<CommandDto>> Cancel(Guid deviceId, Guid commandId, CancellationToken cancellationToken) =>
-        CompleteAsync(deviceId, commandId, cancellationToken, command => command.Status = CommandStatus.Cancelled);
+        CompleteAsync(deviceId, commandId, bypass: null, cancellationToken, command => command.Status = CommandStatus.Cancelled);
 
     private async Task<ActionResult<CommandDto>> CompleteAsync(
-        Guid deviceId, Guid commandId, CancellationToken cancellationToken, Action<Command> complete)
+        Guid deviceId, Guid commandId, TenantScopeBypass? bypass, CancellationToken cancellationToken, Action<Command> complete)
     {
-        var command = await FindAsync(deviceId, commandId, tracking: true, cancellationToken);
+        IQueryable<Command> commands = db.Commands;
+        if (bypass is { } reason)
+            commands = commands.IgnoreTenantScope(reason);
+        var command = await commands.SingleOrDefaultAsync(c => c.DeviceId == deviceId && c.Id == commandId, cancellationToken);
         if (command is null)
             return NotFound();
         if (this.Preconditions(command.ETag()) is { } refused)
@@ -155,11 +159,5 @@ public sealed class CommandsController(
         await dashboard.Clients.All.CommandChanged(dto);
         this.SetETag(command.ETag());
         return dto;
-    }
-
-    private Task<Command?> FindAsync(Guid deviceId, Guid commandId, bool tracking, CancellationToken cancellationToken)
-    {
-        var commands = tracking ? db.Commands : db.Commands.AsNoTracking();
-        return commands.SingleOrDefaultAsync(c => c.DeviceId == deviceId && c.Id == commandId, cancellationToken);
     }
 }

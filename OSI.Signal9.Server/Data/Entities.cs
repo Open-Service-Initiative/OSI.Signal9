@@ -40,7 +40,7 @@ public sealed class TenantClosure
 }
 
 /// <summary>A managed machine. Owns its telemetry and command history across agent reinstalls.</summary>
-public sealed class Device
+public sealed class Device : ITenantOwned
 {
     public Guid Id { get; set; }
 
@@ -71,7 +71,7 @@ public sealed class Device
 }
 
 /// <summary>One installation of the agent software on a device.</summary>
-public sealed class Agent
+public sealed class Agent : IDeviceOwned
 {
     public Guid Id { get; set; }
 
@@ -85,7 +85,7 @@ public sealed class Agent
     public Device? Device { get; set; }
 }
 
-public sealed class Command
+public sealed class Command : IDeviceOwned
 {
     public Guid Id { get; set; }
 
@@ -103,7 +103,7 @@ public sealed class Command
     public string? Error { get; set; }
 }
 
-public sealed class TelemetrySample
+public sealed class TelemetrySample : IDeviceOwned
 {
     public Guid Id { get; set; }
 

@@ -1,11 +1,19 @@
+using System.Reflection;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using OSI.Signal9.Server.Keys;
 
 namespace OSI.Signal9.Server.Data;
 
-public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options) : DbContext(options), IDataProtectionKeyContext
+public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options, IAssignedTenants assignedTenants)
+    : DbContext(options), IDataProtectionKeyContext
 {
+    /// <summary>
+    /// The caller's assigned tenants, read by <see cref="TenantScope"/> each time a query runs. A context member, so EF
+    /// sends it as a query parameter instead of freezing the first caller's tenants into the cached model.
+    /// </summary>
+    public Guid[] AssignedTenantIds => [.. assignedTenants.TenantIds ?? []];
+
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<TenantClosure> TenantClosures => Set<TenantClosure>();
     public DbSet<Device> Devices => Set<Device>();
@@ -115,5 +123,39 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options)
                 .HasForeignKey(s => s.DeviceId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
+
+        ApplyTenantScope(modelBuilder);
     }
+
+    // TenantScope keeps a row when its owning tenant's closure rows include one of the caller's assigned tenants as an
+    // ancestor. The closure table itself is never filtered, so the filter can't recurse.
+    private void ApplyTenantScope(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Tenant>().HasQueryFilter(TenantScope.Filter, t =>
+            TenantClosures.Any(c => c.DescendantId == t.Id && AssignedTenantIds.Contains(c.AncestorId)));
+
+        foreach (var type in modelBuilder.Model.GetEntityTypes().Where(t => t.BaseType is null && !t.IsOwned()).ToList())
+        {
+            if (type.ClrType.IsAssignableTo(typeof(ITenantOwned)))
+                ScopeMethod(nameof(ScopeTenantOwned), type.ClrType).Invoke(this, [modelBuilder]);
+            else if (type.ClrType.IsAssignableTo(typeof(IDeviceOwned)))
+                ScopeMethod(nameof(ScopeDeviceOwned), type.ClrType).Invoke(this, [modelBuilder]);
+        }
+    }
+
+    private static MethodInfo ScopeMethod(string name, Type entity) =>
+        typeof(Signal9DbContext).GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance)!.MakeGenericMethod(entity);
+
+    // The filters must reference this context's members, never locals: EF parameterizes members per query, but would
+    // freeze a captured value into the cached model.
+    private void ScopeTenantOwned<T>(ModelBuilder modelBuilder) where T : class, ITenantOwned =>
+        modelBuilder.Entity<T>().HasQueryFilter(TenantScope.Filter, e =>
+            TenantClosures.Any(c =>
+                c.DescendantId == EF.Property<Guid>(e, nameof(ITenantOwned.TenantId)) && AssignedTenantIds.Contains(c.AncestorId)));
+
+    // A device-owned row is visible when its device is: the Devices query below carries the device's own TenantScope,
+    // so it follows the device to whichever tenant owns it now.
+    private void ScopeDeviceOwned<T>(ModelBuilder modelBuilder) where T : class, IDeviceOwned =>
+        modelBuilder.Entity<T>().HasQueryFilter(TenantScope.Filter, e =>
+            Devices.Any(d => d.Id == EF.Property<Guid>(e, nameof(IDeviceOwned.DeviceId))));
 }

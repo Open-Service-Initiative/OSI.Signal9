@@ -55,7 +55,7 @@ public sealed class AgentsController(
         if (this.Preconditions(current: null) is { } refused)
             return refused;
 
-        var tenant = await db.Tenants.AsNoTracking().SingleOrDefaultAsync(t => t.Id == request.TenantId, cancellationToken);
+        var tenant = await db.Tenants.AsNoTracking().IgnoreTenantScope(TenantScopeBypass.AgentSelfService).SingleOrDefaultAsync(t => t.Id == request.TenantId, cancellationToken);
         if (tenant is null || tenant.Status != TenantStatus.Active)
         {
             ModelState.AddModelError(nameof(request.TenantId), "No active tenant has this ID.");
@@ -85,14 +85,14 @@ public sealed class AgentsController(
         Tenant tenant, RegisterAgentRequest request, CancellationToken cancellationToken)
     {
         var now = time.GetUtcNow().UtcDateTime;
-        var device = await db.Devices
+        var device = await db.Devices.IgnoreTenantScope(TenantScopeBypass.AgentSelfService)
             .Where(d => d.TenantId == tenant.Id && d.MachineName == request.MachineName)
             .OrderByDescending(d => d.CreatedAt)
             .FirstOrDefaultAsync(cancellationToken);
 
         if (device is null)
         {
-            var devices = await db.Devices.CountAsync(d => d.TenantId == tenant.Id, cancellationToken);
+            var devices = await db.Devices.IgnoreTenantScope(TenantScopeBypass.AgentSelfService).CountAsync(d => d.TenantId == tenant.Id, cancellationToken);
             if (devices >= tenant.MaxDevices)
                 return (Problem(statusCode: StatusCodes.Status409Conflict, title: "Device limit reached",
                     detail: $"Tenant '{tenant.Name}' allows at most {tenant.MaxDevices} devices."), null);
@@ -150,7 +150,7 @@ public sealed class AgentsController(
         if (device is null)
             return (ActionResult)refusal!;
 
-        return await db.Commands.AsNoTracking()
+        return await db.Commands.AsNoTracking().IgnoreTenantScope(TenantScopeBypass.AgentSelfService)
             .Where(c => c.DeviceId == device.Id && c.Status == CommandStatus.Pending)
             .OrderBy(c => c.CreatedAt).ThenBy(c => c.Id)
             .ToPagedResultAsync(query, c => c.ToDto(), cancellationToken);
@@ -187,7 +187,7 @@ public sealed class AgentsController(
 
         if (!wasOnline)
             await dashboard.Clients.All.DeviceChanged(device.ToDto(presence));
-        var hasPendingWork = await db.Commands.AnyAsync(
+        var hasPendingWork = await db.Commands.IgnoreTenantScope(TenantScopeBypass.AgentSelfService).AnyAsync(
             c => c.DeviceId == device.Id && c.Status == CommandStatus.Pending, cancellationToken);
         return new HeartbeatResponse(hasPendingWork);
     }
