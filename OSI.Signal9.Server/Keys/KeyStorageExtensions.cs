@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenIddict.Server;
+using OpenIddict.Validation;
 using OSI.Signal9.Server.Data;
 
 namespace OSI.Signal9.Server.Keys;
@@ -50,6 +51,8 @@ public static class KeyStorageExtensions
         services.AddSignal9KeyEncryption(configuration);
         services.TryAddSingleton<StoredKeys>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<OpenIddictServerOptions>, ConfigureStoredKeys>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IOptionsChangeTokenSource<OpenIddictServerOptions>, StoredKeysChangeTokenSource>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IOptionsChangeTokenSource<OpenIddictValidationOptions>, LocalServerKeysChangeTokenSource>());
 
         // Data Protection protects only cookies and the token cache.
         services.AddDataProtection()

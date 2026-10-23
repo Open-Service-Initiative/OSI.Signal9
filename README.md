@@ -43,6 +43,8 @@ dotnet run --project OSI.Signal9.Agent -- --Agent:TenantId=<tenant id>
 
 ## Keys
 
+Signing and encryption keys rotate on their own. Each key is active for 90 days from its certificate's start date; the next one is generated and published in the key set 14 days before it activates, and retired keys are kept for 90 days more, so tokens they signed or encrypted keep validating, then deleted. Every running `auth` and `api` instance reloads its keys at each of those moments, without a restart.
+
 The `KeyEncryption` section chooses the key-encryption key on `auth` and `api`:
 
 | Setting | Meaning |
