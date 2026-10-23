@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -39,6 +40,9 @@ public static class EntraSignIn
     /// </summary>
     public const string FreshSignInItem = ".signal9.fresh";
 
+    /// <summary>When the person signed in at Entra, which a sliding cookie's own issue time doesn't keep.</summary>
+    public const string SignedInAtItem = ".signal9.signed_in_at";
+
     public static WebApplicationBuilder AddSignal9EntraSignIn(this WebApplicationBuilder builder)
     {
         var section = builder.Configuration.GetSection(SectionName);
@@ -68,8 +72,21 @@ public static class EntraSignIn
                     cookies.Cookie.SecurePolicy = CookieSecurePolicy.Always;
                     // Lax, so the cookie comes along when a client's site sends the browser to authorize.
                     cookies.Cookie.SameSite = SameSiteMode.Lax;
-                    cookies.ExpireTimeSpan = TimeSpan.FromHours(1);
+                    // An hour idle and 12 hours from the Entra sign-in in all (story 48): after that, only a fresh
+                    // sign-in at Entra lets the person in, so its Conditional Access sign-in frequency applies (story 49).
+                    cookies.ExpireTimeSpan = AuthorizationServer.DashboardSessionIdleTimeout;
                     cookies.SlidingExpiration = true;
+                    cookies.Events.OnValidatePrincipal = context =>
+                    {
+                        if (!context.Properties.Items.TryGetValue(SignedInAtItem, out var value)
+                            || !DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var signedInAt)
+                            || context.Options.TimeProvider!.GetUtcNow() - signedInAt >= AuthorizationServer.DashboardSessionLifetime)
+                        {
+                            context.RejectPrincipal();
+                            return context.HttpContext.SignOutAsync(CookieScheme);
+                        }
+                        return Task.CompletedTask;
+                    };
                 },
                 openIdConnectScheme: ChallengeScheme,
                 cookieScheme: CookieScheme)
@@ -94,6 +111,8 @@ public static class EntraSignIn
                     return;
                 }
                 context.Properties!.Items[FreshSignInItem] = "true";
+                context.Properties.Items[SignedInAtItem] = context.Options.TimeProvider!.GetUtcNow()
+                    .ToString("O", CultureInfo.InvariantCulture);
             };
 
             var remoteFailure = options.Events.OnRemoteFailure;

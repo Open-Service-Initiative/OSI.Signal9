@@ -50,6 +50,10 @@ public sealed class FakeEntra
 
     private readonly RsaSecurityKey _signingKey = new(RSA.Create(2048)) { KeyId = "fake-entra-key" };
     private readonly ConcurrentDictionary<string, PendingCode> _codes = new();
+    private int _signIns;
+
+    /// <summary>How many times people signed in here.</summary>
+    public int SignIns => _signIns;
 
     private sealed record PendingCode(EntraUser User, string RedirectUri, string Nonce, string? Challenge);
 
@@ -80,6 +84,7 @@ public sealed class FakeEntra
         Assert.AreEqual("code", query["response_type"].ToString());
         Assert.AreEqual("S256", query["code_challenge_method"].ToString(), "auth must use PKCE upstream.");
 
+        Interlocked.Increment(ref _signIns);
         var code = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32));
         _codes[code] = new PendingCode(user, query["redirect_uri"]!, query["nonce"]!, query["code_challenge"]);
         var form = new Dictionary<string, string> { ["code"] = code, ["state"] = query["state"]!, ["session_state"] = Guid.NewGuid().ToString() };

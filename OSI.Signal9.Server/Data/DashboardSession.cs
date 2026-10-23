@@ -18,5 +18,9 @@ public sealed class DashboardSession
     /// <summary>When the access token expires.</summary>
     public DateTime AccessTokenExpiresAt { get; set; }
 
+    /// <summary>When the person signed in: the session ends 12 hours later, however active (story 48).</summary>
     public DateTime CreatedAt { get; set; }
+
+    /// <summary>When the person last used the session, to the minute: it ends after an hour idle (story 48).</summary>
+    public DateTime LastSeenAt { get; set; }
 }

@@ -15,19 +15,19 @@ namespace OSI.Signal9.Web.Bff;
 /// </summary>
 public sealed class WebClientRegistration(IServiceScopeFactory scopes, IConfiguration configuration)
 {
-    public const string ClientId = "signal9-web";
+    public const string ClientId = AuthorizationServer.DashboardClientId;
 
     /// <summary>Key of the transaction-level advisory lock held while web's registration changes.</summary>
     public const long LockKey = 0x5367_3957_6562_436C; // "Sg9WebCl"
 
     /// <summary>
     /// The scopes the dashboard asks for: every catalogue scope a person can hold. Tokens carry identity only;
-    /// what the person may actually do is checked live at api (ADR-0007). Refresh tokens come with #118.
+    /// what the person may actually do is checked live at api (ADR-0007). <c>offline_access</c> brings a refresh token.
     /// </summary>
     public static readonly string[] Scopes =
     [
         .. OSI.Signal9.Server.Identity.Scopes.All.Keys.Except(
-            [OSI.Signal9.Server.Identity.Scopes.Agent, OpenIddictConstants.Scopes.Profile, OpenIddictConstants.Scopes.OfflineAccess]),
+            [OSI.Signal9.Server.Identity.Scopes.Agent, OpenIddictConstants.Scopes.Profile]),
     ];
 
     /// <summary>The redirect URI web's sign-in returns to.</summary>
@@ -52,6 +52,7 @@ public sealed class WebClientRegistration(IServiceScopeFactory scopes, IConfigur
                 Permissions.Endpoints.Token,
                 Permissions.Endpoints.Revocation,
                 Permissions.GrantTypes.AuthorizationCode,
+                Permissions.GrantTypes.RefreshToken,
                 Permissions.ResponseTypes.Code,
             },
             Requirements = { Requirements.Features.ProofKeyForCodeExchange },

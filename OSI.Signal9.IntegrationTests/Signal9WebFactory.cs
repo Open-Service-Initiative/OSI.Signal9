@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography.X509Certificates;
+using System.Text.Json;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -36,6 +38,18 @@ public sealed class Signal9WebFactory : WebApplicationFactory<WebHost>
 
     /// <summary>Every request web sent to <c>api</c>, as api's ingress received it.</summary>
     public ConcurrentQueue<ApiHop> ApiRequests { get; } = new();
+
+    /// <summary>The refresh tokens api's token endpoint issued to web, in order.</summary>
+    public ConcurrentQueue<string> IssuedRefreshTokens { get; } = new();
+
+    /// <summary>
+    /// Stands in for api or the network failing: when it returns a response (or throws), web gets that instead of
+    /// api's answer.
+    /// </summary>
+    public Func<HttpRequestMessage, HttpResponseMessage?>? Fault { get; set; }
+
+    /// <summary>How many times web refreshed tokens at api.</summary>
+    public int Refreshes => ApiRequests.Count(r => r.Uri.AbsolutePath == "/connect/token" && r.GrantType == "refresh_token");
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -81,10 +95,28 @@ public sealed class Signal9WebFactory : WebApplicationFactory<WebHost>
             request.Headers.Remove(Signal9ApiFactory.ClientCertificateHeader);
             request.Headers.Remove(Signal9ApiFactory.ClientIpHeader);
             request.Headers.Add(Signal9ApiFactory.ClientCertificateHeader, TestCertificates.ContainerAppsHeader(certificate));
+            string? grantType = null;
+            if (request.Content is FormUrlEncodedContent form)
+            {
+                await form.LoadIntoBufferAsync(cancellationToken);
+                grantType = QueryHelpers.ParseQuery(await form.ReadAsStringAsync(cancellationToken))
+                    .GetValueOrDefault("grant_type").ToString();
+            }
             web.ApiRequests.Enqueue(new ApiHop(request.Method, request.RequestUri!,
                 request.Headers.ToDictionary(h => h.Key, h => string.Join(", ", h.Value), StringComparer.OrdinalIgnoreCase),
-                certificate.Thumbprint));
-            return await base.SendAsync(request, cancellationToken);
+                certificate.Thumbprint, grantType));
+            if (web.Fault?.Invoke(request) is { } fault)
+                return fault;
+
+            var response = await base.SendAsync(request, cancellationToken);
+            if (request.RequestUri!.AbsolutePath == "/connect/token" && response.IsSuccessStatusCode)
+            {
+                await response.Content.LoadIntoBufferAsync(cancellationToken);
+                using var tokens = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+                if (tokens.RootElement.TryGetProperty("refresh_token", out var refreshToken))
+                    web.IssuedRefreshTokens.Enqueue(refreshToken.GetString()!);
+            }
+            return response;
         }
     }
 }
@@ -103,7 +135,7 @@ internal sealed class UncachedConfiguration(string address, HttpClient client)
 
 /// <summary>A request from web to api, with the thumbprint of the client certificate it presented.</summary>
 public sealed record ApiHop(HttpMethod Method, Uri Uri, IReadOnlyDictionary<string, string> Headers,
-    string CertificateThumbprint)
+    string CertificateThumbprint, string? GrantType = null)
 {
     public string? Authorization => Headers.GetValueOrDefault("Authorization");
 }
