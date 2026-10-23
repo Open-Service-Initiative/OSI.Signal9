@@ -6,8 +6,10 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using Azure.Identity;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using OSI.Signal9.Server.Data;
 using OSI.Signal9.Server.Keys;
 
 namespace OSI.Signal9.API.Tests;
@@ -96,6 +98,18 @@ public sealed class KeyStorageTests : IDisposable
         await using var other = new Signal9AuthFactory(_factory.ConnectionString, _factory.Time, TestKeys.CreateKek());
 
         Assert.ThrowsExactly<CryptographicException>(() => Protector(other).Unprotect(cookie));
+    }
+
+    [TestMethod]
+    public async Task A_host_that_cannot_read_the_data_protection_ring_fails_closed_instead_of_adding_its_own_key()
+    {
+        Protector(_factory.Auth).Protect("session ticket");
+        await using var other = new Signal9AuthFactory(_factory.ConnectionString, _factory.Time, TestKeys.CreateKek());
+
+        var refused = Assert.ThrowsExactly<CryptographicException>(() => Protector(other).Protect("session ticket"));
+        Assert.IsInstanceOfType<InvalidOperationException>(refused.InnerException, "No default key, and none generated.");
+        await using var scope = _factory.Auth.Services.CreateAsyncScope();
+        Assert.AreEqual(1, await scope.ServiceProvider.GetRequiredService<Signal9DbContext>().DataProtectionKeys.CountAsync(Ct));
     }
 
     [TestMethod]

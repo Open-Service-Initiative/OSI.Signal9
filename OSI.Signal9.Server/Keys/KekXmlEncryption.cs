@@ -6,7 +6,11 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace OSI.Signal9.Server.Keys;
 
-/// <summary>Wraps each Data Protection key with the key-encryption key before it's stored (ADR-0008).</summary>
+/// <summary>
+/// Wraps each Data Protection key with the key-encryption key before it's stored (ADR-0008). The built-in
+/// <c>ProtectKeysWithCertificate</c> (RSA PKCS#1 v1.5, AES-CBC without a MAC) and <c>ProtectKeysWithAzureKeyVault</c>
+/// (AES-128-CBC without a MAC, unpinned key identifier) fall below this envelope, so they aren't used.
+/// </summary>
 internal sealed class KekXmlEncryptor(KeyEncryptionKey kek) : IXmlEncryptor
 {
     internal const string Context = "signal9/data-protection";
