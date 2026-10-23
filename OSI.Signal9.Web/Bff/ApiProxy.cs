@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http.Features;
 using OSI.Signal9.Contracts.Bff;
+using OSI.Signal9.Server.Hosting;
 using OSI.Signal9.Server.Identity;
 using Yarp.ReverseProxy.Forwarder;
 
@@ -10,14 +11,15 @@ namespace OSI.Signal9.Web.Bff;
 /// <summary>
 /// web forwards the dashboard's calls to <c>api</c> with YARP (ADR-0003). The destinations are a fixed allow-list on
 /// api's configured address (RFC 10017 §6.1): the API and the dashboard hub, with the person's access token attached
-/// here, and the public API docs, without one. An access token about to expire is refreshed first, and a 401 from api
-/// is retried once after a refresh (#118). Nothing else reaches api, and the destination never comes from the
+/// here, and the public OpenAPI document, without one. An access token about to expire is refreshed first, and a 401
+/// from api is retried once after a refresh (#118). Nothing else reaches api, and the destination never comes from the
 /// request.
 /// </summary>
 public static class ApiProxy
 {
     private static readonly string[] WithToken = ["/api/{**path}", "/hubs/dashboard", "/hubs/dashboard/{**path}"];
-    private static readonly string[] Public = ["/docs", "/docs/{**path}"];
+    // api's OpenAPI document; web serves the reference page itself (ApiReference).
+    private static readonly string[] Public = [ApiDocs.Path + "/openapi/{**path}"];
 
     public static WebApplication MapApiProxy(this WebApplication app)
     {

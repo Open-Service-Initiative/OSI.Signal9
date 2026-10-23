@@ -9,7 +9,7 @@ Remote monitoring and management (RMM) for MSPs. Pre-alpha: not ready for produc
 | `OSI.Signal9.Auth` | The OAuth authorization server (OpenIddict): discovery and token endpoints. |
 | `OSI.Signal9.API` | ASP.NET Core REST API and SignalR hubs, plus the authorization server's mTLS token, revocation and introspection endpoints. Deployed to Azure Container Apps. |
 | `OSI.Signal9.Server` | Server code shared by Auth and API: EF Core on PostgreSQL, migrations, the OpenIddict token rules and the stored keys. |
-| `OSI.Signal9.Web` | The dashboard's host and backend-for-frontend: signs people in at auth, keeps their tokens server-side and forwards `/api`, `/hubs/dashboard` and `/docs` to api. |
+| `OSI.Signal9.Web` | The dashboard's host and backend-for-frontend: signs people in at auth, keeps their tokens server-side and forwards `/api` and `/hubs/dashboard` to api. Serves the public API reference (Scalar) at `/docs`. |
 | `OSI.Signal9.Web.Client` | The dashboard: a Blazor WebAssembly app on Fluent UI Blazor v5, served by web. |
 | `OSI.Signal9.Agent` | Windows Service installed on managed machines. |
 | `OSI.Signal9.Contracts` | Request/response types shared by the API, Web and Agent. |
@@ -27,7 +27,7 @@ Prerequisites: .NET 10 SDK and Docker (for the PostgreSQL container).
 dotnet run --project OSI.Signal9.AppHost
 ```
 
-This starts PostgreSQL (a `postgres:18` container), the authorization server (`https://localhost:7101`), the API (`https://localhost:7201`) and web, the dashboard (`https://localhost:7001`). The OpenAPI document is at `https://localhost:7201/openapi/v1.json`, and `OSI.Signal9.API/OSI.Signal9.API.http` has sample requests.
+This starts PostgreSQL (a `postgres:18` container), the authorization server (`https://localhost:7101`), the API (`https://localhost:7201`) and web, the dashboard (`https://localhost:7001`). The API reference is at `https://localhost:7001/docs` ("try it" uses your dashboard session), the OpenAPI document at `https://localhost:7201/docs/openapi/v1.json`, and `OSI.Signal9.API/OSI.Signal9.API.http` has sample requests.
 
 The hosts never apply migrations at startup. The first time, and after pulling new migrations, copy the `signal9` database's connection string from the Aspire dashboard and apply them:
 
@@ -63,7 +63,7 @@ The `KeyEncryption` section chooses the key-encryption key on `auth` and `api`:
 Browsers only ever talk to web and auth (ADR-0003). web is a confidential client of auth (`signal9-web`) using authorization code with PKCE. It redeems codes at api's mTLS token alias with its own client certificate, so its access tokens are bound to it, and keeps them in the database, encrypted with Data Protection. The browser gets only a `__Host-Http-signal9` cookie (Secure, HttpOnly, SameSite=Strict) holding an encrypted session ticket. web generates its certificate itself, stores it wrapped by the key-encryption key, rotates it with the signing keys' schedule and registers it at the authorization server on its own.
 
 - Every state-changing request to web must send `X-CSRF: 1`. There's no CORS on any host.
-- web forwards only `/api/*`, `/hubs/dashboard` and `/docs/*` to api, at `Identity:ApiUri`.
+- web forwards only `/api/*`, `/hubs/dashboard` and the OpenAPI document (`/docs/openapi/*`) to api, at `Identity:ApiUri`.
 - web sends a strict Content Security Policy: scripts from web only (plus WebAssembly and the import map's hash), no other origins.
 - `Identity:WebUri` is web's public address; its redirect URI is `{WebUri}signin-oidc`.
 

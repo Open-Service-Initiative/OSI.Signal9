@@ -237,7 +237,7 @@ public sealed class ScopeTests : IDisposable
     {
         using var api = _factory.CreateAnonymousClient();
 
-        var response = await api.GetAsync("openapi/v1.json", Ct);
+        var response = await api.GetAsync("docs/openapi/v1.json", Ct);
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         var document = await response.Content.ReadFromJsonAsync<JsonElement>(Ct);
 
@@ -269,7 +269,7 @@ public sealed class ScopeTests : IDisposable
     {
         using var api = _factory.CreateAnonymousClient();
 
-        var document = await api.GetFromJsonAsync<JsonElement>("openapi/v1.json", Ct);
+        var document = await api.GetFromJsonAsync<JsonElement>("docs/openapi/v1.json", Ct);
 
         var create = document.GetProperty("paths").GetProperty("/api/v1/devices/{deviceId}/commands").GetProperty("post");
         CollectionAssert.AreEqual(new[] { "commands.execute" }, ScopesOf(document, "/api/v1/devices/{deviceId}/commands", "post"));

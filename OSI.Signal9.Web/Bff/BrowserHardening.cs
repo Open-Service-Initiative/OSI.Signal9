@@ -15,18 +15,25 @@ public static class BrowserHardening
     /// <summary>
     /// Scripts only from web itself, plus WebAssembly compilation and the import map, by hash. Styles only from web,
     /// except inline style attributes, which Fluent UI and Blazor set at run time; that's the one relaxation. No other
-    /// origin, no plugins, no framing.
+    /// origin, no plugins, no framing. A page with inline script or style of its own (the API reference) gets a nonce for
+    /// it, fresh on every response.
     /// </summary>
-    public static string ContentSecurityPolicy(string? importMap)
+    public static string ContentSecurityPolicy(string? importMap, string? nonce = null)
     {
         var scripts = "'self' 'wasm-unsafe-eval'";
+        var styles = "'self'";
         if (importMap is not null)
             scripts += $" 'sha256-{Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(importMap)))}'";
+        if (nonce is not null)
+        {
+            scripts += $" 'nonce-{nonce}'";
+            styles += $" 'nonce-{nonce}'";
+        }
         return string.Join("; ",
             "default-src 'self'",
             $"script-src {scripts}",
-            "style-src 'self'",
-            "style-src-elem 'self'",
+            $"style-src {styles}",
+            $"style-src-elem {styles}",
             "style-src-attr 'unsafe-inline'",
             "img-src 'self' data:",
             "font-src 'self'",
@@ -50,7 +57,8 @@ public static class BrowserHardening
         {
             context.Response.OnStarting(() =>
             {
-                context.Response.Headers.ContentSecurityPolicy = ContentSecurityPolicy(ImportMap(context));
+                context.Response.Headers.ContentSecurityPolicy = ContentSecurityPolicy(ImportMap(context),
+                    context.Items[ApiReference.NonceItem] as string);
                 return Task.CompletedTask;
             });
             return next(context);
