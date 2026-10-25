@@ -1,3 +1,4 @@
+using Bunit.TestDoubles;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,6 +31,9 @@ public abstract class DashboardTestContext : BunitContext
     }
 
     protected NavigationManager Navigation => Services.GetRequiredService<NavigationManager>();
+
+    /// <summary>The most recent navigation the app asked for.</summary>
+    protected NavigationHistory LastNavigation => ((BunitNavigationManager)Navigation).History.First();
 
     /// <summary>The app, as web hosts it, at <paramref name="path"/>.</summary>
     protected IRenderedComponent<Routes> RenderApp(string path = "/")

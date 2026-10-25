@@ -133,9 +133,12 @@ public sealed class ConditionalRequestsTests : IDisposable
         await PatchTenantAsync(tenant.Id, "Contoso Ltd", ifMatch: null);
         var current = await GetETagAsync($"api/v1/tenants/{tenant.Id}");
 
-        var staleDelete = await SendAsync(HttpMethod.Delete, $"api/v1/tenants/{tenant.Id}", ifMatch: stale);
-        var delete = await SendAsync(HttpMethod.Delete, $"api/v1/tenants/{tenant.Id}", ifMatch: current);
-        var missing = await SendAsync(HttpMethod.Delete, $"api/v1/tenants/{tenant.Id}", ifMatch: current);
+        // Deleting a tenant needs a person with a recent MFA (#120).
+        using var superadministrator = await _factory.CreatePersonClientAsync(_factory.Superadministrator());
+
+        var staleDelete = await SendAsync(HttpMethod.Delete, $"api/v1/tenants/{tenant.Id}", ifMatch: stale, client: superadministrator);
+        var delete = await SendAsync(HttpMethod.Delete, $"api/v1/tenants/{tenant.Id}", ifMatch: current, client: superadministrator);
+        var missing = await SendAsync(HttpMethod.Delete, $"api/v1/tenants/{tenant.Id}", ifMatch: current, client: superadministrator);
 
         await AssertPreconditionFailedAsync(staleDelete);
         Assert.AreEqual(HttpStatusCode.NoContent, delete.StatusCode);
@@ -337,6 +340,9 @@ public sealed class ConditionalRequestsTests : IDisposable
 
         using var racing = RaceWith($"""UPDATE "Tenants" SET "Name" = 'Concurrent' WHERE "Id" = '{tenant.Id}'""");
         using var client = racing.CreateClient();
+        // Deleting a tenant needs a person with a recent MFA (#120).
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", await _factory.PersonTokenAsync(_factory.Superadministrator()));
         var request = new HttpRequestMessage(HttpMethod.Delete, $"api/v1/tenants/{tenant.Id}");
         request.Headers.TryAddWithoutValidation("If-Match", etag);
         var response = await client.SendAsync(request, Ct);
@@ -452,14 +458,15 @@ public sealed class ConditionalRequestsTests : IDisposable
     }
 
     private Task<HttpResponseMessage> SendAsync(
-        HttpMethod method, string uri, string? ifMatch = null, string? ifNoneMatch = null, HttpContent? content = null)
+        HttpMethod method, string uri, string? ifMatch = null, string? ifNoneMatch = null, HttpContent? content = null,
+        HttpClient? client = null)
     {
         var request = new HttpRequestMessage(method, uri) { Content = content };
         if (ifMatch is not null)
             request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
         if (ifNoneMatch is not null)
             request.Headers.TryAddWithoutValidation("If-None-Match", ifNoneMatch);
-        return _client.SendAsync(request, Ct);
+        return (client ?? _client).SendAsync(request, Ct);
     }
 
     private async Task<string> GetETagAsync(string uri)

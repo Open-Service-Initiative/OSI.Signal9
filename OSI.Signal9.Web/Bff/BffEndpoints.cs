@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http.HttpResults;
 using OSI.Signal9.Contracts.Bff;
 
@@ -17,13 +19,19 @@ public static class BffEndpoints
         }).RequireAuthorization();
 
         // A full-page navigation from the dashboard. It only ever returns to a page on web (no open redirect).
-        app.MapGet(BffRoutes.Login, (string? returnUrl) =>
+        // With maxAge, after api's step-up challenge (RFC 9470, #120), auth signs the person in again unless they
+        // authenticated within that many seconds (OpenID Connect's max_age).
+        app.MapGet(BffRoutes.Login, (string? returnUrl, [FromQuery(Name = BffRoutes.MaxAgeParameter)] long? maxAge) =>
         {
             returnUrl = string.IsNullOrEmpty(returnUrl) ? "/" : returnUrl;
             if (!RedirectHttpResult.IsLocalUrl(returnUrl))
                 return Results.Problem(statusCode: StatusCodes.Status400BadRequest, title: "returnUrl must be a page on this site.");
-            return Results.Challenge(new AuthenticationProperties { RedirectUri = returnUrl },
-                [BffAuthentication.ChallengeScheme]);
+            if (maxAge is < 0)
+                return Results.Problem(statusCode: StatusCodes.Status400BadRequest, title: "maxAge must be a number of seconds.");
+            var properties = new OpenIdConnectChallengeProperties { RedirectUri = returnUrl };
+            if (maxAge is { } seconds)
+                properties.MaxAge = TimeSpan.FromSeconds(seconds);
+            return Results.Challenge(properties, [BffAuthentication.ChallengeScheme]);
         }).AllowAnonymous();
 
         // Needs the CSRF header like any POST, so another site can't sign the person out.

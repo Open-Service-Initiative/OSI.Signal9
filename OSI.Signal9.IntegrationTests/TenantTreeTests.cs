@@ -108,7 +108,8 @@ public sealed class TenantTreeTests : IDisposable
         await CreateAsync("Site 1b", client1);
         var site2 = await CreateAsync("Site 2", client2);
         await CreateAsync("Standalone");
-        Assert.AreEqual(HttpStatusCode.NoContent, (await _client.DeleteAsync($"api/v1/tenants/{site2}", Ct)).StatusCode);
+        using var superadministrator = await _factory.CreatePersonClientAsync(_factory.Superadministrator());
+        Assert.AreEqual(HttpStatusCode.NoContent, (await superadministrator.DeleteAsync($"api/v1/tenants/{site2}", Ct)).StatusCode);
         Assert.AreEqual(TenantTreeError.None, await MoveAsync(client1, mspB));
 
         using var scope = _factory.Services.CreateScope();

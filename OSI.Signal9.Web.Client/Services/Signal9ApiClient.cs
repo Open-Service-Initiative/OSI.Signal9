@@ -14,9 +14,10 @@ namespace OSI.Signal9.Web.Client.Services;
 
 /// <summary>
 /// The parts of the Signal9 API the dashboard uses, called through web's proxy on the dashboard's own origin. A refusal
-/// throws <see cref="ApiException"/>; a 401 also asks web again who is signed in, because it means the session ended.
+/// throws <see cref="ApiException"/>; a 401 also asks web again who is signed in, because it means the session ended,
+/// unless it's RFC 9470's step-up challenge, which sends the person to sign in again with <c>max_age</c> (#120).
 /// </summary>
-public sealed class Signal9ApiClient(HttpClient http, BffAuthenticationStateProvider authentication)
+public sealed class Signal9ApiClient(HttpClient http, BffAuthenticationStateProvider authentication, BffSession session)
 {
     private const string MergePatch = "application/merge-patch+json";
 
@@ -83,12 +84,18 @@ public sealed class Signal9ApiClient(HttpClient http, BffAuthenticationStateProv
                 : (await response.Content.ReadFromJsonAsync<T>(Signal9Json.Options, cancellationToken))!;
         }
 
+        if (StepUpChallenge.MaxAge(response) is { } maxAge)
+        {
+            session.StepUp(maxAge);
+            throw await ToExceptionAsync(response, sessionEnded: false, cancellationToken, steppingUp: true);
+        }
+
         var sessionEnded = response.StatusCode == HttpStatusCode.Unauthorized && !await authentication.RefreshAsync();
         throw await ToExceptionAsync(response, sessionEnded, cancellationToken);
     }
 
     private static async Task<ApiException> ToExceptionAsync(
-        HttpResponseMessage response, bool sessionEnded, CancellationToken cancellationToken)
+        HttpResponseMessage response, bool sessionEnded, CancellationToken cancellationToken, bool steppingUp = false)
     {
         Problem? problem = null;
         if (response.Content.Headers.ContentType?.MediaType is "application/problem+json" or "application/json")
@@ -105,7 +112,7 @@ public sealed class Signal9ApiClient(HttpClient http, BffAuthenticationStateProv
 
         var errors = problem?.Errors?.SelectMany(field => field.Value).ToList() ?? [];
         var title = problem?.Title ?? response.ReasonPhrase ?? $"HTTP {(int)response.StatusCode}";
-        return new ApiException(response.StatusCode, title, problem?.Detail, errors, sessionEnded);
+        return new ApiException(response.StatusCode, title, problem?.Detail, errors, sessionEnded, steppingUp);
     }
 
     private sealed record Problem(string? Title, string? Detail, Dictionary<string, string[]>? Errors);

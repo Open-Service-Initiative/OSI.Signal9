@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
@@ -22,7 +23,8 @@ public static class AuthorizationEndpoint
     public const string ReturnPath = "/" + Path + "?";
 
     public static IEndpointConventionBuilder MapAuthorizationEndpoint(this IEndpointRouteBuilder endpoints) =>
-        endpoints.MapMethods(Path, [HttpMethods.Get, HttpMethods.Post], async (HttpContext context, DeployingDirectory deploying) =>
+        endpoints.MapMethods(Path, [HttpMethods.Get, HttpMethods.Post], async (HttpContext context, DeployingDirectory deploying,
+            TimeProvider time) =>
         {
             var request = context.GetOpenIddictServerRequest()
                 ?? throw new InvalidOperationException("The OpenIddict server request can't be retrieved.");
@@ -32,15 +34,29 @@ public static class AuthorizationEndpoint
 
             var session = await context.AuthenticateAsync(EntraSignIn.CookieScheme);
             var fresh = session.Succeeded && await TakeFreshSignInAsync(context, session);
+            // max_age (OpenID Connect Core §3.1.2.1): the client needs an authentication at most this old, such as after
+            // an RFC 9470 step-up challenge. The person authenticates at Entra again; a sign-in that just came back from
+            // there and still isn't recent enough is refused, rather than sent round again.
+            // A session that doesn't say when the person authenticated is too old for any max_age.
+            var authenticatedAt = session.Succeeded ? EntraSignIn.AuthenticatedAt(session.Principal!) : null;
+            var tooOld = session.Succeeded && (authenticatedAt is null
+                || (request.MaxAge is { } maxAge && time.GetUtcNow() - authenticatedAt > TimeSpan.FromSeconds(maxAge)));
+            if (tooOld && fresh)
+                return Deny(EntraSignIn.Describe(EntraSignIn.Rejection.NotFresh));
+
             // Superadministrator is re-read from Entra for every token (story 59), so a session that already issued
             // one goes back to Entra, whose own session signs the person straight in with their current app roles.
-            if (!session.Succeeded || (!fresh && deploying.IsSuperadministrator(session.Principal!)))
+            if (!session.Succeeded || tooOld || (!fresh && deploying.IsSuperadministrator(session.Principal!)))
             {
                 // A form-posted request comes back as a query, so the return address holds all of it.
                 var parameters = context.Request.HasFormContentType ? context.Request.Form.ToList() : context.Request.Query.ToList();
                 var returnUrl = QueryHelpers.AddQueryString(ReturnPath.TrimEnd('?'),
                     parameters.Where(p => p.Key != EntraSignIn.RejectionParameter));
-                return Results.Challenge(new AuthenticationProperties { RedirectUri = returnUrl }, [EntraSignIn.ChallengeScheme]);
+                var properties = new OpenIdConnectChallengeProperties { RedirectUri = returnUrl };
+                // Entra's session would sign the person straight in; prompt=login makes them authenticate again.
+                if (request.MaxAge is not null)
+                    properties.Prompt = PromptValues.Login;
+                return Results.Challenge(properties, [EntraSignIn.ChallengeScheme]);
             }
 
             if (EntraPerson.From(session.Principal!) is not { } person)
@@ -49,6 +65,10 @@ public static class AuthorizationEndpoint
             // Identity only (ADR-0007): the person, the client and the scopes. Signing in creates no user record.
             var identity = new ClaimsIdentity(TokenValidationParameters.DefaultAuthenticationType, Claims.Name, Claims.Role);
             identity.SetClaim(Claims.Subject, person.Subject);
+            // When and how the person authenticated at Entra, which recent-MFA checks judge (story 45, RFC 9470 §4).
+            identity.SetClaim(Claims.AuthenticationTime, authenticatedAt!.Value.ToUnixTimeSeconds());
+            identity.SetClaims(Claims.AuthenticationMethodReference,
+                [.. session.Principal!.FindAll("amr").Select(claim => claim.Value).Distinct(StringComparer.Ordinal)]);
             // The one authorization claim a token carries (ADR-0006, ADR-0007).
             if (deploying.IsSuperadministrator(session.Principal!))
                 identity.AddClaim(Claims.Role, Superadministrator.Role);

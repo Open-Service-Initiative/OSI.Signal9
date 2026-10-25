@@ -26,8 +26,11 @@ internal static class InsufficientScope
         new(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme, Properties(scopes));
 }
 
-/// <summary>Turns a failed <see cref="RequireScopeAttribute"/> into an <see cref="InsufficientScope"/> refusal.</summary>
-internal sealed class InsufficientScopeResultHandler : IAuthorizationMiddlewareResultHandler
+/// <summary>
+/// Turns a failed <see cref="RequireScopeAttribute"/> into an <see cref="InsufficientScope"/> refusal, and a person's
+/// failed <see cref="RequireRecentMfaAttribute"/> into the <see cref="RecentMfa"/> step-up challenge.
+/// </summary>
+internal sealed class AuthorizationRefusalHandler : IAuthorizationMiddlewareResultHandler
 {
     private readonly AuthorizationMiddlewareResultHandler _default = new();
 
@@ -40,6 +43,12 @@ internal sealed class InsufficientScopeResultHandler : IAuthorizationMiddlewareR
             .SelectMany(r => r.Scopes).Distinct().ToList();
         if (authorizeResult.Forbidden && missing is { Count: > 0 })
             return context.ForbidAsync(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme, InsufficientScope.Properties(missing));
+
+        // Signing in again helps only a person whose token lacks nothing else; an application gets the plain 403.
+        var failed = authorizeResult.AuthorizationFailure?.FailedRequirements.ToList();
+        if (authorizeResult.Forbidden && failed is { Count: > 0 } && failed.All(r => r is RequireRecentMfaAttribute)
+            && RecentMfa.IsPerson(context.User))
+            return RecentMfa.ChallengeAsync(context);
 
         return _default.HandleAsync(next, context, policy, authorizeResult);
     }

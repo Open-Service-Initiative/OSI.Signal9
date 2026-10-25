@@ -23,7 +23,7 @@ public sealed class Signal9AuthFactory : WebApplicationFactory<AuthHost>
     public Signal9AuthFactory(string connectionString, FakeTimeProvider time, string? kekPath = null,
         IReadOnlyDictionary<string, string?>? settings = null, FakeEntra? entra = null)
     {
-        Entra = entra ?? new FakeEntra();
+        Entra = entra ?? new FakeEntra(time);
         _settings = settings ?? new Dictionary<string, string?>();
         _connectionString = connectionString;
         _time = time;

@@ -16,8 +16,14 @@ namespace OSI.Signal9.IntegrationTests;
 /// <param name="SessionId">The Entra session (<c>sid</c>), or <see langword="null"/> for a sign-in without one.</param>
 /// <param name="Roles">App roles assigned on the operator's app registration.</param>
 /// <param name="Email">The UPN, email and preferred username, which must never identify the person.</param>
+/// <param name="AuthenticatedAt">
+/// When the person last authenticated at Entra (<c>auth_time</c>), if not at this sign-in. Entra's session signs them
+/// in without asking again, unless auth sends <c>prompt=login</c>.
+/// </param>
+/// <param name="SendsAuthTime">Whether the ID token carries <c>auth_time</c> (an optional claim at Entra).</param>
 public sealed record EntraUser(Guid TenantId, Guid ObjectId, string[] Amr, string? SessionId = "entra-session",
-    string[]? Roles = null, string Email = "alex@contoso.example")
+    string[]? Roles = null, string Email = "alex@contoso.example", DateTimeOffset? AuthenticatedAt = null,
+    bool SendsAuthTime = true)
 {
     /// <summary>A person from a new directory who signed in with a password and MFA.</summary>
     public static EntraUser WithMfa() => new(Guid.NewGuid(), Guid.NewGuid(), ["pwd", "mfa"]);
@@ -48,6 +54,7 @@ public sealed class FakeEntra
     /// <summary>Requests the fake doesn't serve; a test fails on any.</summary>
     public ConcurrentQueue<string> Unhandled { get; } = new();
 
+    private readonly TimeProvider _time;
     private readonly RsaSecurityKey _signingKey = new(RSA.Create(2048)) { KeyId = "fake-entra-key" };
     private readonly ConcurrentDictionary<string, PendingCode> _codes = new();
     private int _signIns;
@@ -55,10 +62,16 @@ public sealed class FakeEntra
     /// <summary>How many times people signed in here.</summary>
     public int SignIns => _signIns;
 
-    private sealed record PendingCode(EntraUser User, string RedirectUri, string Nonce, string? Challenge);
+    /// <summary>The <c>prompt</c> of each authorize request people signed in at, in order (null when absent).</summary>
+    public ConcurrentQueue<string?> Prompts { get; } = new();
 
-    public FakeEntra()
+    private sealed record PendingCode(EntraUser User, string RedirectUri, string Nonce, string? Challenge,
+        DateTimeOffset AuthenticatedAt);
+
+    /// <param name="time">The clock people authenticate by (<c>auth_time</c>): the fixture's, so tests can age it.</param>
+    public FakeEntra(TimeProvider? time = null)
     {
+        _time = time ?? TimeProvider.System;
         using var rsa = RSA.Create(2048);
         var request = new CertificateRequest("CN=Signal9 test Entra credential", rsa, HashAlgorithmName.SHA256,
             RSASignaturePadding.Pkcs1);
@@ -85,8 +98,12 @@ public sealed class FakeEntra
         Assert.AreEqual("S256", query["code_challenge_method"].ToString(), "auth must use PKCE upstream.");
 
         Interlocked.Increment(ref _signIns);
+        var prompt = query.TryGetValue("prompt", out var value) ? value.ToString() : null;
+        Prompts.Enqueue(prompt);
+        // prompt=login makes the person authenticate again, now; otherwise Entra's session signs them straight in.
+        var authenticatedAt = prompt == "login" ? _time.GetUtcNow() : user.AuthenticatedAt ?? _time.GetUtcNow();
         var code = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32));
-        _codes[code] = new PendingCode(user, query["redirect_uri"]!, query["nonce"]!, query["code_challenge"]);
+        _codes[code] = new PendingCode(user, query["redirect_uri"]!, query["nonce"]!, query["code_challenge"], authenticatedAt);
         var form = new Dictionary<string, string> { ["code"] = code, ["state"] = query["state"]!, ["session_state"] = Guid.NewGuid().ToString() };
         return (new Uri(query["redirect_uri"]!), new FormUrlEncodedContent(form));
     }
@@ -184,6 +201,8 @@ public sealed class FakeEntra
         };
         if (user.SessionId is not null)
             claims["sid"] = user.SessionId;
+        if (user.SendsAuthTime)
+            claims["auth_time"] = pending.AuthenticatedAt.ToUnixTimeSeconds();
         if (user.Roles is { Length: > 0 })
             claims["roles"] = user.Roles;
 

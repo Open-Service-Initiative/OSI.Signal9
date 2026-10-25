@@ -9,8 +9,15 @@ public static class BffRoutes
     /// <summary>GET: the signed-in person (<see cref="BffUser"/>), or 401 without a session.</summary>
     public const string User = "bff/user";
 
-    /// <summary>GET, as a full-page navigation: signs the person in, then returns to the local <c>returnUrl</c>.</summary>
+    /// <summary>
+    /// GET, as a full-page navigation: signs the person in, then returns to the local <c>returnUrl</c>. With
+    /// <see cref="MaxAgeParameter"/>, the person must have authenticated at most that many seconds ago, such as after
+    /// an RFC 9470 step-up challenge (#120).
+    /// </summary>
     public const string Login = "bff/login";
+
+    /// <summary>The <see cref="Login"/> query parameter that becomes OpenID Connect's <c>max_age</c>, in seconds.</summary>
+    public const string MaxAgeParameter = "maxAge";
 
     /// <summary>POST, with the CSRF header: ends the session. Answers 204.</summary>
     public const string Logout = "bff/logout";

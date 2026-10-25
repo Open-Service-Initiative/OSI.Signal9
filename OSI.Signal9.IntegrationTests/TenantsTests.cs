@@ -130,7 +130,8 @@ public sealed class TenantsTests : IDisposable
         var parent = await _factory.CreateTenantAsync(_client, "MSP");
         await CreateAsync(_client, "Client", parent.Id);
 
-        var response = await _client.DeleteAsync($"api/v1/tenants/{parent.Id}", Ct);
+        using var superadministrator = await _factory.CreatePersonClientAsync(_factory.Superadministrator());
+        var response = await superadministrator.DeleteAsync($"api/v1/tenants/{parent.Id}", Ct);
 
         Assert.AreEqual(HttpStatusCode.Conflict, response.StatusCode);
     }
@@ -238,7 +239,8 @@ public sealed class TenantsTests : IDisposable
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
 
-        var deleted = await _client.DeleteAsync($"api/v1/tenants/{tenant.Id}", Ct);
+        using var superadministrator = await _factory.CreatePersonClientAsync(_factory.Superadministrator());
+        var deleted = await superadministrator.DeleteAsync($"api/v1/tenants/{tenant.Id}", Ct);
         var fetched = await _client.GetAsync($"api/v1/tenants/{tenant.Id}", Ct);
 
         Assert.AreEqual(HttpStatusCode.NoContent, deleted.StatusCode);
@@ -250,8 +252,9 @@ public sealed class TenantsTests : IDisposable
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
         await Signal9ApiFactory.RegisterAsync(_client, tenant.Id, "PC01");
+        using var superadministrator = await _factory.CreatePersonClientAsync(_factory.Superadministrator());
 
-        var response = await _client.DeleteAsync($"api/v1/tenants/{tenant.Id}", Ct);
+        var response = await superadministrator.DeleteAsync($"api/v1/tenants/{tenant.Id}", Ct);
 
         Assert.AreEqual(HttpStatusCode.Conflict, response.StatusCode);
     }

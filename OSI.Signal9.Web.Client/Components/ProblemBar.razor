@@ -1,5 +1,6 @@
-@* Shows an API refusal. A 401 shows nothing: the session ended, and the sign-in prompt takes over. *@
-@if (Error is { SessionEnded: false })
+@* Shows an API refusal. A 401 shows nothing: the session ended and the sign-in prompt takes over, or the person is on
+   their way to sign in again for a recent MFA. *@
+@if (Error is { SessionEnded: false, SteppingUp: false })
 {
     <FluentMessageBar Class="error-bar" Intent="MessageBarIntent.Error" Title="@Error.Title">
         @Error.Detail

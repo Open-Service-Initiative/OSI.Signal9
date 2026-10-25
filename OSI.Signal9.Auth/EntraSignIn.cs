@@ -159,6 +159,18 @@ public static class EntraSignIn
 
         /// <summary>The ID token doesn't name the directory and object (story 41).</summary>
         NoIdentity,
+
+        /// <summary>
+        /// The ID token doesn't say when the person authenticated (<c>auth_time</c>), so recent MFA can't be judged
+        /// (story 45).
+        /// </summary>
+        NoAuthenticationTime,
+
+        /// <summary>
+        /// A sign-in auth asked Entra to make afresh (<c>prompt=login</c>) still authenticated the person too long ago for
+        /// the client's <c>max_age</c>.
+        /// </summary>
+        NotFresh,
     }
 
     /// <summary>The OAuth error description the client gets for each <see cref="Rejection"/>.</summary>
@@ -167,6 +179,8 @@ public static class EntraSignIn
         Rejection.NoMfa => "The sign-in didn't use multi-factor authentication.",
         Rejection.UntrustedDirectory => "The person's Entra directory isn't trusted by this deployment.",
         Rejection.NoIdentity => "The sign-in didn't identify the person's directory and object.",
+        Rejection.NoAuthenticationTime => "The sign-in didn't say when the person authenticated.",
+        Rejection.NotFresh => "Entra didn't authenticate the person again as required.",
         _ => "The sign-in at Entra didn't complete.",
     };
 
@@ -180,6 +194,10 @@ public static class EntraSignIn
         if (!principal.FindAll("amr").Any(claim => claim.Value == "mfa"))
             return Rejection.NoMfa;
 
+        // When that MFA happened, which recent-MFA checks judge (story 45): an optional claim Entra must be set to send.
+        if (AuthenticatedAt(principal) is null)
+            return Rejection.NoAuthenticationTime;
+
         if (allowedTenants.Length > 0 && !allowedTenants.Contains(person.TenantId))
             return Rejection.UntrustedDirectory;
 
@@ -192,6 +210,12 @@ public static class EntraSignIn
 
         return null;
     }
+
+    /// <summary>When the person last authenticated at Entra: the ID token's <c>auth_time</c> (OpenID Connect Core §2).</summary>
+    public static DateTimeOffset? AuthenticatedAt(ClaimsPrincipal signIn) =>
+        long.TryParse(signIn.FindFirst("auth_time")?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seconds)
+            ? DateTimeOffset.FromUnixTimeSeconds(seconds)
+            : null;
 
     /// <summary>
     /// The registration must name its client and authenticate with a certificate or managed identity: no secrets

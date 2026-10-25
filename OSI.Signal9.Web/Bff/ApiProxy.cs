@@ -12,7 +12,8 @@ namespace OSI.Signal9.Web.Bff;
 /// web forwards the dashboard's calls to <c>api</c> with YARP (ADR-0003). The destinations are a fixed allow-list on
 /// api's configured address (RFC 10017 §6.1): the API and the dashboard hub, with the person's access token attached
 /// here, and the public OpenAPI document, without one. An access token about to expire is refreshed first, and a 401
-/// from api is retried once after a refresh (#118). Nothing else reaches api, and the destination never comes from the
+/// from api is retried once after a refresh (#118), unless it's a step-up challenge, which the dashboard answers by
+/// sending the person to sign in again (#120). Nothing else reaches api, and the destination never comes from the
 /// request.
 /// </summary>
 public static class ApiProxy
@@ -90,6 +91,11 @@ public static class ApiProxy
         }
     }
 
+    private static bool IsStepUpChallenge(HttpResponseMessage response) =>
+        response.Headers.WwwAuthenticate.Any(challenge =>
+            string.Equals(challenge.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase)
+            && challenge.Parameter?.Contains("\"insufficient_user_authentication\"", StringComparison.Ordinal) == true);
+
     /// <summary>
     /// Copies the request, minus what's web's alone: the browser's cookies, any credentials it sent and the CSRF
     /// header, and any forwarding headers a client made up. Then it attaches the person's access token, if any.
@@ -117,7 +123,10 @@ public static class ApiProxy
         public override async ValueTask<bool> TransformResponseAsync(HttpContext httpContext,
             HttpResponseMessage? proxyResponse, CancellationToken cancellationToken)
         {
-            if (holdUnauthorized && proxyResponse?.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            // A step-up challenge (RFC 9470) goes to the dashboard, which sends the person to sign in again: a refreshed
+            // token keeps the same authentication time, so retrying wouldn't help.
+            if (holdUnauthorized && proxyResponse?.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                && !IsStepUpChallenge(proxyResponse))
             {
                 // Nothing of it reaches the browser; web refreshes and retries.
                 HeldUnauthorized = true;

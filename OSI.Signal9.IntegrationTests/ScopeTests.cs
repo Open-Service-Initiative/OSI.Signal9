@@ -196,7 +196,10 @@ public sealed class ScopeTests : IDisposable
     {
         // The dashboard hub accepts either of its two scopes, so neither may be in the token that lacks the scope.
         string[] alternatives = path.StartsWith("hubs/dashboard", StringComparison.Ordinal) ? ["devices.read", "telemetry.read"] : [scope];
-        using var withScope = await _factory.CreateClientAsync(scope);
+        // Deleting a tenant also needs a person with a recent MFA (#120), which an application acting as itself isn't.
+        using var withScope = method == "DELETE" && path.StartsWith("api/v1/tenants/", StringComparison.Ordinal)
+            ? await _factory.CreatePersonClientAsync(_factory.Superadministrator(), scope)
+            : await _factory.CreateClientAsync(scope);
         using var withEverythingElse = await _factory.CreateClientAsync(GrantableScopes.Except(alternatives).ToArray());
 
         var allowed = await withScope.SendAsync(Request(method, path), Ct);

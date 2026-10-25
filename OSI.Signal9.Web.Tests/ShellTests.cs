@@ -8,8 +8,6 @@ namespace OSI.Signal9.Web.Tests;
 [TestClass]
 public sealed class ShellTests : DashboardTestContext
 {
-    private NavigationHistory LastNavigation => ((BunitNavigationManager)Navigation).History.First();
-
     [TestMethod]
     public void The_navigation_links_to_home_devices_tenants_and_the_audit_log()
     {

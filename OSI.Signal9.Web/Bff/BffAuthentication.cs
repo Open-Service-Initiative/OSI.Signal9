@@ -143,7 +143,7 @@ public static class BffAuthentication
     }
 
     /// <summary>
-    /// Keeps the tokens in a new session and gives the cookie a ticket naming only the person and that session.
+    /// Keeps the tokens in a new session, in place of any the browser had, and gives the cookie a ticket naming only the person and that session.
     /// </summary>
     private static async Task StartSessionAsync(TokenValidatedContext context)
     {
@@ -155,6 +155,11 @@ public static class BffAuthentication
         }
 
         var sessions = context.HttpContext.RequestServices.GetRequiredService<DashboardSessions>();
+        // Signing in again, such as a step-up for a recent MFA (#120), replaces the browser's session: the old one's
+        // tokens are dropped and its refresh token revoked.
+        // The callback runs before the cookie is read for the request, so it's read here.
+        if (await context.HttpContext.AuthenticateAsync(CookieScheme) is { Succeeded: true, Principal: { } previous })
+            await sessions.EndAsync(previous);
         var session = await sessions.StartAsync(subject, context.TokenEndpointResponse, context.HttpContext.RequestAborted);
 
         var ticket = new ClaimsIdentity(CookieScheme, "sub", "role");

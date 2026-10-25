@@ -43,6 +43,7 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         DateTimeOffset? start = null)
     {
         Time = new FakeTimeProvider(DateTimeOffset.FromUnixTimeSeconds((start ?? DateTimeOffset.UtcNow).ToUnixTimeSeconds()));
+        Entra = new FakeEntra(Time);
         _migrated = migrated;
         _settings = settings ?? new Dictionary<string, string?>();
         ConnectionString = PostgresContainer.CreateDatabase(migrated);
@@ -67,7 +68,7 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
     internal IReadOnlyDictionary<string, string?> Settings => _settings;
 
     /// <summary>The stand-in for Entra that people sign in at through <c>auth</c>.</summary>
-    public FakeEntra Entra { get; } = new();
+    public FakeEntra Entra { get; }
 
     /// <summary>Connection string of this factory's database.</summary>
     public string ConnectionString { get; }
@@ -129,6 +130,21 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
     /// </summary>
     public async Task<HttpClient> CreatePersonClientAsync(EntraUser user, params string[] scopes)
     {
+        var client = CreateAnonymousClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await PersonTokenAsync(user, scopes));
+        return client;
+    }
+
+    /// <summary>A Superadministrator who just signed in with MFA, as sensitive actions need (#120).</summary>
+    public EntraUser Superadministrator() =>
+        EntraUser.WithMfa() with { TenantId = Entra.DeployingTenantId, Roles = [OSI.Signal9.Server.Identity.Superadministrator.AppRole] };
+
+    /// <summary>
+    /// An access token for <paramref name="user"/>, who signs in at Entra through <c>auth</c> with a client using
+    /// authorization code, asking for these scopes (every person scope if none).
+    /// </summary>
+    public async Task<string> PersonTokenAsync(EntraUser user, params string[] scopes)
+    {
         await _personClientSeeding.WaitAsync();
         try
         {
@@ -148,11 +164,7 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         using var auth = Auth.CreateClient();
         var response = await auth.PostAsync("connect/token", flow.Redemption(code));
         response.EnsureSuccessStatusCode();
-        var token = (await response.Content.ReadFromJsonAsync<AccessToken>())!;
-
-        var client = CreateAnonymousClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Value);
-        return client;
+        return (await response.Content.ReadFromJsonAsync<AccessToken>())!.Value;
     }
 
     /// <summary>The applications the fixture seeds to act as themselves, with client credentials.</summary>

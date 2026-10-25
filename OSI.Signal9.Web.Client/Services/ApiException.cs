@@ -4,7 +4,8 @@ namespace OSI.Signal9.Web.Client.Services;
 
 /// <summary>The API refused a request. Carries the problem details (RFC 9457) it answered with, if any.</summary>
 public sealed class ApiException(
-    HttpStatusCode status, string title, string? detail, IReadOnlyList<string> errors, bool sessionEnded = false)
+    HttpStatusCode status, string title, string? detail, IReadOnlyList<string> errors, bool sessionEnded = false,
+    bool steppingUp = false)
     : Exception(detail is null ? title : $"{title}: {detail}")
 {
     public HttpStatusCode Status { get; } = status;
@@ -21,4 +22,10 @@ public sealed class ApiException(
     /// sign in again.
     /// </summary>
     public bool SessionEnded { get; } = sessionEnded;
+
+    /// <summary>
+    /// The action needs a recent MFA (RFC 9470's step-up challenge). Not an error to show: the dashboard is sending the
+    /// person to sign in again.
+    /// </summary>
+    public bool SteppingUp { get; } = steppingUp;
 }

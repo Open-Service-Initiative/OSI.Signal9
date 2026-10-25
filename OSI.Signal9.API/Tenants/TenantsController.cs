@@ -223,6 +223,7 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, IAss
 
     /// <summary>Deletes a tenant. Tenants that still own devices or child tenants cannot be deleted.</summary>
     [RequireScope(Scopes.Tenants.Delete)]
+    [RequireRecentMfa]
     [HttpDelete("{tenantId:guid}")]
     [OptimisticConcurrency]
     [ProducesResponseType(StatusCodes.Status204NoContent)]

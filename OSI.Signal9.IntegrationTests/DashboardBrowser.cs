@@ -44,10 +44,13 @@ public sealed class DashboardBrowser : IDisposable
     /// Opens web's sign-in, follows every redirect through auth and Entra, signing <paramref name="user"/> in there, and
     /// returns the last response: the page web returns the person to.
     /// </summary>
-    public async Task<HttpResponseMessage> SignInAsync(EntraUser user, string returnUrl = "/")
+    /// <param name="maxAge">The dashboard's <c>maxAge</c> after a step-up challenge (#120), if any.</param>
+    public async Task<HttpResponseMessage> SignInAsync(EntraUser user, string returnUrl = "/", int? maxAge = null)
     {
-        var response = await SendAsync(HttpMethod.Get,
-            new Uri(Signal9WebFactory.BaseUri, $"{BffRoutes.Login}?returnUrl={Uri.EscapeDataString(returnUrl)}"));
+        var login = $"{BffRoutes.Login}?returnUrl={Uri.EscapeDataString(returnUrl)}";
+        if (maxAge is not null)
+            login += $"&{BffRoutes.MaxAgeParameter}={maxAge}";
+        var response = await SendAsync(HttpMethod.Get, new Uri(Signal9WebFactory.BaseUri, login));
         return await FollowAsync(response, user);
     }
 

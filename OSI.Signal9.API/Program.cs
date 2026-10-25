@@ -49,6 +49,7 @@ builder.Services.AddOpenApi(options => options
     })
     .AddScopes(identity.Issuer)
     .AddOperationTransformer<DocumentedRequirements>()
+    .AddOperationTransformer<RecentMfaResponses>()
     .AddOperationTransformer<ConditionalOperationTransformer>());
 builder.Services.AddSignalR()
     .AddJsonProtocol(options => Signal9Json.Configure(options.PayloadSerializerOptions));
@@ -85,7 +86,8 @@ builder.Services.AddAuthentication(OpenIddictValidationAspNetCoreDefaults.Authen
 builder.Services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
 builder.Services.AddSingleton<IAuthorizationHandler, RequireScopeHandler>();
-builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, InsufficientScopeResultHandler>();
+builder.Services.AddSingleton<IAuthorizationHandler, RequireRecentMfaHandler>();
+builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, AuthorizationRefusalHandler>();
 
 var app = builder.Build();
 
