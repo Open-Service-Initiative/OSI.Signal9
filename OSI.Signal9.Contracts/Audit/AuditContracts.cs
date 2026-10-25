@@ -109,6 +109,12 @@ public static class AuditActions
     public const string ApiApplicationAccessGranted = "api-application.access-granted";
 
     public const string ApiApplicationDeleted = "api-application.deleted";
+
+    /// <summary>
+    /// A person consented at auth to a delegated API application acting for them (story 87), stored at the
+    /// application's tenant. <c>Detail</c> lists every scope the consent now covers.
+    /// </summary>
+    public const string ApiApplicationConsentGranted = "api-application.consent-granted";
     public const string ApiApplicationCredentialAdded = "api-application.credential-added";
     public const string ApiApplicationCredentialRemoved = "api-application.credential-removed";
 

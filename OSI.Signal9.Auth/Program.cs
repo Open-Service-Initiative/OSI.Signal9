@@ -13,6 +13,17 @@ builder.AddSignal9ForwardedHeaders();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSignal9Audit();
 builder.AddSignal9EntraSignIn();
+builder.Services.AddScoped<Consent>();
+// The consent screen's antiforgery cookie: host-only, HTTPS-only and never sent cross-site (RFC 6265bis).
+builder.Services.AddAntiforgery(options =>
+{
+    options.Cookie.Name = "__Host-Signal9.Antiforgery";
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    options.Cookie.SameSite = SameSiteMode.Strict;
+    options.FormFieldName = Consent.AntiforgeryField;
+    // The consent screen sends X-Frame-Options: DENY itself, stricter than antiforgery's SAMEORIGIN.
+    options.SuppressXFrameOptionsHeader = true;
+});
 
 var identity = builder.Configuration.GetIdentityOptions();
 
@@ -25,6 +36,8 @@ builder.Services.AddSignal9OpenIddict()
         .UseSignal9TokenRules(identity, builder.Configuration)
         // People sign in here only, so only auth has the authorization endpoint and the code flow (#109).
         .SetAuthorizationEndpointUris(AuthorizationServer.AuthorizationEndpoint)
+        // Optional pushed authorization requests (RFC 9126, story 82), for clients that authenticate here.
+        .SetPushedAuthorizationEndpointUris(AuthorizationServer.PushedAuthorizationEndpoint)
         .UseSignal9CodeFlow()
         .SetTokenEndpointUris(AuthorizationServer.TokenEndpoint)
         .SetRevocationEndpointUris(AuthorizationServer.RevocationEndpoint)

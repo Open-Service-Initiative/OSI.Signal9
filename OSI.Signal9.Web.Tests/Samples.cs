@@ -49,7 +49,8 @@ internal static class Samples
         params string[] scopes)
     {
         var applicationId = id ?? Guid.NewGuid();
-        return new(applicationId, tenantId, applicationId.ToString(), name, roleId, scopes, method, null, Now);
+        return new(applicationId, tenantId, applicationId.ToString(), name, ApiApplicationKinds.AppOnly, roleId, scopes, method, null,
+            [], true, false, Now);
     }
 
     public static PagedResult<T> Page<T>(params T[] items) => new(items, 1, 25, items.Length);

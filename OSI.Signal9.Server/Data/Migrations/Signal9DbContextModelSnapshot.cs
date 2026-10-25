@@ -103,7 +103,22 @@ namespace OSI.Signal9.Server.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<Guid>("RoleId")
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.PrimitiveCollection<string[]>("RedirectUris")
+                        .IsRequired()
+                        .HasColumnType("text[]");
+
+                    b.Property<bool>("RequireNonce")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("RequirePkce")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("RoleId")
                         .HasColumnType("uuid");
 
                     b.PrimitiveCollection<string[]>("Scopes")
@@ -966,8 +981,7 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.HasOne("OSI.Signal9.Server.Data.Role", "Role")
                         .WithMany()
                         .HasForeignKey("RoleId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("OSI.Signal9.Server.Data.Tenant", null)
                         .WithMany()

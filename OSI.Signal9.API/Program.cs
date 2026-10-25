@@ -101,10 +101,11 @@ app.UseSignal9ForwardedHeaders();
 app.UseHostHardening();
 
 app.UseRateLimitingAndAuthentication();
+// Before authorization and the audit, which judge the caller by the API application their token was issued to.
+app.UseCallerAccess();
 // Around authorization, so it sees refusals as well as what endpoints did.
 app.UseRequestAudit();
 app.UseAuthorization();
-app.UseCallerAccess();
 
 app.MapTokenEndpoint().RequireRateLimiting(RateLimiting.Token);
 // The API description is public (story 132): it shows what each call needs, never data.

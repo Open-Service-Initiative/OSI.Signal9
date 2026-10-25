@@ -119,6 +119,12 @@ public static class Scopes
     public static bool IsGrantableToApplication(string scope) =>
         All.ContainsKey(scope) && scope is not (Agent or OidcScopes.OpenId or OidcScopes.Profile or OidcScopes.OfflineAccess);
 
+    /// <summary>
+    /// The scopes a delegated API application can be granted: every catalogue scope but <see cref="Agent"/> (#125). No
+    /// scope is first-party only; the person's own access, recent MFA and Superadministrator role still apply to each.
+    /// </summary>
+    public static bool IsGrantableToDelegatedApplication(string scope) => All.ContainsKey(scope) && scope != Agent;
+
     /// <summary>Every scope in the catalogue, with what it allows.</summary>
     public static readonly IReadOnlyDictionary<string, string> All = new Dictionary<string, string>
     {

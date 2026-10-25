@@ -273,13 +273,28 @@ public sealed class ApiApplication : ITenantOwned
     public Guid TenantId { get; set; }
     public required string ClientId { get; set; }
     public required string DisplayName { get; set; }
-    public Guid RoleId { get; set; }
 
-    /// <summary>The scopes it may use: within its role's.</summary>
+    /// <summary>App-only or delegated (<c>ApiApplicationKinds</c>), fixed at registration.</summary>
+    public required string Kind { get; set; }
+
+    /// <summary>An app-only application's own role; null for a delegated one, which acts with the person's.</summary>
+    public Guid? RoleId { get; set; }
+
+    /// <summary>The scopes it may use: an app-only application's are within its role's.</summary>
     public string[] Scopes { get; set; } = [];
 
     /// <summary>Its RFC 7591 <c>token_endpoint_auth_method</c>, fixed at registration.</summary>
     public required string TokenEndpointAuthMethod { get; set; }
+
+    /// <summary>A delegated application's redirect URIs.</summary>
+    public string[] RedirectUris { get; set; } = [];
+
+    /// <summary>Whether a delegated application must use PKCE (S256). Off only with <see cref="RequireNonce"/>.</summary>
+    public bool RequirePkce { get; set; } = true;
+
+    /// <summary>Whether a delegated application's authorization requests must carry an OpenID Connect nonce.</summary>
+    public bool RequireNonce { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public Role? Role { get; set; }

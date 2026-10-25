@@ -13,7 +13,9 @@ namespace OSI.Signal9.Auth;
 
 /// <summary>
 /// The authorization endpoint (RFC 6749 §3.1), after OpenIddict has validated the request: the client, its redirect
-/// URI, its scopes and the S256 code challenge. A person without a session at auth is sent to Entra first.
+/// URI, its scopes and the S256 code challenge (or, for a client without PKCE, the nonce). A person without a session at
+/// auth is sent to Entra first. A client with explicit consent, every API application, then needs the person's consent
+/// (story 87); only Signal9's own clients are registered without it.
 /// </summary>
 public static class AuthorizationEndpoint
 {
@@ -24,7 +26,7 @@ public static class AuthorizationEndpoint
 
     public static IEndpointConventionBuilder MapAuthorizationEndpoint(this IEndpointRouteBuilder endpoints) =>
         endpoints.MapMethods(Path, [HttpMethods.Get, HttpMethods.Post], async (HttpContext context, DeployingDirectory deploying,
-            TimeProvider time) =>
+            TimeProvider time, Consent consent) =>
         {
             var request = context.GetOpenIddictServerRequest()
                 ?? throw new InvalidOperationException("The OpenIddict server request can't be retrieved.");
@@ -33,7 +35,9 @@ public static class AuthorizationEndpoint
                 return Deny(EntraSignIn.Describe(rejection));
 
             var session = await context.AuthenticateAsync(EntraSignIn.CookieScheme);
-            var fresh = session.Succeeded && await TakeFreshSignInAsync(context, session);
+            // Kept until a code is issued or refused, so answering the consent screen doesn't send a Superadministrator
+            // back to Entra.
+            var fresh = session.Succeeded && session.Properties!.Items.ContainsKey(EntraSignIn.FreshSignInItem);
             // max_age (OpenID Connect Core §3.1.2.1): the client needs an authentication at most this old, such as after
             // an RFC 9470 step-up challenge. The person authenticates at Entra again; a sign-in that just came back from
             // there and still isn't recent enough is refused, rather than sent round again.
@@ -42,16 +46,18 @@ public static class AuthorizationEndpoint
             var tooOld = session.Succeeded && (authenticatedAt is null
                 || (request.MaxAge is { } maxAge && time.GetUtcNow() - authenticatedAt > TimeSpan.FromSeconds(maxAge)));
             if (tooOld && fresh)
+            {
+                await TakeFreshSignInAsync(context, session);
                 return Deny(EntraSignIn.Describe(EntraSignIn.Rejection.NotFresh));
+            }
 
             // Superadministrator is re-read from Entra for every token (story 59), so a session that already issued
             // one goes back to Entra, whose own session signs the person straight in with their current app roles.
             if (!session.Succeeded || tooOld || (!fresh && deploying.IsSuperadministrator(session.Principal!)))
             {
                 // A form-posted request comes back as a query, so the return address holds all of it.
-                var parameters = context.Request.HasFormContentType ? context.Request.Form.ToList() : context.Request.Query.ToList();
                 var returnUrl = QueryHelpers.AddQueryString(ReturnPath.TrimEnd('?'),
-                    parameters.Where(p => p.Key != EntraSignIn.RejectionParameter));
+                    RequestParameters(context).Where(p => p.Key != EntraSignIn.RejectionParameter));
                 var properties = new OpenIdConnectChallengeProperties { RedirectUri = returnUrl };
                 // Entra's session would sign the person straight in; prompt=login makes them authenticate again.
                 if (request.MaxAge is not null)
@@ -76,6 +82,25 @@ public static class AuthorizationEndpoint
             identity.SetResources(AuthorizationServer.ApiAudience);
             identity.SetDestinations(_ => [Destinations.AccessToken, Destinations.IdentityToken]);
 
+            switch (await consent.DecideAsync(context, request, identity, person, RequestParameters(context)))
+            {
+                case Consent.Outcome.Ask ask:
+                    return ask.Page;
+                case Consent.Outcome.Refused refused:
+                    return refused.Result;
+                case Consent.Outcome.Declined:
+                    await TakeFreshSignInAsync(context, session);
+                    return Deny("The person declined the application's request.");
+                case Consent.Outcome.Required:
+                    // prompt=none: the client asked not to show anything (OpenID Connect Core §3.1.2.6).
+                    return Results.Forbid(new AuthenticationProperties(new Dictionary<string, string?>
+                    {
+                        [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.ConsentRequired,
+                        [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "The person hasn't consented to this request.",
+                    }), [OpenIddictServerAspNetCoreDefaults.AuthenticationScheme]);
+            }
+
+            await TakeFreshSignInAsync(context, session);
             return Results.SignIn(new ClaimsPrincipal(identity), properties: null,
                 OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
         })
@@ -94,6 +119,11 @@ public static class AuthorizationEndpoint
         await context.SignInAsync(EntraSignIn.CookieScheme, session.Principal!, session.Properties);
         return true;
     }
+
+    /// <summary>The authorization request's parameters as the client sent them, by query or form, without consent's own.</summary>
+    private static IEnumerable<KeyValuePair<string, Microsoft.Extensions.Primitives.StringValues>> RequestParameters(HttpContext context) =>
+        (context.Request.HasFormContentType ? context.Request.Form.ToList() : context.Request.Query.ToList())
+        .Where(p => !Consent.IsOwnField(p.Key));
 
     private static IResult Deny(string description) =>
         Results.Forbid(new AuthenticationProperties(new Dictionary<string, string?>

@@ -412,7 +412,8 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
 
     /// <summary>
     /// Seeds a confidential client that signs people in with authorization code at <see cref="CodeFlow.RedirectUri"/>,
-    /// requires PKCE, authenticates with <see cref="ClientSecret"/> and may request the given scopes.
+    /// requires PKCE, authenticates with <see cref="ClientSecret"/> and may request the given scopes. Like Signal9's own
+    /// web client, it never asks people for consent.
     /// </summary>
     public async Task SeedCodeClientAsync(string clientId, params string[] scopes)
     {
@@ -421,6 +422,7 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
             ClientId = clientId,
             ClientSecret = ClientSecret,
             ClientType = ClientTypes.Confidential,
+            ConsentType = ConsentTypes.Implicit,
             RedirectUris = { new Uri(CodeFlow.RedirectUri) },
             Permissions =
             {

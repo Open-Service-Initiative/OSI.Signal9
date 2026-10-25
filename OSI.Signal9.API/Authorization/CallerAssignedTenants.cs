@@ -10,7 +10,11 @@ namespace OSI.Signal9.API.Authorization;
 /// </summary>
 public sealed class CallerAssignedTenants(IHttpContextAccessor http, CallerAccess access) : IAssignedTenants
 {
-    public bool IsSuperadministrator => http.HttpContext?.User is { } user && Superadministrator.Is(user);
+    /// <summary>
+    /// A Superadministrator has every tenant tree, except through a delegated API application, which holds them to its
+    /// subtree (story 81). Read after <see cref="CallerAccess"/> has loaded, which it does before authorization.
+    /// </summary>
+    public bool IsSuperadministrator => http.HttpContext?.User is { } user && Superadministrator.Is(user) && access.Delegated is null;
 
     public IReadOnlyCollection<Guid> TenantIds => http.HttpContext is { } context
         ? access.TenantsGranting(context.User,

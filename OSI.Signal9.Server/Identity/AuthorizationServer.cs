@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Security.Claims;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
@@ -15,6 +16,7 @@ using OpenIddict.Server.AspNetCore;
 using OSI.Signal9.Server.Data;
 using OSI.Signal9.Server.Keys;
 using static OpenIddict.Abstractions.OpenIddictConstants;
+using OidcScopes = OpenIddict.Abstractions.OpenIddictConstants.Scopes;
 
 namespace OSI.Signal9.Server.Identity;
 
@@ -30,6 +32,12 @@ public static class AuthorizationServer
 
     /// <summary>The authorization endpoint, on <c>auth</c> only.</summary>
     public const string AuthorizationEndpoint = "connect/authorize";
+
+    /// <summary>
+    /// The pushed authorization request endpoint (RFC 9126), on <c>auth</c> only: optional for every client, and not
+    /// offered at an mTLS alias until OpenIddict supports one.
+    /// </summary>
+    public const string PushedAuthorizationEndpoint = "connect/par";
 
     public const string TokenEndpoint = "connect/token";
     public const string RevocationEndpoint = "connect/revoke";
@@ -54,6 +62,15 @@ public static class AuthorizationServer
 
     /// <summary>A dashboard session ends after this long without use (story 48), at web and at auth.</summary>
     public static readonly TimeSpan DashboardSessionIdleTimeout = TimeSpan.FromHours(1);
+
+    /// <summary>An API application's refresh token expires after this long unused (#63).</summary>
+    public static readonly TimeSpan ApplicationRefreshTokenIdleTimeout = TimeSpan.FromDays(14);
+
+    /// <summary>However often they rotate, an API application's refresh tokens stop this long after sign-in (#63).</summary>
+    public static readonly TimeSpan ApplicationRefreshTokenCap = TimeSpan.FromDays(90);
+
+    /// <summary>When a refresh token chain reaches <see cref="ApplicationRefreshTokenCap"/>, carried only in refresh tokens.</summary>
+    private const string RefreshCapClaim = "signal9_refresh_cap";
 
     /// <summary>Authorization codes last 5 minutes and work once (RFC 6749 §4.1.2).</summary>
     public static readonly TimeSpan AuthorizationCodeLifetime = TimeSpan.FromMinutes(5);
@@ -127,12 +144,46 @@ public static class AuthorizationServer
 
     /// <summary>
     /// The authorization code flow, as auth issues codes and auth and api redeem them: codes last 5 minutes, and PKCE
-    /// is S256 only (RFC 9700 §2.1.1); "plain" is refused.
+    /// is S256 only (RFC 9700 §2.1.1); "plain" is refused. A client registered without PKCE must send an OpenID Connect
+    /// request with a nonce instead (story 86, RFC 9700 §2.1.1), at the authorization and PAR endpoints alike.
     /// </summary>
     public static OpenIddictServerBuilder UseSignal9CodeFlow(this OpenIddictServerBuilder server) =>
         server.AllowAuthorizationCodeFlow()
             .SetAuthorizationCodeLifetime(AuthorizationCodeLifetime)
-            .Configure(options => options.CodeChallengeMethods.Remove(CodeChallengeMethods.Plain));
+            .Configure(options => options.CodeChallengeMethods.Remove(CodeChallengeMethods.Plain))
+            .AddEventHandler<OpenIddictServerEvents.ValidateAuthorizationRequestContext>(handler => handler
+                .UseInlineHandler(async context =>
+                {
+                    if (await NonceRefusalAsync(context.Transaction, context.ClientId, context.Request) is { } refusal)
+                        context.Reject(Errors.InvalidRequest, refusal);
+                })
+                .SetOrder(OpenIddictServerHandlers.Authentication.ValidateProofKeyForCodeExchangeRequirement.Descriptor.Order + 1))
+            .AddEventHandler<OpenIddictServerEvents.ValidatePushedAuthorizationRequestContext>(handler => handler
+                .UseInlineHandler(async context =>
+                {
+                    if (await NonceRefusalAsync(context.Transaction, context.ClientId, context.Request) is { } refusal)
+                        context.Reject(Errors.InvalidRequest, refusal);
+                })
+                .SetOrder(OpenIddictServerHandlers.Authentication.ValidatePushedProofKeyForCodeExchangeRequirement.Descriptor.Order + 1));
+
+    /// <summary>
+    /// Why the request is refused for lacking a nonce, or null: a client that requires nonce, or doesn't require PKCE,
+    /// must make an OpenID Connect request (the nonce comes back only in the ID token) with a nonce.
+    /// </summary>
+    private static async Task<string?> NonceRefusalAsync(OpenIddictServerTransaction transaction, string? clientId,
+        OpenIddictRequest request)
+    {
+        if (clientId is null || transaction.GetHttpRequest()?.HttpContext is not { } http)
+            return null;
+        var applications = http.RequestServices.GetRequiredService<IOpenIddictApplicationManager>();
+        if (await applications.FindByClientIdAsync(clientId, http.RequestAborted) is not { } application)
+            return null;
+        var required = ApiApplicationClient.RequiresNonce(await applications.GetPropertiesAsync(application, http.RequestAborted))
+            || !await applications.HasRequirementAsync(application, Requirements.Features.ProofKeyForCodeExchange, http.RequestAborted);
+        return required && (string.IsNullOrEmpty(request.Nonce) || !request.HasScope(OidcScopes.OpenId))
+            ? "This client doesn't use PKCE, so it must send an OpenID Connect request (scope openid) with a nonce."
+            : null;
+    }
 
     /// <summary>
     /// Handles token requests that OpenIddict has already authenticated and validated, issuing identity-only
@@ -155,6 +206,20 @@ public static class AuthorizationServer
                     principal.SetRefreshTokenLifetime(request.IsRefreshTokenGrantType()
                         ? principal.GetExpirationDate()!.Value - time.GetUtcNow()
                         : DashboardSessionLifetime);
+                }
+                else
+                {
+                    // Anyone else's last 14 idle days, and 90 days from sign-in however often they rotate. The cap rides
+                    // in the refresh token only: the claim has no destination.
+                    var now = time.GetUtcNow();
+                    var cap = request.IsAuthorizationCodeGrantType()
+                        ? now + ApplicationRefreshTokenCap
+                        // A chain without a cap (from before it existed) ends now: fail closed.
+                        : principal.GetClaim(RefreshCapClaim) is { } claim
+                            ? DateTimeOffset.FromUnixTimeSeconds(long.Parse(claim, CultureInfo.InvariantCulture))
+                            : now;
+                    principal.SetClaim(RefreshCapClaim, cap.ToUnixTimeSeconds());
+                    principal.SetRefreshTokenLifetime(cap - now < ApplicationRefreshTokenIdleTimeout ? cap - now : ApplicationRefreshTokenIdleTimeout);
                 }
                 return Results.SignIn(principal, properties: null,
                     OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);

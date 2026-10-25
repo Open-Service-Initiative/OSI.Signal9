@@ -11,7 +11,7 @@
     <FluentButton Id="register-application" Appearance="ButtonAppearance.Primary" IconStart="@(new Icons.Regular.Size20.Add())"
                   Disabled="@(tenantId is null)" OnClick="RegisterAsync">Register application</FluentButton>
 </div>
-<p>External systems that use the Signal9 API as themselves. Each is confined to the tenant it's registered at and the tenants beneath it, with its own role, no higher than yours. A vendor's product is registered separately at each tenant that uses it.</p>
+<p>External systems that use the Signal9 API, as themselves or for people who consent to them. Each is confined to the tenant it's registered at and the tenants beneath it, an app-only one with its own role, no higher than yours. A vendor's product is registered separately at each tenant that uses it.</p>
 
 <FluentSelect Id="application-tenant" TOption="string" TValue="string" Label="Tenant"
               Value="@tenantId?.ToString()" ValueChanged="@((string? value) => ChooseTenantAsync(value))">
@@ -271,5 +271,7 @@
     // Names come from the first page of each list; the rest show as an id.
     private string TenantName(Guid id) => tenants.FirstOrDefault(t => t.Id == id)?.Name ?? id.ToString();
 
-    private string RoleName(Guid id) => roles.FirstOrDefault(r => r.Id == id)?.Name ?? id.ToString();
+    // A delegated application has no role: it acts with the signed-in person's access.
+    private string RoleName(Guid? id) => id is not { } roleId ? "Signed-in person's"
+        : roles.FirstOrDefault(r => r.Id == roleId)?.Name ?? roleId.ToString();
 }

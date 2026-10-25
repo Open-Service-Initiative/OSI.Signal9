@@ -73,12 +73,14 @@ public sealed class ApiApplicationsController(
     }
 
     /// <summary>
-    /// Registers an API application at the tenant (story 78), acting as itself with its own role (story 80). The role
-    /// must be no higher than the caller's own access at the tenant (403), and its scopes within the role's; the
-    /// <c>agent</c> and OpenID Connect scopes can't be granted (400). Granting a scope that needs a recent MFA needs the
-    /// caller's own recent MFA (401 with RFC 9470's challenge for a person; 403 for an application), and is refused for an
-    /// application that authenticates with a client secret (400). Add its credentials afterwards; a
-    /// <c>tls_client_auth</c> application registers its certificate subject here instead.
+    /// Registers an API application at the tenant (story 78). An app-only application acts as itself with its own role
+    /// (story 80): the role must be no higher than the caller's own access at the tenant (403), and its scopes within the
+    /// role's; the <c>agent</c> and OpenID Connect scopes can't be granted (400). Granting a scope that needs a recent MFA
+    /// needs the caller's own recent MFA (401 with RFC 9470's challenge for a person; 403 for an application), and is
+    /// refused for an application that authenticates with a client secret (400). A delegated application has no role and
+    /// acts for people who consent to it (story 81): it needs HTTPS redirect URIs, and may have any scope a person can
+    /// hold but <c>agent</c>. Its PKCE is on unless <c>requireNonce</c> is set with it (story 86). Add credentials
+    /// afterwards; a <c>tls_client_auth</c> application registers its certificate subject here instead.
     /// </summary>
     [RequireScope(Scopes.ApiApplications.Write)]
     [HttpPost]
@@ -97,34 +99,34 @@ public sealed class ApiApplicationsController(
         if (this.Preconditions(current: null) is { } refused)
             return refused;
         ValidateSubject(request.TokenEndpointAuthMethod, request.TlsClientAuthSubject);
-        if (await GrantRefusalAsync(tenantId, request.RoleId!.Value, request.Scopes, request.TokenEndpointAuthMethod,
+        ValidateKind(request.Kind, request.RoleId, request.RedirectUris, request.RequirePkce, request.RequireNonce);
+        if (await GrantRefusalAsync(tenantId, request.Kind, request.RoleId, request.Scopes, request.TokenEndpointAuthMethod,
                 previous: [], cancellationToken) is { } grantRefused)
             return grantRefused;
 
         var id = Guid.CreateVersion7(time.GetUtcNow());
+        var delegated = request.Kind == ApiApplicationKinds.Delegated;
         var application = new ApiApplication
         {
             Id = id,
             TenantId = tenantId,
             ClientId = id.ToString("D"),
             DisplayName = request.DisplayName,
-            RoleId = request.RoleId.Value,
+            Kind = request.Kind,
+            RoleId = request.RoleId,
             Scopes = [.. request.Scopes.Distinct(StringComparer.Ordinal)],
             TokenEndpointAuthMethod = request.TokenEndpointAuthMethod,
+            RedirectUris = delegated ? [.. request.RedirectUris.Distinct(StringComparer.Ordinal)] : [],
+            RequirePkce = !delegated || request.RequirePkce,
+            RequireNonce = delegated && request.RequireNonce,
             CreatedAt = time.GetUtcNow().UtcDateTime,
         };
         db.ApiApplications.Add(application);
         Audit(AuditActions.ApiApplicationRegistered, application);
         AuditGrant(application, previous: []);
 
-        var descriptor = new OpenIddictApplicationDescriptor
-        {
-            ClientId = application.ClientId,
-            ClientType = ClientTypes.Confidential,
-            DisplayName = application.DisplayName,
-            Permissions = { Permissions.Endpoints.Token, Permissions.Endpoints.Revocation, Permissions.GrantTypes.ClientCredentials },
-        };
-        SetScopes(descriptor, application.Scopes);
+        var descriptor = new OpenIddictApplicationDescriptor();
+        ApiApplicationClient.Describe(descriptor, application);
         descriptor.Properties[ApiApplicationClient.AuthMethodProperty] = JsonSerializer.SerializeToElement(application.TokenEndpointAuthMethod);
         descriptor.Properties[ApiApplicationClient.CredentialsProperty] = ApiApplicationClient.Serialize([]);
         SetSubject(descriptor, request.TlsClientAuthSubject);
@@ -174,6 +176,9 @@ public sealed class ApiApplicationsController(
                 RoleId = application.RoleId,
                 Scopes = application.Scopes,
                 TlsClientAuthSubject = subject,
+                RedirectUris = application.RedirectUris,
+                RequirePkce = application.RequirePkce,
+                RequireNonce = application.RequireNonce,
             }, patch);
         }
         catch (JsonException ex)
@@ -184,10 +189,12 @@ public sealed class ApiApplicationsController(
         if (!TryValidateModel(request))
             return ValidationProblem(ModelState);
         ValidateSubject(application.TokenEndpointAuthMethod, request.TlsClientAuthSubject);
+        var delegated = application.Kind == ApiApplicationKinds.Delegated;
+        ValidateKind(application.Kind, request.RoleId, request.RedirectUris, request.RequirePkce, request.RequireNonce);
 
         var previous = application.Scopes;
         var regranted = request.RoleId != application.RoleId || !request.Scopes.ToHashSet().SetEquals(previous);
-        if (regranted && await GrantRefusalAsync(tenantId, request.RoleId!.Value, request.Scopes,
+        if (regranted && await GrantRefusalAsync(tenantId, application.Kind, request.RoleId, request.Scopes,
                 application.TokenEndpointAuthMethod, previous, cancellationToken) is { } grantRefused)
             return grantRefused;
         if (!ModelState.IsValid)
@@ -195,17 +202,26 @@ public sealed class ApiApplicationsController(
 
         var renamed = request.DisplayName != application.DisplayName;
         var resubjected = request.TlsClientAuthSubject != subject;
+        var reconfigured = delegated && (!request.RedirectUris.SequenceEqual(application.RedirectUris)
+            || request.RequirePkce != application.RequirePkce || request.RequireNonce != application.RequireNonce);
         application.DisplayName = request.DisplayName;
-        application.RoleId = request.RoleId!.Value;
+        application.RoleId = request.RoleId;
         application.Scopes = [.. request.Scopes.Distinct(StringComparer.Ordinal)];
-        if (renamed || resubjected)
-            Audit(AuditActions.ApiApplicationUpdated, application, resubjected ? "tls-client-auth-subject" : null);
+        if (delegated)
+        {
+            application.RedirectUris = [.. request.RedirectUris.Distinct(StringComparer.Ordinal)];
+            application.RequirePkce = request.RequirePkce;
+            application.RequireNonce = request.RequireNonce;
+        }
+        if (renamed || resubjected || reconfigured)
+            Audit(AuditActions.ApiApplicationUpdated, application, resubjected ? "tls-client-auth-subject"
+                : reconfigured ? $"redirect-uris: {string.Join(' ', application.RedirectUris)}; pkce: {application.RequirePkce}; nonce: {application.RequireNonce}"
+                : null);
         if (regranted)
             AuditGrant(application, previous);
 
         var descriptor = await DescriptorAsync(client, cancellationToken);
-        descriptor.DisplayName = application.DisplayName;
-        SetScopes(descriptor, application.Scopes);
+        ApiApplicationClient.Describe(descriptor, application);
         SetSubject(descriptor, request.TlsClientAuthSubject);
         // Saves the application, its OAuth client and the audit entries together.
         await applications.UpdateAsync(client, descriptor, cancellationToken);
@@ -388,11 +404,21 @@ public sealed class ApiApplicationsController(
     /// Why the caller can't give an application <paramref name="roleId"/> with <paramref name="scopes"/>, or null if they
     /// can: the same anti-escalation as role assignments (story 18), plus the rules for scopes that need a recent MFA.
     /// </summary>
-    private async Task<ActionResult?> GrantRefusalAsync(Guid tenantId, Guid roleId, IReadOnlyList<string> scopes,
+    private async Task<ActionResult?> GrantRefusalAsync(Guid tenantId, string kind, Guid? roleId, IReadOnlyList<string> scopes,
         string method, IReadOnlyCollection<string> previous, CancellationToken cancellationToken)
     {
-        var role = await db.Roles.AsNoTracking().SingleOrDefaultAsync(r => r.Id == roleId, cancellationToken);
-        if (role is null)
+        // A delegated application never acts beyond the person using it, so its scopes are only checked to exist; the
+        // person's access, recent MFA and Superadministrator role are checked on each request (story 72).
+        if (kind == ApiApplicationKinds.Delegated)
+        {
+            foreach (var scope in scopes.Distinct(StringComparer.Ordinal).Where(s => !Scopes.IsGrantableToDelegatedApplication(s)))
+                ModelState.AddModelError(nameof(CreateApiApplicationRequest.Scopes),
+                    $"'{scope}' can't be granted to a delegated API application.");
+            return ModelState.IsValid ? null : ValidationProblem(ModelState);
+        }
+
+        var role = roleId is null ? null : await db.Roles.AsNoTracking().SingleOrDefaultAsync(r => r.Id == roleId, cancellationToken);
+        if (role is null && roleId is not null)
             ModelState.AddModelError(nameof(CreateApiApplicationRequest.RoleId), "Role does not exist.");
         foreach (var scope in scopes.Distinct(StringComparer.Ordinal))
         {
@@ -439,6 +465,9 @@ public sealed class ApiApplicationsController(
     /// <summary>A 403 unless the caller's own access covers the application's current role.</summary>
     private async Task<ActionResult?> BeyondCallerAsync(ApiApplication application, CancellationToken cancellationToken)
     {
+        // A delegated application has no authority of its own to escalate to.
+        if (application.RoleId is null)
+            return null;
         var role = await db.Roles.AsNoTracking().SingleAsync(r => r.Id == application.RoleId, cancellationToken);
         return await BeyondCallerAsync(application.TenantId, role, "manage an application with", cancellationToken);
     }
@@ -447,6 +476,42 @@ public sealed class ApiApplicationsController(
     private sealed class StepUpResult : ActionResult
     {
         public override Task ExecuteResultAsync(ActionContext context) => RecentMfa.ChallengeAsync(context.HttpContext);
+    }
+
+    /// <summary>
+    /// An app-only application needs a role and has no redirect URIs; a delegated one has no role, at least one HTTPS
+    /// redirect URI without a fragment (RFC 6749 §3.1.2, RFC 9700 §2.1), and nonce whenever PKCE is off (story 86).
+    /// </summary>
+    private void ValidateKind(string kind, Guid? roleId, IReadOnlyList<string> redirectUris, bool requirePkce, bool requireNonce)
+    {
+        if (kind == ApiApplicationKinds.AppOnly)
+        {
+            if (roleId is null)
+                ModelState.AddModelError(nameof(CreateApiApplicationRequest.RoleId), "An app-only application needs a role.");
+            if (redirectUris.Count > 0)
+                ModelState.AddModelError(nameof(CreateApiApplicationRequest.RedirectUris),
+                    "Only a delegated application has redirect URIs.");
+            if (!requirePkce || requireNonce)
+                ModelState.AddModelError(nameof(CreateApiApplicationRequest.RequirePkce),
+                    "PKCE and nonce apply only to a delegated application.");
+            return;
+        }
+
+        if (roleId is not null)
+            ModelState.AddModelError(nameof(CreateApiApplicationRequest.RoleId),
+                "A delegated application has no role: it acts with the signed-in person's access.");
+        if (redirectUris.Count == 0)
+            ModelState.AddModelError(nameof(CreateApiApplicationRequest.RedirectUris), "A delegated application needs a redirect URI.");
+        foreach (var uri in redirectUris)
+        {
+            if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsed) || parsed.Scheme != Uri.UriSchemeHttps
+                || !string.IsNullOrEmpty(parsed.Fragment) || !string.IsNullOrEmpty(parsed.UserInfo))
+                ModelState.AddModelError(nameof(CreateApiApplicationRequest.RedirectUris),
+                    $"'{uri}' isn't an absolute HTTPS URI without a fragment or user information.");
+        }
+        if (!requirePkce && !requireNonce)
+            ModelState.AddModelError(nameof(CreateApiApplicationRequest.RequirePkce),
+                "PKCE can be turned off only by making nonce mandatory: set requireNonce too.");
     }
 
     private void ValidateSubject(string method, TlsClientAuthSubject? subject)
@@ -564,13 +629,6 @@ public sealed class ApiApplicationsController(
         await applications.UpdateAsync(client, descriptor, cancellationToken);
     }
 
-    private static void SetScopes(OpenIddictApplicationDescriptor descriptor, IEnumerable<string> scopes)
-    {
-        descriptor.Permissions.RemoveWhere(p => p.StartsWith(Permissions.Prefixes.Scope, StringComparison.Ordinal));
-        foreach (var scope in scopes)
-            descriptor.Permissions.Add(Permissions.Prefixes.Scope + scope);
-    }
-
     private static void SetSubject(OpenIddictApplicationDescriptor descriptor, TlsClientAuthSubject? subject)
     {
         foreach (var parameter in new[] { TlsClientSubject.SubjectDn, TlsClientSubject.SanDns, TlsClientSubject.SanUri,
@@ -600,8 +658,9 @@ public sealed class ApiApplicationsController(
     }
 
     private static ApiApplicationDto ToDto(ApiApplication application, TlsClientAuthSubject? subject) => new(
-        application.Id, application.TenantId, application.ClientId, application.DisplayName, application.RoleId,
-        application.Scopes, application.TokenEndpointAuthMethod, subject, application.CreatedAt.AsUtcOffset());
+        application.Id, application.TenantId, application.ClientId, application.DisplayName, application.Kind, application.RoleId,
+        application.Scopes, application.TokenEndpointAuthMethod, subject, application.RedirectUris, application.RequirePkce,
+        application.RequireNonce, application.CreatedAt.AsUtcOffset());
 
     private static ApiApplicationCredentialDto ToDto(Credential credential) => new(
         credential.Id, credential.Type, credential.Thumbprint, credential.Subject, credential.CreatedAt, credential.ExpiresAt);

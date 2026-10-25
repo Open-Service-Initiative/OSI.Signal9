@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using OpenIddict.Abstractions;
+using OSI.Signal9.Contracts.ApiApplications;
 using OSI.Signal9.Server.Data;
 using OSI.Signal9.Server.Identity;
 
@@ -25,6 +26,22 @@ public sealed class CallerAccess
 
     /// <summary>The API application the token was issued to, when it acts as itself; null for anyone else.</summary>
     public CallerApplication? Application { get; private set; }
+
+    /// <summary>A delegated API application acting for the person the token names (#125).</summary>
+    public sealed record DelegatedApplication(Guid Id, Guid TenantId, IReadOnlySet<string> Scopes);
+
+    /// <summary>
+    /// The delegated API application the token was issued to, which confines the person to its scopes and its tenant's
+    /// subtree; null for anyone else, including the dashboard.
+    /// </summary>
+    public DelegatedApplication? Delegated { get; private set; }
+
+    /// <summary>
+    /// Whether the token's <paramref name="scope"/> still counts: an API application's scopes are read live, so
+    /// narrowing them takes effect on its tokens' next request (story 71).
+    /// </summary>
+    public bool Permits(string scope) =>
+        (Application?.Scopes.Contains(scope) ?? true) && (Delegated?.Scopes.Contains(scope) ?? true);
 
     /// <summary>
     /// Narrows the rest of the request to tenants where the caller may also use one of <paramref name="anyOf"/>, on top
@@ -94,12 +111,32 @@ public sealed class CallerAccess
         if (_loaded)
             return;
         _loaded = true;
-        // A Superadministrator already has every tenant tree.
-        if (Superadministrator.Is(caller))
-            return;
         if (!PersonSubject.TryParse(caller, out var entraTenantId, out var entraObjectId))
         {
             await LoadApplicationAsync(db, caller, cancellationToken);
+            return;
+        }
+
+        // A person signed in through a delegated API application gets their access ∩ its scopes ∩ its subtree (story 81).
+        if (caller.GetClaim(OpenIddictConstants.Claims.ClientId) is { } clientId)
+        {
+            var application = await db.ApiApplications.AsNoTracking()
+                .IgnoreTenantScope(TenantScopeBypass.CallerApiApplication)
+                .Where(a => a.ClientId == clientId)
+                .Select(a => new { a.Id, a.TenantId, a.Kind, a.Scopes })
+                .SingleOrDefaultAsync(cancellationToken);
+            if (application is not null)
+                // An app-only application can't sign people in; if a token says otherwise, it reaches nothing.
+                Delegated = new DelegatedApplication(application.Id, application.TenantId,
+                    application.Kind == ApiApplicationKinds.Delegated ? application.Scopes.ToHashSet(StringComparer.Ordinal) : []);
+        }
+
+        if (Superadministrator.Is(caller))
+        {
+            // A Superadministrator already has every tenant tree, except through a delegated application, which holds
+            // them to its subtree with all of its scopes.
+            if (Delegated is not null)
+                SetAssignments([new Assignment(Delegated.TenantId, Guid.Empty, [.. Delegated.Scopes])], []);
             return;
         }
 
@@ -108,9 +145,10 @@ public sealed class CallerAccess
             .Where(a => a.User!.EntraTenantId == entraTenantId && a.User.EntraObjectId == entraObjectId)
             .Select(a => new Assignment(a.TenantId, a.RoleId, a.Role!.Scopes))
             .ToListAsync(cancellationToken);
+        if (Delegated is not null)
+            assignments = await ConfineAsync(db, assignments, Delegated, cancellationToken);
         if (assignments.Count == 0)
             return;
-        _assignments = assignments;
 
         // Which assigned tenants lie beneath which (each is beneath itself), to inherit the assignments above them.
         var assigned = assignments.Select(a => a.TenantId).Distinct().ToArray();
@@ -118,12 +156,45 @@ public sealed class CallerAccess
             .Where(c => assigned.Contains(c.AncestorId) && assigned.Contains(c.DescendantId))
             .Select(c => new { c.AncestorId, c.DescendantId })
             .ToListAsync(cancellationToken);
+        SetAssignments(assignments, [.. links.Select(l => (l.AncestorId, l.DescendantId))]);
+    }
 
-        _scopesByTenant = assigned.ToDictionary(
+    private void SetAssignments(List<Assignment> assignments, List<(Guid AncestorId, Guid DescendantId)> links)
+    {
+        _assignments = assignments;
+        _scopesByTenant = assignments.Select(a => a.TenantId).Distinct().ToDictionary(
             tenant => tenant,
-            tenant => links.Where(l => l.DescendantId == tenant)
-                .SelectMany(l => assignments.Where(a => a.TenantId == l.AncestorId).SelectMany(a => a.Scopes))
+            tenant => assignments
+                .Where(a => a.TenantId == tenant || links.Contains((a.TenantId, tenant)))
+                .SelectMany(a => a.Scopes)
                 .ToHashSet(StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// The person's assignments as they reach through a delegated application: the subtree of an assigned tenant meets
+    /// the application's subtree either at the application's tenant (when assigned at or above it) or at the assigned
+    /// tenant (when beneath it), and nowhere if neither lies beneath the other. Each keeps only the application's scopes.
+    /// </summary>
+    private static async Task<List<Assignment>> ConfineAsync(Signal9DbContext db, List<Assignment> assignments,
+        DelegatedApplication application, CancellationToken cancellationToken)
+    {
+        var assigned = assignments.Select(a => a.TenantId).Distinct().ToArray();
+        var related = await db.TenantClosures.AsNoTracking()
+            .Where(c => (c.DescendantId == application.TenantId && assigned.Contains(c.AncestorId))
+                || (c.AncestorId == application.TenantId && assigned.Contains(c.DescendantId)))
+            .Select(c => new { c.AncestorId, c.DescendantId })
+            .ToListAsync(cancellationToken);
+        var atOrAbove = related.Where(c => c.DescendantId == application.TenantId).Select(c => c.AncestorId).ToHashSet();
+        var beneath = related.Where(c => c.AncestorId == application.TenantId).Select(c => c.DescendantId).ToHashSet();
+
+        string[] Narrow(string[] scopes) => [.. scopes.Where(application.Scopes.Contains)];
+        return
+        [
+            .. assignments.Where(a => atOrAbove.Contains(a.TenantId))
+                .Select(a => a with { TenantId = application.TenantId, Scopes = Narrow(a.Scopes) }),
+            .. assignments.Where(a => !atOrAbove.Contains(a.TenantId) && beneath.Contains(a.TenantId))
+                .Select(a => a with { Scopes = Narrow(a.Scopes) }),
+        ];
     }
 
     /// <summary>
@@ -138,21 +209,30 @@ public sealed class CallerAccess
         var application = await db.ApiApplications.AsNoTracking()
             .IgnoreTenantScope(TenantScopeBypass.CallerApiApplication)
             .Where(a => a.ClientId == clientId)
-            .Select(a => new { a.Id, a.TenantId, a.RoleId, a.TokenEndpointAuthMethod, a.Scopes, RoleScopes = a.Role!.Scopes })
+            .Select(a => new { a.Id, a.TenantId, a.Kind, a.RoleId, a.TokenEndpointAuthMethod, a.Scopes, RoleScopes = a.Role!.Scopes })
             .SingleOrDefaultAsync(cancellationToken);
         if (application is null)
             return;
+        // A delegated application never acts as itself; if a token says otherwise, it reaches nothing.
+        if (application.Kind != ApiApplicationKinds.AppOnly || application.RoleId is not { } roleId)
+        {
+            Application = new CallerApplication(application.Id, application.TenantId, application.TokenEndpointAuthMethod,
+                new HashSet<string>());
+            return;
+        }
 
         var scopes = application.Scopes.Intersect(application.RoleScopes, StringComparer.Ordinal).ToHashSet(StringComparer.Ordinal);
         Application = new CallerApplication(application.Id, application.TenantId, application.TokenEndpointAuthMethod, scopes);
-        _assignments = [new Assignment(application.TenantId, application.RoleId, [.. scopes])];
-        _scopesByTenant = new() { [application.TenantId] = scopes };
+        SetAssignments([new Assignment(application.TenantId, roleId, [.. scopes])], []);
     }
 }
 
 internal static class CallerAccessExtensions
 {
-    /// <summary>Reads each authenticated caller's role assignments once, after authorization and before the endpoint.</summary>
+    /// <summary>
+    /// Reads each authenticated caller's role assignments once, before authorization, whose scope check and
+    /// Superadministrator test depend on the API application the token was issued to.
+    /// </summary>
     public static IApplicationBuilder UseCallerAccess(this IApplicationBuilder app) => app.Use(async (context, next) =>
     {
         if (context.User.Identity?.IsAuthenticated == true)

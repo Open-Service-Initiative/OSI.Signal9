@@ -30,6 +30,22 @@ public static class TokenEndpointAuthMethods
 }
 
 /// <summary>
+/// Whom an API application acts as, fixed at registration: itself, with its own role (story 80), or a signed-in person
+/// who consents to it, with only what that person can do (story 81).
+/// </summary>
+public static class ApiApplicationKinds
+{
+    /// <summary>Acts as itself with client credentials, holding its own role.</summary>
+    public const string AppOnly = "app-only";
+
+    /// <summary>
+    /// Acts for a signed-in person through authorization code: effective access is the person's access ∩ the
+    /// application's scopes ∩ the application's subtree. The person consents at auth first.
+    /// </summary>
+    public const string Delegated = "delegated";
+}
+
+/// <summary>
 /// The scopes whose endpoints need a recent MFA: running code (#82) and deleting tenants. An API application acting as
 /// itself may hold one only if a person granted it with an MFA in the last 15 minutes, and only if it authenticates with
 /// a certificate or <c>private_key_jwt</c>, never a client secret.
@@ -51,19 +67,25 @@ public sealed record TlsClientAuthSubject(
     [Required, StringLength(500, MinimumLength = 1)] string Value);
 
 /// <summary>
-/// An external system registered at a tenant to use the API as itself (story 78), confined to that tenant and its
-/// descendants (story 79). It acts with its own role, no higher than its creator's (story 80), narrowed to the scopes
-/// it was granted. Its <see cref="ClientId"/> is its OAuth client ID.
+/// An external system registered at a tenant to use the API (story 78), confined to that tenant and its descendants
+/// (story 79). An <see cref="ApiApplicationKinds.AppOnly"/> application acts as itself with its own role, no higher than
+/// its creator's (story 80), narrowed to the scopes it was granted. A <see cref="ApiApplicationKinds.Delegated"/> one
+/// has no role: it acts for people who consent to it, at its <see cref="RedirectUris"/>, with PKCE unless an
+/// Administrator turned it off by making nonce mandatory (story 86). Its <see cref="ClientId"/> is its OAuth client ID.
 /// </summary>
 public sealed record ApiApplicationDto(
     Guid Id,
     Guid TenantId,
     string ClientId,
     string DisplayName,
-    Guid RoleId,
+    string Kind,
+    Guid? RoleId,
     IReadOnlyList<string> Scopes,
     string TokenEndpointAuthMethod,
     TlsClientAuthSubject? TlsClientAuthSubject,
+    IReadOnlyList<string> RedirectUris,
+    bool RequirePkce,
+    bool RequireNonce,
     DateTimeOffset CreatedAt);
 
 public sealed record CreateApiApplicationRequest
@@ -71,13 +93,32 @@ public sealed record CreateApiApplicationRequest
     [Required, StringLength(200, MinimumLength = 1)]
     public string DisplayName { get; init; } = "";
 
-    /// <summary>The application's own role at the tenant: no higher than the caller's access there.</summary>
-    [Required]
+    /// <summary>One of <see cref="ApiApplicationKinds"/>; app-only unless given. Fixed from then on.</summary>
+    [AllowedValues("app-only", "delegated")]
+    public string Kind { get; init; } = ApiApplicationKinds.AppOnly;
+
+    /// <summary>
+    /// An app-only application's own role at the tenant: no higher than the caller's access there. A delegated
+    /// application has none: it acts with the person's.
+    /// </summary>
     public Guid? RoleId { get; init; }
 
-    /// <summary>The scopes it may request: within its role's. Scopes that need a recent MFA need the caller's too.</summary>
+    /// <summary>
+    /// The scopes it may request. An app-only application's are within its role's, and scopes that need a recent MFA need
+    /// the caller's too. A delegated application's are any person can hold, OpenID Connect's included.
+    /// </summary>
     [Required]
     public IReadOnlyList<string> Scopes { get; init; } = [];
+
+    /// <summary>A delegated application's redirect URIs (RFC 6749 §3.1.2): absolute HTTPS, without a fragment.</summary>
+    [MaxLength(10)]
+    public IReadOnlyList<string> RedirectUris { get; init; } = [];
+
+    /// <summary>A delegated application's PKCE (S256), on by default. Turning it off needs <see cref="RequireNonce"/>.</summary>
+    public bool RequirePkce { get; init; } = true;
+
+    /// <summary>Whether a delegated application's authorization requests must carry an OpenID Connect nonce.</summary>
+    public bool RequireNonce { get; init; }
 
     /// <summary>One of <see cref="TokenEndpointAuthMethods"/>.</summary>
     [Required, AllowedValues("tls_client_auth", "self_signed_tls_client_auth", "private_key_jwt", "client_secret_basic")]
@@ -93,7 +134,7 @@ public sealed record UpdateApiApplicationRequest
     [Required, StringLength(200, MinimumLength = 1)]
     public string DisplayName { get; init; } = "";
 
-    [Required]
+    /// <summary>An app-only application's role; a delegated application has none.</summary>
     public Guid? RoleId { get; init; }
 
     [Required]
@@ -101,6 +142,16 @@ public sealed record UpdateApiApplicationRequest
 
     /// <summary>For a <c>tls_client_auth</c> application only: its credential.</summary>
     public TlsClientAuthSubject? TlsClientAuthSubject { get; init; }
+
+    /// <summary>For a delegated application only.</summary>
+    [MaxLength(10)]
+    public IReadOnlyList<string> RedirectUris { get; init; } = [];
+
+    /// <summary>For a delegated application only.</summary>
+    public bool RequirePkce { get; init; } = true;
+
+    /// <summary>For a delegated application only.</summary>
+    public bool RequireNonce { get; init; }
 }
 
 /// <summary>What a credential is.</summary>

@@ -201,6 +201,7 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
             application.HasIndex(a => a.TenantId);
             application.Property(a => a.DisplayName).HasMaxLength(200);
             application.Property(a => a.TokenEndpointAuthMethod).HasMaxLength(50);
+            application.Property(a => a.Kind).HasMaxLength(20);
             application.HasOne<Tenant>().WithMany().HasForeignKey(a => a.TenantId).OnDelete(DeleteBehavior.Cascade);
             application.HasOne(a => a.Role).WithMany().HasForeignKey(a => a.RoleId).OnDelete(DeleteBehavior.Restrict);
         });

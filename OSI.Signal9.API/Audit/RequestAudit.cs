@@ -40,7 +40,8 @@ internal static partial class RequestAudit
         else if (status is >= 200 and < 300 && !HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method)
             && !HttpMethods.IsOptions(context.Request.Method)
             && context.User.Identity?.IsAuthenticated == true
-            && services.GetRequiredService<IAssignedTenants>().IsSuperadministrator)
+            // A Superadministrator's changes, through a delegated application too, though it holds them to its subtree.
+            && (services.GetRequiredService<IAssignedTenants>().IsSuperadministrator || Superadministrator.Is(context.User)))
         {
             var audit = services.GetRequiredService<CallerAudit>();
             if (audit.Recorded > 0)

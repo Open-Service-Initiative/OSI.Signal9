@@ -44,6 +44,8 @@ public sealed class WebClientRegistration(IServiceScopeFactory scopes, IConfigur
             ClientId = ClientId,
             ClientType = ClientTypes.Confidential,
             ApplicationType = ApplicationTypes.Web,
+            // Signal9's own dashboard never asks people for consent (#125); every other client must.
+            ConsentType = ConsentTypes.Implicit,
             DisplayName = "Signal9 dashboard",
             RedirectUris = { new Uri(webUri, CallbackPath.TrimStart('/')) },
             Permissions =

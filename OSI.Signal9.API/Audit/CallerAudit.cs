@@ -39,7 +39,8 @@ public sealed class CallerAudit(AuditLog log, IHttpContextAccessor http, IAssign
         entry.ActorKind = KindOf(user);
         entry.ActorSubject = user.FindFirst(Claims.Subject)?.Value;
         entry.ActorClientId = user.FindFirst(Claims.ClientId)?.Value;
-        entry.ActorSuperadministrator = caller.IsSuperadministrator;
+        // The person is a Superadministrator, even when a delegated application holds them to its subtree.
+        entry.ActorSuperadministrator = caller.IsSuperadministrator || Superadministrator.Is(user);
         return entry;
     }
 

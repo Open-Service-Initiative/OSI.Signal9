@@ -3,7 +3,10 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using Microsoft.IdentityModel.Tokens;
+using OpenIddict.Abstractions;
 using OSI.Signal9.Contracts.ApiApplications;
+using OSI.Signal9.Server.Data;
+using static OpenIddict.Abstractions.OpenIddictConstants;
 
 namespace OSI.Signal9.Server.Identity;
 
@@ -18,6 +21,63 @@ public static class ApiApplicationClient
     public const string AuthMethodProperty = "token_endpoint_auth_method";
 
     public const string CredentialsProperty = "signal9_credentials";
+
+    /// <summary>The API application's ID and tenant, so auth can name them in consent's audit entries.</summary>
+    public const string ApplicationIdProperty = "signal9_api_application_id";
+
+    public const string TenantIdProperty = "signal9_tenant_id";
+
+    /// <summary>Whether its authorization requests must carry an OpenID Connect nonce (story 86).</summary>
+    public const string RequireNonceProperty = "signal9_require_nonce";
+
+    /// <summary>
+    /// Describes <paramref name="application"/>'s OAuth client: always confidential (public clients are deferred), and
+    /// for a delegated application, authorization code at its redirect URIs with optional PAR, refresh tokens, PKCE
+    /// unless it was turned off for nonce, and explicit consent, which nothing can turn off (no admin consent). Its
+    /// method, credentials and certificate subject are set separately.
+    /// </summary>
+    public static void Describe(OpenIddictApplicationDescriptor descriptor, ApiApplication application)
+    {
+        descriptor.ClientId = application.ClientId;
+        descriptor.ClientType = ClientTypes.Confidential;
+        descriptor.ApplicationType = ApplicationTypes.Web;
+        descriptor.DisplayName = application.DisplayName;
+        descriptor.ConsentType = ConsentTypes.Explicit;
+        descriptor.Permissions.Clear();
+        descriptor.Permissions.UnionWith([Permissions.Endpoints.Token, Permissions.Endpoints.Revocation]);
+        descriptor.RedirectUris.Clear();
+        descriptor.Requirements.Clear();
+        if (application.Kind == ApiApplicationKinds.Delegated)
+        {
+            descriptor.Permissions.UnionWith([
+                Permissions.Endpoints.Authorization, Permissions.Endpoints.PushedAuthorization,
+                Permissions.GrantTypes.AuthorizationCode, Permissions.GrantTypes.RefreshToken, Permissions.ResponseTypes.Code,
+            ]);
+            foreach (var uri in application.RedirectUris)
+                descriptor.RedirectUris.Add(new Uri(uri));
+            if (application.RequirePkce)
+                descriptor.Requirements.Add(Requirements.Features.ProofKeyForCodeExchange);
+        }
+        else
+        {
+            descriptor.Permissions.Add(Permissions.GrantTypes.ClientCredentials);
+        }
+        foreach (var scope in application.Scopes)
+            descriptor.Permissions.Add(Permissions.Prefixes.Scope + scope);
+        descriptor.Properties[ApplicationIdProperty] = JsonSerializer.SerializeToElement(application.Id);
+        descriptor.Properties[TenantIdProperty] = JsonSerializer.SerializeToElement(application.TenantId);
+        descriptor.Properties[RequireNonceProperty] = JsonSerializer.SerializeToElement(application.RequireNonce);
+    }
+
+    /// <summary>The API application's ID and tenant, or null for a client that isn't one.</summary>
+    public static (Guid Id, Guid TenantId)? Owner(ImmutableDictionary<string, JsonElement> properties) =>
+        properties.TryGetValue(ApplicationIdProperty, out var id) && properties.TryGetValue(TenantIdProperty, out var tenant)
+            ? (id.GetGuid(), tenant.GetGuid())
+            : null;
+
+    /// <summary>Whether the client's authorization requests must carry a nonce.</summary>
+    public static bool RequiresNonce(ImmutableDictionary<string, JsonElement> properties) =>
+        properties.TryGetValue(RequireNonceProperty, out var value) && value.ValueKind == JsonValueKind.True;
 
     /// <summary>A credential as stored: one of a certificate, a public key or a secret's hash.</summary>
     public sealed record Credential(
