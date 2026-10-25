@@ -1,7 +1,9 @@
 using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Devices;
+using OSI.Signal9.Contracts.Roles;
 using OSI.Signal9.Contracts.Tenants;
+using OSI.Signal9.Contracts.Users;
 
 namespace OSI.Signal9.Web.Tests;
 
@@ -23,6 +25,14 @@ internal static class Samples
             new AuditActorDto(AuditActorKind.Person, "tid:oid", "web", superadministrator, actorName is null ? null : Guid.NewGuid(), actorName),
             tenantName is null ? null : Guid.NewGuid(), tenantName, "command", Guid.NewGuid(), deviceId, deviceName,
             null, null, null, null, detail, "203.0.113.1");
+
+    public static UserDto User(string displayName, Guid tenantId, Guid? id = null) =>
+        new(id ?? Guid.NewGuid(), tenantId, Guid.NewGuid(), Guid.NewGuid(), displayName, Now);
+
+    public static RoleDto Role(string name, Guid? id = null) => new(id ?? Guid.NewGuid(), name, $"The {name} role.", true, []);
+
+    public static RoleAssignmentDto RoleAssignment(Guid tenantId, Guid userId, Guid roleId, Guid? id = null) =>
+        new(id ?? Guid.NewGuid(), tenantId, userId, roleId, Now);
 
     public static PagedResult<T> Page<T>(params T[] items) => new(items, 1, 25, items.Length);
 }

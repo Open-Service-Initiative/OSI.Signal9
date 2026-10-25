@@ -67,6 +67,13 @@ public enum TenantScopeBypass
     /// </summary>
     [NotAudited("Only files audit entries; nothing it reads reaches the caller.")]
     AuditPlacement,
+
+    /// <summary>
+    /// Checking that revoking an Administrator assignment leaves another Administrator at the tenant or above it (story
+    /// 23), including at ancestors outside the caller's reach. Only whether one exists is read.
+    /// </summary>
+    [NotAudited("Answers only yes or no, and the revocation it guards is audited.")]
+    AdministratorLockoutGuard,
 }
 
 /// <summary>Each use of this <see cref="TenantScopeBypass"/> is recorded in the audit log.</summary>

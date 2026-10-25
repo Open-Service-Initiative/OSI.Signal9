@@ -7,7 +7,7 @@ namespace OSI.Signal9.API.Authorization;
 
 /// <summary>
 /// An authorization requirement beyond scopes that the OpenAPI document shows on every operation needing it (story 65),
-/// such as <c>[RequireRecentMfa]</c> (#120) and <c>[RequireAncestorAdministrator]</c> (#122). Implement it on the
+/// such as <c>[RequireRecentMfa]</c> (#120) and <see cref="RequireAncestorAdministratorAttribute"/>. Implement it on the
 /// requirement an <see cref="IAuthorizationRequirementData"/> attribute returns, and the attribute is documented.
 /// </summary>
 public interface IDocumentedRequirement

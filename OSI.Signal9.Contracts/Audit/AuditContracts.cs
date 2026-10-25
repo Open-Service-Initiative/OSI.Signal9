@@ -90,6 +90,7 @@ public static class AuditActions
     public const string TenantDeleted = "tenant.deleted";
 
     public const string RoleAssignmentCreated = "role-assignment.created";
+    public const string RoleAssignmentDeleted = "role-assignment.deleted";
 
     public const string CommandCreated = "command.created";
     public const string CommandCancelled = "command.cancelled";

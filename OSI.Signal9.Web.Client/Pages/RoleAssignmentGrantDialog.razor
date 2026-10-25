@@ -1,0 +1,45 @@
+@inherits FluentDialogInstance
+
+<FluentDialogBody>
+    <div class="dialog-form">
+        <FluentSelect Id="assignment-user" TOption="string" TValue="string" Label="User" Required="true" @bind-Value="UserId">
+            <FluentOption TValue="string" Value="@string.Empty">Choose a user</FluentOption>
+            @foreach (var user in Users)
+            {
+                <FluentOption TValue="string" Value="@user.Id.ToString()">@user.DisplayName</FluentOption>
+            }
+        </FluentSelect>
+        <FluentSelect Id="assignment-role" TOption="string" TValue="string" Label="Role" Required="true" @bind-Value="RoleId">
+            <FluentOption TValue="string" Value="@string.Empty">Choose a role</FluentOption>
+            @foreach (var role in Roles)
+            {
+                <FluentOption TValue="string" Value="@role.Id.ToString()">@role.Name</FluentOption>
+            }
+        </FluentSelect>
+        <FluentText>The role covers this tenant and every tenant beneath it. You can grant only roles within your own access.</FluentText>
+    </div>
+</FluentDialogBody>
+
+@code {
+    [Parameter] public IReadOnlyList<UserDto> Users { get; set; } = [];
+
+    [Parameter] public IReadOnlyList<RoleDto> Roles { get; set; } = [];
+
+    private string? UserId { get; set; } = string.Empty;
+
+    private string? RoleId { get; set; } = string.Empty;
+
+    protected override void OnInitializeDialog(DialogOptionsHeader header, DialogOptionsFooter footer)
+    {
+        footer.PrimaryAction.Label = "Grant";
+        footer.SecondaryAction.Label = "Cancel";
+    }
+
+    protected override Task OnActionClickedAsync(bool primary) => primary
+        ? DialogInstance.CloseAsync(new CreateRoleAssignmentRequest
+        {
+            UserId = Guid.TryParse(UserId, out var user) ? user : null,
+            RoleId = Guid.TryParse(RoleId, out var role) ? role : null,
+        })
+        : DialogInstance.CancelAsync();
+}

@@ -87,6 +87,7 @@ builder.Services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
 builder.Services.AddSingleton<IAuthorizationHandler, RequireScopeHandler>();
 builder.Services.AddSingleton<IAuthorizationHandler, RequireRecentMfaHandler>();
+builder.Services.AddSingleton<IAuthorizationHandler, RequireAncestorAdministratorHandler>();
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, AuthorizationRefusalHandler>();
 
 var app = builder.Build();

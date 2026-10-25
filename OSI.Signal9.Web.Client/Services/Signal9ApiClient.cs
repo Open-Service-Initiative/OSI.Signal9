@@ -6,8 +6,10 @@ using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Devices;
+using OSI.Signal9.Contracts.Roles;
 using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Contracts.Tenants;
+using OSI.Signal9.Contracts.Users;
 using OSI.Signal9.Web.Client.Auth;
 
 namespace OSI.Signal9.Web.Client.Services;
@@ -63,6 +65,28 @@ public sealed class Signal9ApiClient(HttpClient http, BffAuthenticationStateProv
     public Task<CommandDto> QueueCommandAsync(Guid deviceId, CreateCommandRequest request, CancellationToken cancellationToken = default) =>
         SendAsync<CommandDto>(HttpMethod.Post, $"api/v1/devices/{deviceId}/commands",
             JsonContent.Create(request, options: Signal9Json.Options), cancellationToken);
+
+    // Users and role assignments
+
+    public Task<PagedResult<UserDto>> ListUsersAsync(int page, int pageSize, CancellationToken cancellationToken = default) =>
+        SendAsync<PagedResult<UserDto>>(HttpMethod.Get, $"api/v1/users?page={page}&pageSize={pageSize}", null, cancellationToken);
+
+    public Task<PagedResult<RoleDto>> ListRolesAsync(CancellationToken cancellationToken = default) =>
+        SendAsync<PagedResult<RoleDto>>(HttpMethod.Get, "api/v1/roles?pageSize=100", null, cancellationToken);
+
+    /// <summary>The role assignments made at a tenant (not those inherited from above it).</summary>
+    public Task<PagedResult<RoleAssignmentDto>> ListRoleAssignmentsAsync(Guid tenantId, int page, int pageSize,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<PagedResult<RoleAssignmentDto>>(HttpMethod.Get,
+            $"api/v1/tenants/{tenantId}/role-assignments?page={page}&pageSize={pageSize}", null, cancellationToken);
+
+    public Task<RoleAssignmentDto> CreateRoleAssignmentAsync(Guid tenantId, CreateRoleAssignmentRequest request,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<RoleAssignmentDto>(HttpMethod.Post, $"api/v1/tenants/{tenantId}/role-assignments",
+            JsonContent.Create(request, options: Signal9Json.Options), cancellationToken);
+
+    public Task DeleteRoleAssignmentAsync(Guid tenantId, Guid roleAssignmentId, CancellationToken cancellationToken = default) =>
+        SendAsync<object>(HttpMethod.Delete, $"api/v1/tenants/{tenantId}/role-assignments/{roleAssignmentId}", null, cancellationToken);
 
     // Audit
 
