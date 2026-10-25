@@ -51,6 +51,7 @@ builder.Services.AddOpenApi(options => options
     .AddOperationTransformer<DocumentedRequirements>()
     .AddOperationTransformer<RecentMfaResponses>()
     .AddOperationTransformer<ConditionalOperationTransformer>());
+builder.Services.AddSingleton<AgentHubConnections>();
 builder.Services.AddSignalR()
     .AddJsonProtocol(options => Signal9Json.Configure(options.PayloadSerializerOptions));
 

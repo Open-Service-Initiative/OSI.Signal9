@@ -145,6 +145,32 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
         Assert.AreEqual(CommandStatus.Completed, (await WaitUntilFinishedAsync(command)).Status);
     }
 
+    [TestMethod]
+    public async Task When_its_certificate_nears_expiry_the_agent_rotates_its_key_and_keeps_working()
+    {
+        var agent = await StartAgentAsync();
+        var original = agent.Identities.Load()!.Certificate;
+        var connections = agent.Network.Connections;
+
+        // Both clocks reach the point where the certificate falls due; the session ends and the agent rotates.
+        var due = AgentIdentityStore.RenewalDue(original) - _agentTime.GetUtcNow();
+        _factory.Time.Advance(due);
+        _agentTime.Advance(due);
+        _client.Dispose();
+        _client = await _factory.CreateClientAsync(Signal9ApiFactory.GrantableScopes);
+        await WaitUntilAsync(() => Task.FromResult(
+            agent.Identities.Load()!.Certificate.Thumbprint != original.Thumbprint
+            && agent.Network.Connections > connections
+            && agent.Network.Hub!.State == HubConnectionState.Connected));
+
+        var rotated = agent.Identities.Load()!.Certificate;
+        var registered = await _client.GetFromJsonAsync<AgentCertificateDto>($"api/v1/agents/{agent.Agent.Id}/certificate", Signal9Json.Options, Ct);
+        Assert.AreEqual(Microsoft.IdentityModel.Tokens.Base64UrlEncoder.Encode(SHA256.HashData(rotated.RawData)), registered!.Thumbprint);
+        Assert.AreEqual(System.Net.HttpStatusCode.Unauthorized, (await _factory.RequestAgentTokenAsync(agent.Agent.Id, original)).StatusCode);
+        var command = await QueueCommandAsync(agent.DeviceId);
+        Assert.AreEqual(CommandStatus.Completed, (await WaitUntilFinishedAsync(command)).Status);
+    }
+
     /// <summary>
     /// Starts an agent instance in a new root tenant (or on its existing enrollment when there's no token), returning
     /// once it has enrolled, connected, fetched its work and sent its first heartbeat, so the only things left to make it
@@ -176,12 +202,13 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
             NullLogger<CommandExecutor>.Instance);
         var worker = new AgentWorker(
             new AgentEnrollment(identities, network, systemInfo, wrapped, NullLogger<AgentEnrollment>.Instance),
+            new AgentCertificateRotation(identities, network, _agentTime, NullLogger<AgentCertificateRotation>.Instance),
             network,
             new AgentSession(executor, telemetry, _agentTime, wrapped, NullLogger<AgentSession>.Instance),
             _agentTime,
             NullLogger<AgentWorker>.Instance);
         await worker.StartAsync(_stop.Token);
-        var running = new RunningAgent(worker, network, options);
+        var running = new RunningAgent(worker, network, options, identities);
         _agents.Add(running);
 
         await WaitUntilAsync(() => Task.FromResult(identities.Load() is not null));
@@ -236,8 +263,10 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
             Directory.Delete(_stateDirectory, recursive: true);
     }
 
-    private sealed class RunningAgent(AgentWorker worker, InMemoryTransport network, AgentOptions options)
+    private sealed class RunningAgent(AgentWorker worker, InMemoryTransport network, AgentOptions options, AgentIdentityStore identities)
     {
+        public AgentIdentityStore Identities { get; } = identities;
+
         public AgentWorker Worker { get; } = worker;
 
         public InMemoryTransport Network { get; } = network;
@@ -278,6 +307,12 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
         {
             lock (_keys)
                 return _keys.TryGetValue(name, out var parameters) ? ECDsa.Create(parameters) : null;
+        }
+
+        public void Delete(string name)
+        {
+            lock (_keys)
+                _keys.Remove(name);
         }
     }
 

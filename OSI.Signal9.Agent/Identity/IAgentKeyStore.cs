@@ -14,6 +14,9 @@ public interface IAgentKeyStore
 
     /// <summary>Opens the key named <paramref name="name"/>, or returns null if there's none.</summary>
     ECDsa? Open(string name);
+
+    /// <summary>Deletes the key named <paramref name="name"/>, if there is one.</summary>
+    void Delete(string name);
 }
 
 /// <summary>
@@ -60,7 +63,7 @@ public sealed class CngAgentKeyStore(ILogger<CngAgentKeyStore> logger) : IAgentK
             KeyUsage = CngKeyUsages.Signing,
         }));
 
-    private static void Delete(string name)
+    public void Delete(string name)
     {
         foreach (var provider in Providers)
         {
@@ -80,4 +83,8 @@ public sealed class UnsupportedAgentKeyStore : IAgentKeyStore
         throw new PlatformNotSupportedException("The agent needs a non-exportable key store (TPM or DPAPI), which only Windows provides so far.");
 
     public ECDsa? Open(string name) => null;
+
+    public void Delete(string name)
+    {
+    }
 }

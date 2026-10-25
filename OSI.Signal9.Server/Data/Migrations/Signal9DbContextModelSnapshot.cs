@@ -64,6 +64,9 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.Property<DateTime>("LastSeenAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<uint>("Version")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
@@ -355,6 +358,9 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.Property<string>("ProcessorName")
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
+
+                    b.Property<bool>("RequiresAgentApproval")
+                        .HasColumnType("boolean");
 
                     b.PrimitiveCollection<List<string>>("Tags")
                         .IsRequired()

@@ -127,7 +127,7 @@ public static class Scopes
         [Tenants.Delete] = "Delete tenants.",
         [Tenants.Transfer] = "Move tenants to another parent tenant.",
         [Devices.Read] = "View devices and their agents.",
-        [Devices.Write] = "Update devices.",
+        [Devices.Write] = "Update devices and revoke their agents.",
         [Devices.Delete] = "Delete devices.",
         [Devices.Transfer] = "Move devices to another tenant.",
         [Commands.Read] = "View commands.",

@@ -115,6 +115,15 @@ public static class AuditActions
     /// <summary>An agent enrolled with an enrollment token, which <see cref="AuditEntryDto.Detail"/> names by ID.</summary>
     public const string AgentEnrolled = "agent.enrolled";
 
+    /// <summary>A person revoked an agent.</summary>
+    public const string AgentRevoked = "agent.revoked";
+
+    /// <summary>
+    /// An agent replaced its certificate with a new key's (story 102). <see cref="AuditEntryDto.Detail"/> names both by
+    /// SHA-256 thumbprint.
+    /// </summary>
+    public const string AgentCertificateRotated = "agent.certificate-rotated";
+
     public const string CommandCreated = "command.created";
     public const string CommandCancelled = "command.cancelled";
 

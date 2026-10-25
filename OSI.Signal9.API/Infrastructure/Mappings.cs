@@ -106,7 +106,8 @@ internal static class Mappings
         device.MaintenanceMode,
         presence.StatusOf(device),
         device.CreatedAt.AsUtcOffset(),
-        device.ActiveAgent?.LastSeenAt.AsUtcOffset());
+        device.ActiveAgent?.LastSeenAt.AsUtcOffset(),
+        device.RequiresAgentApproval);
 
     public static AgentDto ToDto(this Agent agent, Device device) => new(
         agent.Id,
@@ -117,7 +118,13 @@ internal static class Mappings
         agent.AgentVersion,
         device.ActiveAgentId == agent.Id,
         agent.EnrolledAt.AsUtcOffset(),
-        agent.LastSeenAt.AsUtcOffset());
+        agent.LastSeenAt.AsUtcOffset(),
+        agent.RevokedAt?.AsUtcOffset());
+
+    public static AgentCertificateDto ToCertificateDto(this System.Security.Cryptography.X509Certificates.X509Certificate2 certificate) => new(
+        Server.Identity.ApiApplicationClient.Thumbprint(certificate.RawData),
+        new DateTimeOffset(certificate.NotBefore.ToUniversalTime()),
+        new DateTimeOffset(certificate.NotAfter.ToUniversalTime()));
 
     public static CommandDto ToDto(this Command command) => new(
         command.Id,

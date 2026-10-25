@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
@@ -161,6 +162,20 @@ public static class AuthorizationServer
 
             if (!request.IsClientCredentialsGrantType())
                 throw new InvalidOperationException($"The grant type '{request.GrantType}' isn't handled.");
+
+            // A revoked agent still holds its certificate, so it authenticates; it's told it was revoked, so it stops
+            // rather than retrying or enrolling again (#129). Only an authenticated client learns this.
+            if (Guid.TryParse(request.ClientId, out var agentId)
+                && await context.RequestServices.GetRequiredService<Signal9DbContext>().Agents
+                    .IgnoreTenantScope(TenantScopeBypass.AgentSelfService)
+                    .AnyAsync(a => a.Id == agentId && a.RevokedAt != null, context.RequestAborted))
+            {
+                return Results.Forbid(new AuthenticationProperties(new Dictionary<string, string?>
+                {
+                    [OpenIddictServerAspNetCoreConstants.Properties.Error] = Contracts.Agents.AgentErrors.Revoked,
+                    [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "This agent has been revoked.",
+                }), [OpenIddictServerAspNetCoreDefaults.AuthenticationScheme]);
+            }
 
             // An application acting as itself is its own subject (RFC 9068 §2.2).
             var identity = new ClaimsIdentity(TokenValidationParameters.DefaultAuthenticationType, Claims.Name, Claims.Role);

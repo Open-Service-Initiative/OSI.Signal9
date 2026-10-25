@@ -11,7 +11,7 @@ internal static class ActiveAgents
     /// agent is the one the access token names; a request naming any other agent is refused (story 100).
     /// </summary>
     /// <returns>
-    /// The tracked device with its active agent, or the 403 (not the caller), 404 (unknown agent) or 409 (replaced
+    /// The tracked device with its active agent, or the 403 (not the caller, or revoked), 404 (unknown agent) or 409 (replaced
     /// agent) to return.
     /// </returns>
     public static async Task<(Device? Device, IActionResult? Refusal)> FindDeviceOfActiveAgentAsync(
@@ -24,6 +24,8 @@ internal static class ActiveAgents
             .SingleOrDefaultAsync(a => a.Id == agentId, cancellationToken);
         if (agent is null)
             return (null, controller.NotFound());
+        if (agent.RevokedAt is not null)
+            return (null, controller.Forbid());
         if (agent.Device!.ActiveAgentId != agent.Id)
             return (null, controller.Problem(statusCode: StatusCodes.Status409Conflict, title: "Agent replaced",
                 detail: "This agent is no longer its device's active agent."));

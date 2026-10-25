@@ -35,6 +35,8 @@ public sealed class AgentsController(
     CallerAudit audit,
     RequestRateLimits limits,
     IOpenIddictApplicationManager applications,
+    IOpenIddictTokenManager tokens,
+    AgentHubConnections hubConnections,
     IHubContext<DashboardHub, IDashboardHubClient> dashboard) : ControllerBase
 {
     [RequireScope(Scopes.Devices.Read)]
@@ -47,6 +49,156 @@ public sealed class AgentsController(
         var agent = await db.Agents.AsNoTracking().Include(a => a.Device)
             .SingleOrDefaultAsync(a => a.Id == agentId, cancellationToken);
         return agent is null ? NotFound() : this.Conditional(agent.ToDto(agent.Device!), agent.ETag(agent.Device!));
+    }
+
+    /// <summary>
+    /// Revokes the agent for good (story 101): it stops being its device's active agent, its access tokens stop working
+    /// at once, its hub connection closes, and the token endpoint answers it with <c>agent_revoked</c>. Its device then
+    /// requires approval for its next agent, whatever the tenant's approval setting, so reinstalling from the same
+    /// enrollment token can't silently undo the revocation. A revoked agent can't be revoked again (409).
+    /// </summary>
+    [RequireScope(Scopes.Devices.Write)]
+    [HttpPost("{agentId:guid}:revoke")]
+    [OptimisticConcurrency]
+    [ProducesResponseType<AgentDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status412PreconditionFailed)]
+    public async Task<ActionResult<AgentDto>> Revoke(Guid agentId, CancellationToken cancellationToken)
+    {
+        var agent = await db.Agents.Include(a => a.Device).SingleOrDefaultAsync(a => a.Id == agentId, cancellationToken);
+        if (agent is null)
+            return NotFound();
+        var device = agent.Device!;
+        if (this.Preconditions(agent.ETag(device)) is { } refused)
+            return refused;
+        if (agent.RevokedAt is not null)
+            return Problem(statusCode: StatusCodes.Status409Conflict, title: "Transition not allowed",
+                detail: "The agent is already revoked.");
+
+        agent.RevokedAt = time.GetUtcNow().UtcDateTime;
+        if (device.ActiveAgentId == agent.Id)
+            device.ActiveAgentId = null;
+        device.RequiresAgentApproval = true;
+        audit.Record(new AuditEntry
+        {
+            Action = AuditActions.AgentRevoked,
+            TenantId = device.TenantId,
+            TargetType = "agent",
+            TargetId = agent.Id,
+            DeviceId = device.Id,
+        });
+        await db.SaveChangesAsync(cancellationToken);
+        // Once saved, the agent is no longer active, which every agent request checks; its tokens and hub connection
+        // go next, so nothing it already holds keeps working.
+        await CutOffAsync(agent.Id, cancellationToken);
+
+        await db.Entry(device).Reference(d => d.ActiveAgent).LoadAsync(cancellationToken);
+        await dashboard.Clients.All.DeviceChanged(device.ToDto(presence));
+        this.SetETag(agent.ETag(device));
+        return agent.ToDto(device);
+    }
+
+    /// <summary>The certificate the agent authenticates with: its thumbprint and validity.</summary>
+    [RequireScope(Scopes.Devices.Read)]
+    [HttpGet("{agentId:guid}/certificate")]
+    [OptimisticConcurrency]
+    [ProducesResponseType<AgentCertificateDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AgentCertificateDto>> GetCertificate(Guid agentId, CancellationToken cancellationToken)
+    {
+        if (!await db.Agents.AnyAsync(a => a.Id == agentId, cancellationToken)
+            || await CurrentCertificateAsync(agentId, cancellationToken) is not { } current)
+            return NotFound();
+        using (current)
+        {
+            var dto = current.ToCertificateDto();
+            return this.Conditional(dto, CertificateETag(dto));
+        }
+    }
+
+    /// <summary>
+    /// Replaces the agent's certificate with a new key's, so long-lived installations don't depend on one key forever
+    /// (story 102). Only the agent itself may, with a token bound to its current certificate. The new certificate must
+    /// meet the same rules as at enrollment. From then on only the new certificate authenticates: the old one is no
+    /// longer the agent's credential, and every token bound to it is revoked and its hub connection closed. Putting the
+    /// current certificate again changes nothing.
+    /// </summary>
+    /// <response code="400">The certificate isn't acceptable.</response>
+    /// <response code="403">The caller isn't this agent, or it's revoked.</response>
+    /// <response code="409">The agent isn't its device's active agent.</response>
+    [RequireScope(Scopes.Agent)]
+    [HttpPut("{agentId:guid}/certificate")]
+    [OptimisticConcurrency]
+    [Consumes("application/json")]
+    [ProducesResponseType<AgentCertificateDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status412PreconditionFailed)]
+    public async Task<ActionResult<AgentCertificateDto>> PutCertificate(Guid agentId, AgentCertificateRequest request,
+        CancellationToken cancellationToken)
+    {
+        var (device, refusal) = await db.FindDeviceOfActiveAgentAsync(this, agentId, cancellationToken);
+        if (device is null)
+            return (ActionResult)refusal!;
+        var client = await applications.FindByClientIdAsync(agentId.ToString(), cancellationToken)
+            ?? throw new InvalidOperationException($"Agent {agentId} has no client.");
+        using var current = await CurrentCertificateAsync(agentId, cancellationToken)
+            ?? throw new InvalidOperationException($"Agent {agentId} has no certificate.");
+        var currentDto = current.ToCertificateDto();
+        if (this.Preconditions(CertificateETag(currentDto)) is { } refused)
+            return refused;
+
+        using var certificate = AgentCredentials.Read(request.Certificate, time.GetUtcNow(), out var problem);
+        if (certificate is null)
+        {
+            ModelState.AddModelError(nameof(request.Certificate), problem!);
+            return ValidationProblem(ModelState);
+        }
+
+        var dto = certificate.ToCertificateDto();
+        if (!certificate.RawData.AsSpan().SequenceEqual(current.RawData))
+        {
+            audit.Record(new AuditEntry
+            {
+                Action = AuditActions.AgentCertificateRotated,
+                TenantId = device.TenantId,
+                TargetType = "agent",
+                TargetId = agentId,
+                DeviceId = device.Id,
+                Detail = $"{currentDto.Thumbprint} -> {dto.Thumbprint}",
+            });
+            // The client's key set becomes the new certificate alone; saving it saves the audit entry with it.
+            var descriptor = new OpenIddictApplicationDescriptor();
+            await applications.PopulateAsync(descriptor, client, cancellationToken);
+            descriptor.JsonWebKeySet = AgentCredentials.Client(agentId, certificate).JsonWebKeySet;
+            await applications.UpdateAsync(client, descriptor, cancellationToken);
+            await CutOffAsync(agentId, cancellationToken);
+        }
+
+        this.SetETag(CertificateETag(dto));
+        return dto;
+    }
+
+    private async Task<System.Security.Cryptography.X509Certificates.X509Certificate2?> CurrentCertificateAsync(
+        Guid agentId, CancellationToken cancellationToken) =>
+        await applications.FindByClientIdAsync(agentId.ToString(), cancellationToken) is { } client
+        && await applications.GetJsonWebKeySetAsync(client, cancellationToken) is { Keys: [var key] }
+            ? Server.Identity.ClientCertificateKey.Certificate(key)
+            : null;
+
+    private static Microsoft.Net.Http.Headers.EntityTagHeaderValue CertificateETag(AgentCertificateDto certificate) =>
+        ConditionalRequests.ETag(0, certificate.Thumbprint);
+
+    /// <summary>Revokes every token the agent's client holds and closes its hub connections.</summary>
+    private async Task CutOffAsync(Guid agentId, CancellationToken cancellationToken)
+    {
+        if (await applications.FindByClientIdAsync(agentId.ToString(), cancellationToken) is { } client
+            && await applications.GetIdAsync(client, cancellationToken) is { } clientKey)
+            await tokens.RevokeByApplicationIdAsync(clientKey, cancellationToken);
+        hubConnections.Close(agentId);
     }
 
     /// <summary>

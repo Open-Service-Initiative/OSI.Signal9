@@ -65,6 +65,12 @@ public sealed class Device : ITenantOwned
     public string? GroupName { get; set; }
     public List<string> Tags { get; set; } = [];
     public bool MaintenanceMode { get; set; }
+
+    /// <summary>
+    /// Whether the device's next agent must be approved, whatever its tenant's approval setting: set when its agent is
+    /// revoked (#129), so reinstalling from the same enrollment token can't silently undo the revocation.
+    /// </summary>
+    public bool RequiresAgentApproval { get; set; }
     public DateTime CreatedAt { get; set; }
 
     public Tenant? Tenant { get; set; }
@@ -88,6 +94,9 @@ public sealed class Agent : IDeviceOwned
     public string? AgentVersion { get; set; }
     public DateTime EnrolledAt { get; set; }
     public DateTime LastSeenAt { get; set; }
+
+    /// <summary>When a person revoked it. A revoked agent is no longer its device's active agent and can't authenticate.</summary>
+    public DateTime? RevokedAt { get; set; }
 
     public Device? Device { get; set; }
 }

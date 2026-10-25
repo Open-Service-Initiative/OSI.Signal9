@@ -8,7 +8,13 @@ namespace OSI.Signal9.Contracts.Agents;
 /// </summary>
 /// <param name="Url">The agent's canonical URL.</param>
 /// <param name="EnrollmentTokenId">The enrollment token it enrolled with, while that token exists.</param>
-/// <param name="IsActive">Whether this is its device's active agent. A replaced agent is no longer active.</param>
+/// <param name="IsActive">
+/// Whether this is its device's active agent. A replaced or revoked agent is no longer active.
+/// </param>
+/// <param name="RevokedAt">
+/// When a person revoked it (POST {url}:revoke), if they did. A revoked agent can't authenticate, and its device then
+/// requires approval for its next agent.
+/// </param>
 public sealed record AgentDto(
     Guid Id,
     string Url,
@@ -18,7 +24,8 @@ public sealed record AgentDto(
     string? AgentVersion,
     bool IsActive,
     DateTimeOffset EnrolledAt,
-    DateTimeOffset LastSeenAt);
+    DateTimeOffset LastSeenAt,
+    DateTimeOffset? RevokedAt);
 
 /// <summary>
 /// Sent by a new agent to enroll (POST /api/v1/agents), with no access token: the enrollment token is its authority
@@ -88,3 +95,32 @@ public sealed record HeartbeatRequest
 /// <summary>Response to a heartbeat.</summary>
 /// <param name="HasPendingWork">Whether work is waiting for the agent, which it then fetches from its pending-commands list.</param>
 public sealed record HeartbeatResponse(bool HasPendingWork);
+
+/// <summary>
+/// The agent's client certificate (PUT /api/v1/agents/{agentId}/certificate): the self-signed certificate of its
+/// non-exportable key, which it authenticates with at the mTLS token endpoint (RFC 8705 §2.2). An agent replaces it to
+/// rotate its key (story 102); the old certificate then stops working.
+/// </summary>
+public sealed record AgentCertificateRequest
+{
+    /// <summary>
+    /// The new self-signed client certificate, PEM-encoded, meeting the same rules as at enrollment: an ECDSA P-256 (or
+    /// stronger) or RSA 3072+ key, the digitalSignature key usage and clientAuth extended key usage, not a CA, valid now
+    /// and for at most 398 days.
+    /// </summary>
+    [Required, StringLength(16384, MinimumLength = 1)]
+    public string Certificate { get; init; } = string.Empty;
+}
+
+/// <summary>The certificate an agent authenticates with.</summary>
+/// <param name="Thumbprint">The certificate's SHA-256 thumbprint, base64url-encoded (RFC 8705 §3.1's <c>x5t#S256</c>).</param>
+public sealed record AgentCertificateDto(string Thumbprint, DateTimeOffset NotBefore, DateTimeOffset NotAfter);
+
+/// <summary>OAuth error codes the token endpoint uses for agents, beyond RFC 6749 §5.2's (§8.5).</summary>
+public static class AgentErrors
+{
+    /// <summary>
+    /// The agent authenticated, but a person revoked it. It must stop rather than retry or enroll again on its own.
+    /// </summary>
+    public const string Revoked = "agent_revoked";
+}

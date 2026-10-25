@@ -18,6 +18,7 @@ builder.Services.AddSingleton<IAgentKeyStore>(sp => OperatingSystem.IsWindows()
 builder.Services.AddSingleton<AgentIdentityStore>();
 builder.Services.AddSingleton<IAgentTransport, MutualTlsTransport>();
 builder.Services.AddSingleton<AgentEnrollment>();
+builder.Services.AddSingleton<AgentCertificateRotation>();
 builder.Services.AddSingleton<SystemInfoProvider>();
 builder.Services.AddSingleton<TelemetryCollector>();
 builder.Services.AddSingleton<ICommandHandler, CollectSystemInfoHandler>();

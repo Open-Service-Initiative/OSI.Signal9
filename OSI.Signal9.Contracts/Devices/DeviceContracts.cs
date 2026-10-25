@@ -16,6 +16,10 @@ public enum DeviceStatus
 /// </summary>
 /// <param name="ActiveAgentId">The device's one active agent, if it has one.</param>
 /// <param name="LastSeenAt">When the active agent last checked in, if there is one.</param>
+/// <param name="RequiresAgentApproval">
+/// Whether the device's next agent must be approved, whatever its tenant's approval setting: set when its agent was
+/// revoked, so reinstalling from the same enrollment token can't silently undo the revocation.
+/// </param>
 public sealed record DeviceDto(
     Guid Id,
     Guid TenantId,
@@ -35,7 +39,8 @@ public sealed record DeviceDto(
     bool MaintenanceMode,
     DeviceStatus Status,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? LastSeenAt);
+    DateTimeOffset? LastSeenAt,
+    bool RequiresAgentApproval);
 
 /// <summary>
 /// The fields of a device a person can edit, sent as a JSON merge patch (RFC 7396) to PATCH /api/v1/devices/{deviceId}.

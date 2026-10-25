@@ -47,8 +47,9 @@ public interface IDeviceOwned
 public enum TenantScopeBypass
 {
     /// <summary>
-    /// An agent's requests about itself: its heartbeats, telemetry, pending commands and their results. Agents aren't
-    /// assigned to tenants; they reach only the device whose active agent their access token names (ADR-0005).
+    /// An agent's requests about itself: its heartbeats, telemetry, pending commands and their results, its certificate,
+    /// and whether it's revoked when it asks for a token. Agents aren't assigned to tenants; they reach only the device
+    /// whose active agent their access token names (ADR-0005).
     /// </summary>
     [NotAudited("An agent reaches only its own device; the command results it reports are audited.")]
     AgentSelfService,

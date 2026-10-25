@@ -15,7 +15,7 @@ internal static class Samples
 
     public static DeviceDto Device(string machineName, DeviceStatus status = DeviceStatus.Online, Guid? id = null) =>
         new(id ?? Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), machineName, "corp.example", "Windows", "11", "x64",
-            "CPU", 8, 16_384, "10.0.0.5", null, "Servers", ["finance"], false, status, Now, Now);
+            "CPU", 8, 16_384, "10.0.0.5", null, "Servers", ["finance"], false, status, Now, Now, false);
 
     public static TenantDto Tenant(string name, TenantStatus status = TenantStatus.Active, Guid? id = null) =>
         new(id ?? Guid.NewGuid(), null, name, null, "ops@example.com", null, SubscriptionPlan.Basic, 25, status, 3, Now, Now);

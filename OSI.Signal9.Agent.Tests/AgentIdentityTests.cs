@@ -101,7 +101,7 @@ public sealed class AgentIdentityTests : IDisposable
         using var certificate = store.CreateCertificate();
         store.Save(Guid.NewGuid(), certificate);
 
-        _keys.Remove(store.KeyName);
+        _keys.Delete(store.KeyName);
 
         Assert.IsNull(store.Load());
     }
@@ -224,7 +224,7 @@ public sealed class AgentIdentityTests : IDisposable
 
         public ECDsa? Open(string name) => _keys.TryGetValue(name, out var parameters) ? ECDsa.Create(parameters) : null;
 
-        public void Remove(string name) => _keys.Remove(name);
+        public void Delete(string name) => _keys.Remove(name);
     }
 
     private sealed class FakeTransport(HttpMessageHandler network) : IAgentTransport

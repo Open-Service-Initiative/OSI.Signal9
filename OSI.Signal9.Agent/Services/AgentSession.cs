@@ -13,7 +13,7 @@ namespace OSI.Signal9.Agent.Services;
 /// One enrolled agent's session: it listens for the doorbell, sends heartbeats and telemetry, and runs its pending
 /// commands. Work is fetched over REST when the doorbell rings, every time the hub (re)connects, and when a heartbeat
 /// says work is waiting (ADR-0009); there's no other polling. The hub closes when the agent's token expires, and
-/// reconnects with a fresh one.
+/// reconnects with a fresh one. The session ends when the agent's certificate falls due for rotation.
 /// </summary>
 public sealed class AgentSession(
     CommandExecutor executor,
@@ -22,13 +22,16 @@ public sealed class AgentSession(
     IOptions<AgentOptions> options,
     ILogger<AgentSession> logger)
 {
+    /// <summary>How often the session checks whether the certificate has fallen due for rotation.</summary>
+    public static readonly TimeSpan RenewalCheckInterval = TimeSpan.FromHours(1);
+
     private readonly AgentOptions _options = options.Value;
 
     /// <summary>
-    /// Runs until stopped, or throws when the session fails: when the API refuses the agent, or the hub gives up
-    /// reconnecting.
+    /// Runs until stopped or <paramref name="renewAt"/>, when the certificate is due for rotation, or throws when the
+    /// session fails: when the API refuses the agent, or the hub gives up reconnecting.
     /// </summary>
-    public async Task RunAsync(AgentConnection connection, CancellationToken stoppingToken)
+    public async Task RunAsync(AgentConnection connection, DateTimeOffset renewAt, CancellationToken stoppingToken)
     {
         using var session = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         var api = connection.Api;
@@ -62,7 +65,8 @@ public sealed class AgentSession(
             closed.Task,
             work.RunAsync(session.Token),
             HeartbeatLoopAsync(api, connection.AgentId, work, session.Token),
-            TelemetryLoopAsync(api, connection.AgentId, session.Token));
+            TelemetryLoopAsync(api, connection.AgentId, session.Token),
+            UntilAsync(renewAt, session.Token));
         await session.CancelAsync();
         if (finished == closed.Task && !stoppingToken.IsCancellationRequested)
             throw new InvalidOperationException("The agent hub connection closed.", closed.Task.Result);
@@ -81,6 +85,15 @@ public sealed class AgentSession(
                 work.RequestFetch();
         }
         while (await timer.WaitForNextTickAsync(cancellationToken));
+    }
+
+    // Checked on an interval rather than with one long delay, which timers cap at about 49 days.
+    private async Task UntilAsync(DateTimeOffset renewAt, CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(RenewalCheckInterval, time);
+        while (time.GetUtcNow() < renewAt && await timer.WaitForNextTickAsync(cancellationToken))
+        {
+        }
     }
 
     private async Task TelemetryLoopAsync(AgentApiClient api, Guid agentId, CancellationToken cancellationToken)

@@ -45,6 +45,17 @@ public sealed class AgentApiClient(HttpClient http)
             await EnsureSuccessAsync(response, cancellationToken);
     }
 
+    /// <summary>
+    /// Replaces the agent's certificate with <paramref name="certificatePem"/>, its new key's (story 102). Once this
+    /// succeeds, only the new certificate authenticates.
+    /// </summary>
+    public async Task PutCertificateAsync(Guid agentId, string certificatePem, CancellationToken cancellationToken)
+    {
+        using var response = await http.PutAsJsonAsync($"api/v1/agents/{agentId}/certificate",
+            new AgentCertificateRequest { Certificate = certificatePem }, Signal9Json.Options, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
     internal static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         if (response.IsSuccessStatusCode)

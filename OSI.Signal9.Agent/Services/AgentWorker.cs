@@ -3,17 +3,22 @@ using OSI.Signal9.Agent.Identity;
 namespace OSI.Signal9.Agent.Services;
 
 /// <summary>
-/// Enrolls this agent instance if it hasn't yet, then runs an <see cref="AgentSession"/> as it until it ends. Any
+/// Enrolls this agent instance if it hasn't yet, rotates its key and certificate when they're due, then runs an
+/// <see cref="AgentSession"/> as it until it ends: when the certificate next falls due for rotation, or on failure. Any
 /// failure starts over with exponential backoff.
 /// </summary>
 public sealed class AgentWorker(
     AgentEnrollment enrollment,
+    AgentCertificateRotation rotation,
     IAgentTransport transport,
     AgentSession session,
     TimeProvider time,
     ILogger<AgentWorker> logger) : BackgroundService
 {
     private static readonly TimeSpan MaxBackoff = TimeSpan.FromMinutes(5);
+
+    /// <summary>How long after a failed rotation the agent tries again, carrying on with its current certificate meanwhile.</summary>
+    public static readonly TimeSpan RotationRetry = TimeSpan.FromHours(1);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -23,8 +28,20 @@ public sealed class AgentWorker(
             try
             {
                 var identity = await enrollment.EnsureEnrolledAsync(stoppingToken);
+                DateTimeOffset renewAt;
+                try
+                {
+                    identity = await rotation.RotateIfDueAsync(identity, stoppingToken);
+                    renewAt = AgentIdentityStore.RenewalDue(identity.Certificate);
+                }
+                catch (HttpRequestException ex)
+                {
+                    renewAt = time.GetUtcNow() + RotationRetry;
+                    logger.LogWarning(ex, "Agent {AgentId} couldn't rotate its certificate; retrying at {RetryAt}", identity.AgentId, renewAt);
+                }
+
                 using var connection = new AgentConnection(identity, transport, time);
-                await session.RunAsync(connection, stoppingToken);
+                await session.RunAsync(connection, renewAt, stoppingToken);
                 failures = 0;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
