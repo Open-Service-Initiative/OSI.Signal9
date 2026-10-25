@@ -103,6 +103,23 @@ public static class AuthorizationServer
                 await http.RequestServices.GetRequiredService<AuthenticationFailures>().RecordAsync(http, context.Request?.ClientId, http.RequestAborted);
         }));
 
+        // An API application authenticates only with the method it registered (RFC 7591 token_endpoint_auth_method). The
+        // application manager enforces it for certificates and secrets; a client assertion is refused here, because a
+        // self-signed certificate's key could otherwise sign one too.
+        server.AddEventHandler<OpenIddictServerEvents.ProcessAuthenticationContext>(handler => handler.UseInlineHandler(async context =>
+        {
+            if (string.IsNullOrEmpty(context.Request?.ClientAssertion) || context.Request.ClientId is not { } clientId
+                || context.Transaction.GetHttpRequest()?.HttpContext is not { } http)
+                return;
+            var applications = http.RequestServices.GetRequiredService<IOpenIddictApplicationManager>();
+            if (await applications.FindByClientIdAsync(clientId, http.RequestAborted) is { } application
+                && ApiApplicationClient.AuthMethod(await applications.GetPropertiesAsync(application, http.RequestAborted)) is { } method
+                && method != Contracts.ApiApplications.TokenEndpointAuthMethods.PrivateKeyJwt)
+            {
+                context.Reject(Errors.InvalidClient, "This client doesn't authenticate with private_key_jwt.");
+            }
+        }).SetOrder(int.MinValue + 100_000));
+
         server.UseAspNetCore().EnableTokenEndpointPassthrough();
         return server;
     }

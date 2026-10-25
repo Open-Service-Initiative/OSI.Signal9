@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using OSI.Signal9.Contracts;
+using OSI.Signal9.Contracts.ApiApplications;
 using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Devices;
@@ -112,6 +113,35 @@ public sealed class Signal9ApiClient(HttpClient http, BffAuthenticationStateProv
     /// <summary>The audit entries the signed-in person can read, newest first.</summary>
     public Task<PagedResult<AuditEntryDto>> ListAuditEntriesAsync(int page, int pageSize, CancellationToken cancellationToken = default) =>
         SendAsync<PagedResult<AuditEntryDto>>(HttpMethod.Get, $"api/v1/audit-entries?page={page}&pageSize={pageSize}", null, cancellationToken);
+
+    public Task<PagedResult<ApiApplicationDto>> ListApiApplicationsAsync(Guid tenantId, int page, int pageSize,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<PagedResult<ApiApplicationDto>>(HttpMethod.Get,
+            $"api/v1/tenants/{tenantId}/api-applications?page={page}&pageSize={pageSize}", null, cancellationToken);
+
+    public Task<ApiApplicationDto> CreateApiApplicationAsync(Guid tenantId, CreateApiApplicationRequest request,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<ApiApplicationDto>(HttpMethod.Post, $"api/v1/tenants/{tenantId}/api-applications",
+            JsonContent.Create(request, options: Signal9Json.Options), cancellationToken);
+
+    public Task DeleteApiApplicationAsync(Guid tenantId, Guid apiApplicationId, CancellationToken cancellationToken = default) =>
+        SendAsync<object>(HttpMethod.Delete, $"api/v1/tenants/{tenantId}/api-applications/{apiApplicationId}", null, cancellationToken);
+
+    public Task<PagedResult<ApiApplicationCredentialDto>> ListApiApplicationCredentialsAsync(Guid tenantId, Guid apiApplicationId,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<PagedResult<ApiApplicationCredentialDto>>(HttpMethod.Get,
+            $"api/v1/tenants/{tenantId}/api-applications/{apiApplicationId}/credentials?pageSize=100", null, cancellationToken);
+
+    public Task<ApiApplicationCredentialDto> CreateApiApplicationCredentialAsync(Guid tenantId, Guid apiApplicationId,
+        CreateApiApplicationCredentialRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<ApiApplicationCredentialDto>(HttpMethod.Post,
+            $"api/v1/tenants/{tenantId}/api-applications/{apiApplicationId}/credentials",
+            JsonContent.Create(request, options: Signal9Json.Options), cancellationToken);
+
+    public Task DeleteApiApplicationCredentialAsync(Guid tenantId, Guid apiApplicationId, Guid credentialId,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<object>(HttpMethod.Delete,
+            $"api/v1/tenants/{tenantId}/api-applications/{apiApplicationId}/credentials/{credentialId}", null, cancellationToken);
 
     private static JsonContent Patch<T>(T request) =>
         JsonContent.Create(request, new MediaTypeHeaderValue(MergePatch), Signal9Json.Options);

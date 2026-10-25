@@ -1,0 +1,97 @@
+@inherits FluentDialogInstance
+
+<FluentDialogBody>
+    <div class="dialog-form">
+        <FluentTextInput Id="application-name" Label="Name" Required="true" MaxLength="200" @bind-Value="name" />
+        <FluentSelect Id="application-role" TOption="string" TValue="string" Label="Role" Required="true"
+                      Value="@roleId" ValueChanged="@((string? value) => ChooseRole(value))">
+            <FluentOption TValue="string" Value="@string.Empty">Choose a role</FluentOption>
+            @foreach (var role in Roles)
+            {
+                <FluentOption TValue="string" Value="@role.Id.ToString()">@role.Name</FluentOption>
+            }
+        </FluentSelect>
+        <FluentSelect Id="application-method" TOption="string" TValue="string" Label="Authenticates with" Required="true" @bind-Value="method">
+            @foreach (var option in TokenEndpointAuthMethods.All)
+            {
+                <FluentOption TValue="string" Value="@option">@OSI.Signal9.Web.Client.Pages.ApiApplications.MethodName(option)</FluentOption>
+            }
+        </FluentSelect>
+        @if (method == TokenEndpointAuthMethods.TlsClientAuth)
+        {
+            <FluentSelect Id="application-subject-parameter" TOption="string" TValue="string" Label="Certificate subject" @bind-Value="subjectParameter">
+                <FluentOption TValue="string" Value="@("tls_client_auth_subject_dn")">Distinguished name</FluentOption>
+                <FluentOption TValue="string" Value="@("tls_client_auth_san_dns")">DNS name</FluentOption>
+                <FluentOption TValue="string" Value="@("tls_client_auth_san_uri")">URI</FluentOption>
+                <FluentOption TValue="string" Value="@("tls_client_auth_san_ip")">IP address</FluentOption>
+                <FluentOption TValue="string" Value="@("tls_client_auth_san_email")">Email</FluentOption>
+            </FluentSelect>
+            <FluentTextInput Id="application-subject-value" Label="Subject value" Required="true" @bind-Value="subjectValue" />
+        }
+        @if (SelectedRole is { } selected)
+        {
+            <fieldset class="scope-list">
+                <legend>Scopes</legend>
+                @foreach (var scope in selected.Scopes)
+                {
+                    var gated = RecentMfaScopes.All.Contains(scope);
+                    <FluentCheckbox Id="@($"scope-{scope}")" Label="@(gated ? $"{scope} (needs your recent MFA)" : scope)"
+                                    Disabled="@(gated && method == TokenEndpointAuthMethods.ClientSecret)"
+                                    Value="@scopes.Contains(scope)" ValueChanged="@((bool on) => Toggle(scope, on))" />
+                }
+            </fieldset>
+        }
+        <FluentText>The application acts as itself, only at this tenant and the tenants beneath it, with a role no higher than yours. Add its credentials after registering it. A client secret is the last resort, and can never hold scopes that need a recent MFA.</FluentText>
+    </div>
+</FluentDialogBody>
+
+@code {
+    [Parameter] public IReadOnlyList<RoleDto> Roles { get; set; } = [];
+
+    private string? name = string.Empty;
+    private string? roleId = string.Empty;
+    private string? method = TokenEndpointAuthMethods.PrivateKeyJwt;
+    private string? subjectParameter = "tls_client_auth_subject_dn";
+    private string? subjectValue = string.Empty;
+    private readonly HashSet<string> scopes = [];
+
+    private RoleDto? SelectedRole => Roles.FirstOrDefault(r => r.Id.ToString() == roleId);
+
+    protected override void OnInitializeDialog(DialogOptionsHeader header, DialogOptionsFooter footer)
+    {
+        footer.PrimaryAction.Label = "Register";
+        footer.SecondaryAction.Label = "Cancel";
+    }
+
+    // A role starts with all its scopes except those needing a recent MFA, which are opted into one by one.
+    private void ChooseRole(string? value)
+    {
+        roleId = value;
+        scopes.Clear();
+        foreach (var scope in SelectedRole?.Scopes ?? [])
+            if (!RecentMfaScopes.All.Contains(scope))
+                scopes.Add(scope);
+    }
+
+    private void Toggle(string scope, bool on)
+    {
+        if (on)
+            scopes.Add(scope);
+        else
+            scopes.Remove(scope);
+    }
+
+    protected override Task OnActionClickedAsync(bool primary) => primary
+        ? DialogInstance.CloseAsync(new CreateApiApplicationRequest
+        {
+            DisplayName = name ?? "",
+            RoleId = Guid.TryParse(roleId, out var role) ? role : null,
+            TokenEndpointAuthMethod = method ?? "",
+            Scopes = [.. SelectedRole?.Scopes.Where(s => scopes.Contains(s)
+                && !(method == TokenEndpointAuthMethods.ClientSecret && RecentMfaScopes.All.Contains(s))) ?? []],
+            TlsClientAuthSubject = method == TokenEndpointAuthMethods.TlsClientAuth
+                ? new TlsClientAuthSubject(subjectParameter ?? "", subjectValue ?? "")
+                : null,
+        })
+        : DialogInstance.CancelAsync();
+}

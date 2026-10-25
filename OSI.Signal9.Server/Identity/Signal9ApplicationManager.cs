@@ -5,7 +5,9 @@ using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenIddict.Abstractions;
+using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Core;
+using OSI.Signal9.Contracts.ApiApplications;
 
 namespace OSI.Signal9.Server.Identity;
 
@@ -25,12 +27,90 @@ public sealed class Signal9ApplicationManager<TApplication>(
     : OpenIddictApplicationManager<TApplication>(cache, logger, options, store)
     where TApplication : class
 {
-    public override ValueTask<bool> ValidateSelfSignedTlsClientCertificateAsync(TApplication application,
+    public override async ValueTask<bool> ValidateSelfSignedTlsClientCertificateAsync(TApplication application,
         X509Certificate2 certificate, X509ChainPolicy policy, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(policy);
-        return base.ValidateSelfSignedTlsClientCertificateAsync(application, certificate, Now(policy), cancellationToken);
+        ArgumentNullException.ThrowIfNull(certificate);
+        var properties = await GetPropertiesAsync(application, cancellationToken);
+        if (ApiApplicationClient.AuthMethod(properties) is not { } method)
+            return await base.ValidateSelfSignedTlsClientCertificateAsync(application, certificate, Now(policy), cancellationToken);
+        if (method != TokenEndpointAuthMethods.SelfSignedTlsClientAuth)
+            return false;
+
+        // RFC 8705 §2.2: the certificate must be one the application registered. Its chain, trusting only that
+        // certificate, checks its signature, validity and the clientAuth usage under OpenIddict's policy.
+        var thumbprint = ApiApplicationClient.Thumbprint(certificate.RawData);
+        if (ApiApplicationClient.Credentials(properties).FirstOrDefault(c => c.Thumbprint == thumbprint && c.Certificate is not null)
+            is not { Certificate: { } registered })
+            return false;
+        using var trusted = X509CertificateLoader.LoadCertificate(Convert.FromBase64String(registered));
+        var chainPolicy = Now(policy);
+        chainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+        chainPolicy.CustomTrustStore.Clear();
+        chainPolicy.CustomTrustStore.Add(trusted);
+        chainPolicy.ExtraStore.Clear();
+        chainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        using var chain = new X509Chain { ChainPolicy = chainPolicy };
+        try
+        {
+            if (chain.Build(certificate))
+                return true;
+            Logger.LogInformation("The self-signed certificate of client {ClientId} isn't valid: {Status}.",
+                await GetClientIdAsync(application, cancellationToken), chain.ChainStatus.Select(status => status.Status).ToArray());
+            return false;
+        }
+        finally
+        {
+            foreach (var element in chain.ChainElements)
+                element.Certificate.Dispose();
+        }
     }
+
+    /// <summary>An API application's key set is built from its credentials (<see cref="ApiApplicationClient"/>).</summary>
+    public override async ValueTask<JsonWebKeySet?> GetJsonWebKeySetAsync(TApplication application,
+        CancellationToken cancellationToken = default)
+    {
+        var properties = await GetPropertiesAsync(application, cancellationToken);
+        return ApiApplicationClient.AuthMethod(properties) is null
+            ? await base.GetJsonWebKeySetAsync(application, cancellationToken)
+            : ApiApplicationClient.KeySet(ApiApplicationClient.Credentials(properties));
+    }
+
+    /// <summary>
+    /// An API application's secrets are its unexpired <c>secret</c> credentials, any of which authenticates it, so a
+    /// secret can be rotated without downtime. Only an application registered for client secrets has any.
+    /// </summary>
+    public override async ValueTask<bool> ValidateClientSecretAsync(TApplication application, string secret,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(application);
+        var properties = await GetPropertiesAsync(application, cancellationToken);
+        if (ApiApplicationClient.AuthMethod(properties) is not { } method)
+            return await base.ValidateClientSecretAsync(application, secret, cancellationToken);
+        if (method != TokenEndpointAuthMethods.ClientSecret || string.IsNullOrEmpty(secret))
+            return false;
+
+        var now = time.GetUtcNow();
+        foreach (var credential in ApiApplicationClient.Credentials(properties))
+        {
+            if (credential.SecretHash is { } hash && credential.ExpiresAt > now
+                && await ValidateClientSecretAsync(secret, hash, cancellationToken))
+                return true;
+        }
+        Logger.LogInformation("Client {ClientId} presented no live secret.", await GetClientIdAsync(application, cancellationToken));
+        return false;
+    }
+
+    /// <summary>Hashes a new client secret as OpenIddict stores its own, for an API application's credential.</summary>
+    public ValueTask<string> HashClientSecretAsync(string secret, CancellationToken cancellationToken = default) =>
+        ObfuscateClientSecretAsync(secret, cancellationToken);
+
+    // A client that isn't an API application uses whatever credentials it was seeded with; an API application only
+    // the method it registered (RFC 7591 token_endpoint_auth_method).
+    private async ValueTask<bool> UsesAsync(TApplication application, string method, CancellationToken cancellationToken) =>
+        ApiApplicationClient.AuthMethod(await GetPropertiesAsync(application, cancellationToken)) is not { } registered
+        || registered == method;
 
     public override async ValueTask<bool> ValidatePublicKeyInfrastructureTlsClientCertificateAsync(
         TApplication application, X509Certificate2 certificate, X509ChainPolicy policy,
@@ -39,6 +119,8 @@ public sealed class Signal9ApplicationManager<TApplication>(
         ArgumentNullException.ThrowIfNull(application);
         ArgumentNullException.ThrowIfNull(certificate);
         ArgumentNullException.ThrowIfNull(policy);
+        if (!await UsesAsync(application, TokenEndpointAuthMethods.TlsClientAuth, cancellationToken))
+            return false;
         policy = Now(policy);
 
         var clientId = await GetClientIdAsync(application, cancellationToken);
@@ -96,8 +178,10 @@ public sealed class Signal9ApplicationManager<TApplication>(
     public override async IAsyncEnumerable<ValidationResult> ValidateAsync(TApplication application,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var authenticatesWithSubject =
-            TlsClientSubject.From(await GetPropertiesAsync(application, cancellationToken)) is not null;
+        // An API application's credentials are added after it's registered, and live in its properties.
+        var properties = await GetPropertiesAsync(application, cancellationToken);
+        var authenticatesWithSubject = TlsClientSubject.From(properties) is not null
+            || ApiApplicationClient.AuthMethod(properties) is not null;
         var missingCredential = OpenIddictResources.GetResourceString(OpenIddictResources.ID2113);
 
         await foreach (var result in base.ValidateAsync(application, cancellationToken))

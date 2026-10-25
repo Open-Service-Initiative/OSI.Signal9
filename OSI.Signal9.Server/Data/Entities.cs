@@ -237,3 +237,29 @@ public sealed class AuditEntry
     public string? Detail { get; set; }
     public string? ClientIp { get; set; }
 }
+
+/// <summary>
+/// An API application acting as itself (#124): registered at <see cref="TenantId"/> and confined to its subtree, with
+/// its own role narrowed to <see cref="Scopes"/>. Its OAuth client, holding its credentials, is the OpenIddict
+/// application with <see cref="ClientId"/>.
+/// </summary>
+public sealed class ApiApplication : ITenantOwned
+{
+    public Guid Id { get; set; }
+
+    /// <summary>Row version (PostgreSQL <c>xmin</c>): the concurrency token behind the resource's ETag.</summary>
+    public uint Version { get; set; }
+    public Guid TenantId { get; set; }
+    public required string ClientId { get; set; }
+    public required string DisplayName { get; set; }
+    public Guid RoleId { get; set; }
+
+    /// <summary>The scopes it may use: within its role's.</summary>
+    public string[] Scopes { get; set; } = [];
+
+    /// <summary>Its RFC 7591 <c>token_endpoint_auth_method</c>, fixed at registration.</summary>
+    public required string TokenEndpointAuthMethod { get; set; }
+    public DateTime CreatedAt { get; set; }
+
+    public Role? Role { get; set; }
+}

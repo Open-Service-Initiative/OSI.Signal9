@@ -31,6 +31,7 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
     public DbSet<RoleAssignment> RoleAssignments => Set<RoleAssignment>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<EnrollmentToken> EnrollmentTokens => Set<EnrollmentToken>();
+    public DbSet<ApiApplication> ApiApplications => Set<ApiApplication>();
 
     /// <summary>The ASP.NET Core Data Protection key ring, each key wrapped by the key-encryption key (ADR-0008).</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
@@ -50,6 +51,7 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
         modelBuilder.Entity<User>().Property(u => u.Version).IsRowVersion();
         modelBuilder.Entity<RoleAssignment>().Property(a => a.Version).IsRowVersion();
         modelBuilder.Entity<EnrollmentToken>().Property(t => t.Version).IsRowVersion();
+        modelBuilder.Entity<ApiApplication>().Property(a => a.Version).IsRowVersion();
 
         modelBuilder.Entity<Tenant>(tenant =>
         {
@@ -185,6 +187,17 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
             token.HasIndex(t => t.SecretHash).IsUnique();
             token.HasIndex(t => t.TenantId);
             token.HasOne<Tenant>().WithMany().HasForeignKey(t => t.TenantId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ApiApplication>(application =>
+        {
+            application.Property(a => a.ClientId).HasMaxLength(100);
+            application.HasIndex(a => a.ClientId).IsUnique();
+            application.HasIndex(a => a.TenantId);
+            application.Property(a => a.DisplayName).HasMaxLength(200);
+            application.Property(a => a.TokenEndpointAuthMethod).HasMaxLength(50);
+            application.HasOne<Tenant>().WithMany().HasForeignKey(a => a.TenantId).OnDelete(DeleteBehavior.Cascade);
+            application.HasOne(a => a.Role).WithMany().HasForeignKey(a => a.RoleId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<AuditEntry>(entry =>

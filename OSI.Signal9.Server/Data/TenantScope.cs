@@ -62,6 +62,13 @@ public enum TenantScopeBypass
     CallerRoleAssignments,
 
     /// <summary>
+    /// Reading the API application the access token was issued to, to work out its access (#124). Only the
+    /// application the token names is read.
+    /// </summary>
+    [NotAudited("Runs on every request, and reads only the calling application itself.")]
+    CallerApiApplication,
+
+    /// <summary>
     /// Finding the tenant an audit entry belongs at (the tenant, device or user a request named, or the signed-in
     /// person's owning tenant). Only a tenant ID is read, and it's never returned to the caller.
     /// </summary>

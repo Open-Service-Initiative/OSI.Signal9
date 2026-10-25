@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.OpenApi;
+using OpenIddict.Abstractions;
 using OSI.Signal9.Server.Identity;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
@@ -12,8 +13,9 @@ namespace OSI.Signal9.API.Authorization;
 /// Requires a person who performed MFA within the last 15 minutes, judged from the access token's <c>auth_time</c> and
 /// <c>amr</c> (stories 45, 63). A delegated token without it gets 401 with RFC 9470's
 /// <c>insufficient_user_authentication</c> challenge and <c>max_age=900</c>, so the client signs the person in again.
-/// An application acting as itself has no person to step up and is refused with 403 until its grant was approved with
-/// MFA (#63). Use it alongside <see cref="RequireScopeAttribute"/>.
+/// An application acting as itself has no person to step up: it's refused with 403 unless an Administrator granted it the
+/// scope with a recent MFA and it doesn't authenticate with a client secret (#63, #124). Use it alongside
+/// <see cref="RequireScopeAttribute"/>, with scopes listed in <see cref="Server.Identity.Scopes.RequiringRecentMfa"/>.
 /// </summary>
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
 public sealed class RequireRecentMfaAttribute : Attribute, IAuthorizationRequirement, IAuthorizationRequirementData,
@@ -27,7 +29,8 @@ public sealed class RequireRecentMfaAttribute : Attribute, IAuthorizationRequire
     public string Description =>
         "A person who performed MFA within the last 15 minutes. Otherwise the API answers 401 with "
         + "`WWW-Authenticate: Bearer error=\"insufficient_user_authentication\", max_age=900` (RFC 9470): sign the person "
-        + "in again with authorization code and `max_age=900`. An application acting as itself is refused.";
+        + "in again with authorization code and `max_age=900`. An application acting as itself needs the scope granted by an "
+        + "Administrator with a recent MFA, and certificate or `private_key_jwt` authentication; otherwise it's refused (403).";
 
     public IEnumerable<IAuthorizationRequirement> GetRequirements()
     {
@@ -37,20 +40,35 @@ public sealed class RequireRecentMfaAttribute : Attribute, IAuthorizationRequire
     public override string ToString() => "RequireRecentMfa";
 }
 
-/// <summary>Succeeds for a person whose token says they performed MFA (<c>amr</c>) at most 15 minutes ago (<c>auth_time</c>).</summary>
+/// <summary>
+/// Succeeds for a person whose token says they performed MFA (<c>amr</c>) at most 15 minutes ago (<c>auth_time</c>).
+/// An API application acting as itself has no person to step up; it succeeds only when its live grant holds the
+/// endpoint's MFA-gated scope, which an Administrator can grant only with a recent MFA, and it doesn't authenticate with
+/// a client secret (#63, #124).
+/// </summary>
 internal sealed class RequireRecentMfaHandler(TimeProvider time) : AuthorizationHandler<RequireRecentMfaAttribute>
 {
-    protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, RequireRecentMfaAttribute requirement)
+    protected override async Task HandleRequirementAsync(AuthorizationHandlerContext context, RequireRecentMfaAttribute requirement)
     {
         if (RecentMfa.IsPerson(context.User)
-            && context.User.FindAll(Claims.AuthenticationMethodReference).Any(claim => claim.Value == "mfa")
-            && long.TryParse(context.User.FindFirst(Claims.AuthenticationTime)?.Value, NumberStyles.Integer,
-                CultureInfo.InvariantCulture, out var seconds)
-            && time.GetUtcNow() - DateTimeOffset.FromUnixTimeSeconds(seconds) <= RequireRecentMfaAttribute.MaxAge)
+            ? RecentMfa.IsRecent(context.User, time)
+            : context.Resource is HttpContext http && await ApplicationGrantedAsync(http))
         {
             context.Succeed(requirement);
         }
-        return Task.CompletedTask;
+    }
+
+    private static async Task<bool> ApplicationGrantedAsync(HttpContext http)
+    {
+        var services = http.RequestServices;
+        var access = services.GetRequiredService<CallerAccess>();
+        await access.LoadAsync(services.GetRequiredService<Server.Data.Signal9DbContext>(), http.User, http.RequestAborted);
+        if (access.Application is not { } application
+            || application.TokenEndpointAuthMethod == Contracts.ApiApplications.TokenEndpointAuthMethods.ClientSecret)
+            return false;
+        var required = http.GetEndpoint()?.Metadata.GetOrderedMetadata<RequireScopeAttribute>().SelectMany(r => r.Scopes) ?? [];
+        return required.Any(scope => Server.Identity.Scopes.RequiringRecentMfa.Contains(scope) && application.Scopes.Contains(scope)
+            && http.User.HasScope(scope));
     }
 }
 
@@ -60,6 +78,13 @@ internal static class RecentMfa
     public const string Error = "insufficient_user_authentication";
 
     public static readonly long MaxAgeSeconds = (long)RequireRecentMfaAttribute.MaxAge.TotalSeconds;
+
+    /// <summary>Whether the person's token says they performed MFA (<c>amr</c>) at most 15 minutes ago (<c>auth_time</c>).</summary>
+    public static bool IsRecent(ClaimsPrincipal person, TimeProvider time) =>
+        person.FindAll(Claims.AuthenticationMethodReference).Any(claim => claim.Value == "mfa")
+        && long.TryParse(person.FindFirst(Claims.AuthenticationTime)?.Value, NumberStyles.Integer,
+            CultureInfo.InvariantCulture, out var seconds)
+        && time.GetUtcNow() - DateTimeOffset.FromUnixTimeSeconds(seconds) <= RequireRecentMfaAttribute.MaxAge;
 
     /// <summary>Whether the token was issued for a person, who can sign in again, rather than an application.</summary>
     public static bool IsPerson(ClaimsPrincipal caller) => PersonSubject.TryParse(caller, out _, out _);
@@ -95,7 +120,8 @@ internal sealed class RecentMfaResponses : IOpenApiOperationTransformer
         };
         operation.Responses["403"] = new OpenApiResponse
         {
-            Description = "The access token lacks a required scope, or was issued to an application acting as itself.",
+            Description = "The access token lacks a required scope, or was issued to an application acting as itself that "
+                + "wasn't granted the scope with a recent MFA, or authenticates with a client secret.",
         };
         return Task.CompletedTask;
     }

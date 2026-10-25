@@ -1,4 +1,5 @@
 using OSI.Signal9.Contracts;
+using OSI.Signal9.Contracts.ApiApplications;
 using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Devices;
 using OSI.Signal9.Contracts.Enrollment;
@@ -41,6 +42,13 @@ internal static class Samples
         var tokenId = id ?? Guid.NewGuid();
         return new(tokenId, tenantId, $"/api/v1/tenants/{tenantId}/enrollment-tokens/{tokenId}", name, maxUses, null, status,
             Now, null, status == EnrollmentTokenStatus.Revoked ? Now : null, secret);
+    }
+
+    public static ApiApplicationDto ApiApplication(string name, Guid tenantId, Guid roleId, string method, Guid? id = null,
+        params string[] scopes)
+    {
+        var applicationId = id ?? Guid.NewGuid();
+        return new(applicationId, tenantId, applicationId.ToString(), name, roleId, scopes, method, null, Now);
     }
 
     public static PagedResult<T> Page<T>(params T[] items) => new(items, 1, 25, items.Length);

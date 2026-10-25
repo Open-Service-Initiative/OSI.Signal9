@@ -20,6 +20,12 @@ public sealed class CallerAccess
 
     private sealed record Assignment(Guid TenantId, Guid RoleId, string[] Scopes);
 
+    /// <summary>An API application acting as itself, as the caller (#124).</summary>
+    public sealed record CallerApplication(Guid Id, Guid TenantId, string TokenEndpointAuthMethod, IReadOnlySet<string> Scopes);
+
+    /// <summary>The API application the token was issued to, when it acts as itself; null for anyone else.</summary>
+    public CallerApplication? Application { get; private set; }
+
     /// <summary>
     /// Narrows the rest of the request to tenants where the caller may also use one of <paramref name="anyOf"/>, on top
     /// of the scopes the endpoint requires: for a scope that depends on what is asked for.
@@ -89,8 +95,13 @@ public sealed class CallerAccess
             return;
         _loaded = true;
         // A Superadministrator already has every tenant tree.
-        if (Superadministrator.Is(caller) || !PersonSubject.TryParse(caller, out var entraTenantId, out var entraObjectId))
+        if (Superadministrator.Is(caller))
             return;
+        if (!PersonSubject.TryParse(caller, out var entraTenantId, out var entraObjectId))
+        {
+            await LoadApplicationAsync(db, caller, cancellationToken);
+            return;
+        }
 
         var assignments = await db.RoleAssignments.AsNoTracking()
             .IgnoreTenantScope(TenantScopeBypass.CallerRoleAssignments)
@@ -113,6 +124,29 @@ public sealed class CallerAccess
             tenant => links.Where(l => l.DescendantId == tenant)
                 .SelectMany(l => assignments.Where(a => a.TenantId == l.AncestorId).SelectMany(a => a.Scopes))
                 .ToHashSet(StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// An application acting as itself is its own subject (its client ID). If it's a registered API application, it
+    /// has one assignment-like grant: its role at its tenant, narrowed to the scopes it was granted (#124).
+    /// </summary>
+    private async Task LoadApplicationAsync(Signal9DbContext db, ClaimsPrincipal caller, CancellationToken cancellationToken)
+    {
+        var clientId = caller.GetClaim(OpenIddictConstants.Claims.ClientId);
+        if (clientId is null || caller.GetClaim(OpenIddictConstants.Claims.Subject) != clientId)
+            return;
+        var application = await db.ApiApplications.AsNoTracking()
+            .IgnoreTenantScope(TenantScopeBypass.CallerApiApplication)
+            .Where(a => a.ClientId == clientId)
+            .Select(a => new { a.Id, a.TenantId, a.RoleId, a.TokenEndpointAuthMethod, a.Scopes, RoleScopes = a.Role!.Scopes })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (application is null)
+            return;
+
+        var scopes = application.Scopes.Intersect(application.RoleScopes, StringComparer.Ordinal).ToHashSet(StringComparer.Ordinal);
+        Application = new CallerApplication(application.Id, application.TenantId, application.TokenEndpointAuthMethod, scopes);
+        _assignments = [new Assignment(application.TenantId, application.RoleId, [.. scopes])];
+        _scopesByTenant = new() { [application.TenantId] = scopes };
     }
 }
 

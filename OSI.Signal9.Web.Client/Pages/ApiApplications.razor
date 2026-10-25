@@ -1,0 +1,275 @@
+@page "/api-applications"
+@attribute [Authorize]
+@inject Signal9ApiClient Api
+@inject IDialogService Dialogs
+
+<PageTitle>API applications - Signal9</PageTitle>
+
+<div class="page-header">
+    <FluentText As="TextTag.H1" Size="TextSize.Size800">API applications</FluentText>
+    <FluentSpacer />
+    <FluentButton Id="register-application" Appearance="ButtonAppearance.Primary" IconStart="@(new Icons.Regular.Size20.Add())"
+                  Disabled="@(tenantId is null)" OnClick="RegisterAsync">Register application</FluentButton>
+</div>
+<p>External systems that use the Signal9 API as themselves. Each is confined to the tenant it's registered at and the tenants beneath it, with its own role, no higher than yours. A vendor's product is registered separately at each tenant that uses it.</p>
+
+<FluentSelect Id="application-tenant" TOption="string" TValue="string" Label="Tenant"
+              Value="@tenantId?.ToString()" ValueChanged="@((string? value) => ChooseTenantAsync(value))">
+    @foreach (var tenant in tenants)
+    {
+        <FluentOption TValue="string" Value="@tenant.Id.ToString()">@tenant.Name</FluentOption>
+    }
+</FluentSelect>
+
+<ProblemBar Error="error" />
+@if (notice is not null)
+{
+    <FluentMessageBar Class="notice-bar" Intent="MessageBarIntent.Success">@notice</FluentMessageBar>
+}
+@if (newSecret is not null)
+{
+    <FluentMessageBar Class="secret-bar" Intent="MessageBarIntent.Warning">
+        Copy this secret now: it won't be shown again. <code>@newSecret</code>
+    </FluentMessageBar>
+}
+
+<FluentDataGrid Items="@applications.AsQueryable()" TGridItem="ApiApplicationDto" Loading="loading" ItemKey="@(a => a.Id)">
+    <TemplateColumn Title="Name">@context.DisplayName</TemplateColumn>
+    <TemplateColumn Title="Client ID"><code>@context.ClientId</code></TemplateColumn>
+    <TemplateColumn Title="Role">@RoleName(context.RoleId)</TemplateColumn>
+    <TemplateColumn Title="Authenticates with">@MethodName(context.TokenEndpointAuthMethod)</TemplateColumn>
+    <TemplateColumn Title="Scopes">@string.Join(" ", context.Scopes)</TemplateColumn>
+    <TemplateColumn Title="Actions" Align="DataGridCellAlignment.End">
+        <FluentButton Id="@($"credentials-{context.Id}")" IconOnly="true" Title="Credentials" Appearance="ButtonAppearance.Subtle"
+                      IconStart="@(new Icons.Regular.Size20.Key())" OnClick="@(() => ShowCredentialsAsync(context))" />
+        <FluentButton Id="@($"remove-{context.Id}")" IconOnly="true" Title="Remove" Appearance="ButtonAppearance.Subtle"
+                      IconStart="@(new Icons.Regular.Size20.Delete())" OnClick="@(() => RemoveAsync(context))" />
+    </TemplateColumn>
+</FluentDataGrid>
+<FluentPaginator State="pagination" CurrentPageIndexChanged="LoadAsync" />
+
+@if (selected is { } application)
+{
+    <section class="credentials">
+        <div class="page-header">
+            <FluentText As="TextTag.H2" Size="TextSize.Size600">Credentials of @application.DisplayName</FluentText>
+            <FluentSpacer />
+            @if (application.TokenEndpointAuthMethod != TokenEndpointAuthMethods.TlsClientAuth)
+            {
+                <FluentButton Id="add-credential" IconStart="@(new Icons.Regular.Size20.Add())" OnClick="AddCredentialAsync">Add credential</FluentButton>
+            }
+        </div>
+        @if (application.TlsClientAuthSubject is { } subject)
+        {
+            <p>Authenticates with a certificate from a trusted authority whose <code>@subject.Parameter</code> is <code>@subject.Value</code>.</p>
+        }
+        <FluentDataGrid Items="@credentials.AsQueryable()" TGridItem="ApiApplicationCredentialDto" ItemKey="@(c => c.Id)">
+            <TemplateColumn Title="Type">@context.Type</TemplateColumn>
+            <TemplateColumn Title="Thumbprint"><code>@context.Thumbprint</code></TemplateColumn>
+            <TemplateColumn Title="Subject">@context.Subject</TemplateColumn>
+            <TemplateColumn Title="Added">@context.CreatedAt.ToLocalTime().ToString("g")</TemplateColumn>
+            <TemplateColumn Title="Expires">@context.ExpiresAt?.ToLocalTime().ToString("g")</TemplateColumn>
+            <TemplateColumn Title="Actions" Align="DataGridCellAlignment.End">
+                <FluentButton Id="@($"remove-credential-{context.Id}")" IconOnly="true" Title="Remove" Appearance="ButtonAppearance.Subtle"
+                              IconStart="@(new Icons.Regular.Size20.Delete())" OnClick="@(() => RemoveCredentialAsync(context))" />
+            </TemplateColumn>
+        </FluentDataGrid>
+    </section>
+}
+
+@code {
+    private const int PageSize = 25;
+
+    private readonly PaginationState pagination = new() { ItemsPerPage = PageSize };
+    // TODO: a search picker once there can be more tenants than one page (the API's maximum is 100).
+    private IReadOnlyList<TenantDto> tenants = [];
+    private IReadOnlyList<RoleDto> roles = [];
+    private List<ApiApplicationDto> applications = [];
+    private List<ApiApplicationCredentialDto> credentials = [];
+    private ApiApplicationDto? selected;
+    private Guid? tenantId;
+    private bool loading = true;
+    private ApiException? error;
+    private string? notice;
+    private string? newSecret;
+
+    /// <summary>A method's name as people know it.</summary>
+    public static string MethodName(string method) => method switch
+    {
+        TokenEndpointAuthMethods.TlsClientAuth => "Certificate from a trusted authority (tls_client_auth)",
+        TokenEndpointAuthMethods.SelfSignedTlsClientAuth => "Self-signed certificate (self_signed_tls_client_auth)",
+        TokenEndpointAuthMethods.PrivateKeyJwt => "Signed assertion (private_key_jwt)",
+        TokenEndpointAuthMethods.ClientSecret => "Client secret",
+        _ => method,
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            tenants = (await Api.ListTenantsAsync(1, 100)).Items;
+            roles = (await Api.ListRolesAsync()).Items;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+            loading = false;
+            return;
+        }
+
+        tenantId = tenants.FirstOrDefault()?.Id;
+        await LoadAsync(0);
+    }
+
+    private async Task ChooseTenantAsync(string? value)
+    {
+        tenantId = Guid.TryParse(value, out var id) ? id : null;
+        notice = newSecret = null;
+        selected = null;
+        await pagination.SetCurrentPageIndexAsync(0);
+        await LoadAsync(0);
+    }
+
+    private async Task LoadAsync(int pageIndex)
+    {
+        if (tenantId is not { } id)
+        {
+            applications = [];
+            loading = false;
+            return;
+        }
+
+        loading = true;
+        try
+        {
+            var page = await Api.ListApiApplicationsAsync(id, pageIndex + 1, PageSize);
+            applications = [.. page.Items];
+            await pagination.SetTotalItemCountAsync(page.TotalCount);
+            error = null;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task RegisterAsync()
+    {
+        if (tenantId is not { } id)
+            return;
+
+        var result = await Dialogs.ShowDialogAsync<ApiApplicationRegisterDialog>(options =>
+        {
+            options.Header.Title = $"Register an application at {TenantName(id)}";
+            options.Parameters[nameof(ApiApplicationRegisterDialog.Roles)] = roles;
+        });
+        if (result.Cancelled || result.Value is not CreateApiApplicationRequest request)
+            return;
+
+        await RunAsync(async () =>
+        {
+            selected = await Api.CreateApiApplicationAsync(id, request);
+            credentials = [];
+            await LoadAsync(pagination.CurrentPageIndex);
+        }, $"Registered {request.DisplayName}. Add its credentials below.");
+    }
+
+    private async Task RemoveAsync(ApiApplicationDto application)
+    {
+        var confirm = await Dialogs.ShowConfirmationAsync(
+            $"Remove {application.DisplayName}? Its tokens stop working on its next request.", "Remove application", "Remove", "Cancel");
+        if (confirm.Cancelled)
+            return;
+
+        await RunAsync(async () =>
+        {
+            await Api.DeleteApiApplicationAsync(application.TenantId, application.Id);
+            if (selected?.Id == application.Id)
+                selected = null;
+            await LoadAsync(pagination.CurrentPageIndex);
+        }, $"Removed {application.DisplayName}.");
+    }
+
+    private async Task ShowCredentialsAsync(ApiApplicationDto application)
+    {
+        selected = application;
+        newSecret = null;
+        await LoadCredentialsAsync();
+    }
+
+    private async Task LoadCredentialsAsync()
+    {
+        if (selected is not { } application)
+            return;
+        try
+        {
+            credentials = [.. (await Api.ListApiApplicationCredentialsAsync(application.TenantId, application.Id)).Items];
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+    }
+
+    private async Task AddCredentialAsync()
+    {
+        if (selected is not { } application)
+            return;
+
+        var result = await Dialogs.ShowDialogAsync<ApiApplicationCredentialDialog>(options =>
+        {
+            options.Header.Title = $"Add a credential to {application.DisplayName}";
+            options.Parameters[nameof(ApiApplicationCredentialDialog.Method)] = application.TokenEndpointAuthMethod;
+        });
+        if (result.Cancelled || result.Value is not CreateApiApplicationCredentialRequest request)
+            return;
+
+        await RunAsync(async () =>
+        {
+            var created = await Api.CreateApiApplicationCredentialAsync(application.TenantId, application.Id, request);
+            newSecret = created.Secret;
+            await LoadCredentialsAsync();
+        }, $"Added a credential to {application.DisplayName}.");
+    }
+
+    private async Task RemoveCredentialAsync(ApiApplicationCredentialDto credential)
+    {
+        if (selected is not { } application)
+            return;
+        var confirm = await Dialogs.ShowConfirmationAsync(
+            $"Remove this {credential.Type} from {application.DisplayName}? It stops authenticating at once.", "Remove credential", "Remove", "Cancel");
+        if (confirm.Cancelled)
+            return;
+
+        await RunAsync(async () =>
+        {
+            await Api.DeleteApiApplicationCredentialAsync(application.TenantId, application.Id, credential.Id);
+            await LoadCredentialsAsync();
+        }, $"Removed a credential from {application.DisplayName}.");
+    }
+
+    /// <summary>Runs a change, then says how it went.</summary>
+    private async Task RunAsync(Func<Task> change, string done)
+    {
+        notice = null;
+        try
+        {
+            await change();
+            error = null;
+            notice = done;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+    }
+
+    // Names come from the first page of each list; the rest show as an id.
+    private string TenantName(Guid id) => tenants.FirstOrDefault(t => t.Id == id)?.Name ?? id.ToString();
+
+    private string RoleName(Guid id) => roles.FirstOrDefault(r => r.Id == id)?.Name ?? id.ToString();
+}

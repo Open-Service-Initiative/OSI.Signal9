@@ -104,6 +104,21 @@ public static class Scopes
     /// <summary>Only agents can obtain it: what an agent sends about itself and the work it's given.</summary>
     public const string Agent = "agent";
 
+    /// <summary>
+    /// The scopes whose endpoints need a recent MFA (<c>[RequireRecentMfa]</c>): running code (#82) and deleting
+    /// tenants. An application acting as itself may hold one only if an Administrator granted it with a recent MFA and it
+    /// authenticates with a certificate or <c>private_key_jwt</c>, never a client secret (#63).
+    /// </summary>
+    public static readonly IReadOnlySet<string> RequiringRecentMfa =
+        new HashSet<string>(Contracts.ApiApplications.RecentMfaScopes.All, StringComparer.Ordinal);
+
+    /// <summary>
+    /// The scopes an API application acting as itself can be granted: every catalogue scope except <see cref="Agent"/>,
+    /// which only agents obtain, and the OpenID Connect scopes, which need a person.
+    /// </summary>
+    public static bool IsGrantableToApplication(string scope) =>
+        All.ContainsKey(scope) && scope is not (Agent or OidcScopes.OpenId or OidcScopes.Profile or OidcScopes.OfflineAccess);
+
     /// <summary>Every scope in the catalogue, with what it allows.</summary>
     public static readonly IReadOnlyDictionary<string, string> All = new Dictionary<string, string>
     {

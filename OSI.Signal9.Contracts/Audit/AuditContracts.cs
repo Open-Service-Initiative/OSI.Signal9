@@ -96,6 +96,22 @@ public static class AuditActions
     public const string EnrollmentTokenRotated = "enrollment-token.rotated";
     public const string EnrollmentTokenRevoked = "enrollment-token.revoked";
 
+    /// <summary>An API application was registered at a tenant.</summary>
+    public const string ApiApplicationRegistered = "api-application.registered";
+
+    /// <summary>An API application's name or <c>tls_client_auth</c> subject changed.</summary>
+    public const string ApiApplicationUpdated = "api-application.updated";
+
+    /// <summary>
+    /// An API application was given its role and scopes, at registration or later. <c>Detail</c> lists the scopes, and
+    /// says <c>recent-mfa</c> when ones needing a recent MFA were granted with it.
+    /// </summary>
+    public const string ApiApplicationAccessGranted = "api-application.access-granted";
+
+    public const string ApiApplicationDeleted = "api-application.deleted";
+    public const string ApiApplicationCredentialAdded = "api-application.credential-added";
+    public const string ApiApplicationCredentialRemoved = "api-application.credential-removed";
+
     public const string CommandCreated = "command.created";
     public const string CommandCancelled = "command.cancelled";
 

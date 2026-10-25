@@ -45,6 +45,24 @@ public sealed class ArchitectureTests
         where action.GetCustomAttribute<OptimisticConcurrencyAttribute>() is null
         select $"{controller.Name}.{action.Name}";
 
+    /// <summary>
+    /// An endpoint needing a recent MFA requires only scopes listed as needing one: that list is what stops an application
+    /// authenticating with a client secret from ever holding them, or anyone granting them without MFA (#124).
+    /// </summary>
+    [TestMethod]
+    public void Every_endpoint_needing_a_recent_mfa_requires_only_scopes_listed_as_needing_one()
+    {
+        var violations = (
+            from controller in typeof(ApiHost).Assembly.GetTypes().Where(t => t.IsAssignableTo(typeof(ControllerBase)))
+            from action in controller.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            where action.GetCustomAttribute<OSI.Signal9.API.Authorization.RequireRecentMfaAttribute>() is not null
+            from scope in action.GetCustomAttributes<OSI.Signal9.API.Authorization.RequireScopeAttribute>().SelectMany(r => r.Scopes)
+            where !OSI.Signal9.Server.Identity.Scopes.RequiringRecentMfa.Contains(scope)
+            select $"{controller.Name}.{action.Name} ({scope})").ToList();
+
+        Assert.IsEmpty(violations, $"Add these scopes to Scopes.RequiringRecentMfa: {string.Join(", ", violations)}");
+    }
+
     private static bool ReturnsCollection(MethodInfo action) =>
         action.GetCustomAttributes<ProducesResponseTypeAttribute>()
             .Any(p => p.StatusCode == StatusCodes.Status200OK && IsPagedResult(p.Type))
