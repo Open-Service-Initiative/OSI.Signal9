@@ -11,6 +11,7 @@ builder.AddHostHardening();
 builder.AddSignal9Database();
 builder.AddSignal9ForwardedHeaders();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSignal9Audit();
 builder.AddSignal9EntraSignIn();
 
 var identity = builder.Configuration.GetIdentityOptions();

@@ -29,6 +29,7 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
     public DbSet<User> Users => Set<User>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<RoleAssignment> RoleAssignments => Set<RoleAssignment>();
+    public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
     /// <summary>The ASP.NET Core Data Protection key ring, each key wrapped by the key-encryption key (ADR-0008).</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
@@ -174,6 +175,22 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
             assignment.HasOne(a => a.Role).WithMany().HasForeignKey(a => a.RoleId).OnDelete(DeleteBehavior.Restrict);
         });
 
+        modelBuilder.Entity<AuditEntry>(entry =>
+        {
+            entry.Property(e => e.Sequence).UseIdentityAlwaysColumn();
+            entry.HasIndex(e => e.Sequence).IsUnique();
+            entry.Property(e => e.Action).HasMaxLength(100);
+            entry.Property(e => e.Outcome).HasConversion<string>().HasMaxLength(20);
+            entry.Property(e => e.ActorKind).HasConversion<string>().HasMaxLength(20);
+            entry.Property(e => e.ActorSubject).HasMaxLength(200);
+            entry.Property(e => e.ActorClientId).HasMaxLength(200);
+            entry.Property(e => e.TargetType).HasMaxLength(50);
+            entry.Property(e => e.Detail).HasMaxLength(500);
+            entry.Property(e => e.ClientIp).HasMaxLength(45);
+            // No foreign keys: entries outlive the tenants, devices and users they mention (#63, Tenant deletion).
+            entry.HasIndex(e => new { e.TenantId, e.Sequence });
+        });
+
         ApplyTenantScope(modelBuilder);
     }
 
@@ -184,6 +201,10 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
     {
         modelBuilder.Entity<Tenant>().HasQueryFilter(TenantScope.Filter, t => SeesEveryTenant ||
             TenantClosures.Any(c => c.DescendantId == t.Id && AssignedTenantIds.Contains(c.AncestorId)));
+
+        // An entry is read at its tenant and above; a deployment-level entry (no tenant) only by a Superadministrator.
+        modelBuilder.Entity<AuditEntry>().HasQueryFilter(TenantScope.Filter, e => SeesEveryTenant ||
+            (e.TenantId != null && TenantClosures.Any(c => c.DescendantId == e.TenantId && AssignedTenantIds.Contains(c.AncestorId))));
 
         foreach (var type in modelBuilder.Model.GetEntityTypes().Where(t => t.BaseType is null && !t.IsOwned()).ToList())
         {

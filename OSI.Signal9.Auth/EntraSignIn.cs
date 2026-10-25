@@ -104,6 +104,7 @@ public static class EntraSignIn
                     return;
                 if (Check(context.Principal!, allowedTenants, context.HttpContext) is { } rejection)
                 {
+                    await SignInAudit.FailedAsync(context.HttpContext, context.Principal, context.Properties, rejection);
                     if (ReturnRejected(context.HttpContext, context.Properties, rejection))
                         context.HandleResponse();
                     else
@@ -113,12 +114,15 @@ public static class EntraSignIn
                 context.Properties!.Items[FreshSignInItem] = "true";
                 context.Properties.Items[SignedInAtItem] = context.Options.TimeProvider!.GetUtcNow()
                     .ToString("O", CultureInfo.InvariantCulture);
+                await SignInAudit.SucceededAsync(context.HttpContext, context.Principal!, context.Properties,
+                    context.HttpContext.RequestServices.GetRequiredService<DeployingDirectory>().IsSuperadministrator(context.Principal!));
             };
 
             var remoteFailure = options.Events.OnRemoteFailure;
             options.Events.OnRemoteFailure = async context =>
             {
                 await remoteFailure(context);
+                await SignInAudit.FailedAsync(context.HttpContext, signIn: null, context.Properties, Rejection.Failed);
                 if (context.Result is null && ReturnRejected(context.HttpContext, context.Properties, Rejection.Failed))
                     context.HandleResponse();
             };

@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
+using OpenIddict.Server;
 using OpenIddict.Server.AspNetCore;
 using OSI.Signal9.Server.Data;
 using OSI.Signal9.Server.Keys;
@@ -94,6 +95,13 @@ public static class AuthorizationServer
 
         // The signing and encryption keys are the ones stored in the database (ADR-0008).
         server.Services.AddSignal9Keys(configuration);
+
+        // A client that fails to authenticate counts toward the repeated-failure audit (story 121).
+        server.AddEventHandler<OpenIddictServerEvents.ApplyTokenResponseContext>(handler => handler.UseInlineHandler(async context =>
+        {
+            if (context.Error == Errors.InvalidClient && context.Transaction.GetHttpRequest()?.HttpContext is { } http)
+                await http.RequestServices.GetRequiredService<AuthenticationFailures>().RecordAsync(http, context.Request?.ClientId, http.RequestAborted);
+        }));
 
         server.UseAspNetCore().EnableTokenEndpointPassthrough();
         return server;

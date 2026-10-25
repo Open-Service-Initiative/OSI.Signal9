@@ -38,8 +38,11 @@ public interface IDeviceOwned
 }
 
 /// <summary>
-/// Every deliberate bypass of <see cref="TenantScope"/>, by name. Listing them here keeps bypasses rare and visible, and
-/// lets each be audited once the audit log exists (story 70).
+/// Every deliberate bypass of <see cref="TenantScope"/>, by name. Listing them here keeps bypasses rare and visible.
+/// Each declares whether its uses are audited (story 70): <see cref="AuditedAttribute"/> bypasses, such as a background
+/// job's, go through <c>AuditLog.IgnoreTenantScopeAsync</c>, which records each use; <see cref="NotAuditedAttribute"/>
+/// ones are confined to the caller's own identity and covered by the audited events they serve, because auditing every
+/// use would write an entry per request.
 /// </summary>
 public enum TenantScopeBypass
 {
@@ -48,13 +51,33 @@ public enum TenantScopeBypass
     /// Agents aren't assigned to tenants; they reach only the records of the device named by the request.
     /// </summary>
     // TODO(auth): scope agents to their own device once agent identity comes from the token (ADR-0005).
+    [NotAudited("An agent reaches only its own device; the command results it reports are audited.")]
     AgentSelfService,
 
     /// <summary>
     /// Reading the caller's own role assignments to work out their access, which the filter itself depends on. Only
     /// the assignments of the person the access token names are read.
     /// </summary>
+    [NotAudited("Runs on every request, and reads only the caller's own assignments.")]
     CallerRoleAssignments,
+
+    /// <summary>
+    /// Finding the tenant an audit entry belongs at (the tenant, device or user a request named, or the signed-in
+    /// person's owning tenant). Only a tenant ID is read, and it's never returned to the caller.
+    /// </summary>
+    [NotAudited("Only files audit entries; nothing it reads reaches the caller.")]
+    AuditPlacement,
+}
+
+/// <summary>Each use of this <see cref="TenantScopeBypass"/> is recorded in the audit log.</summary>
+[AttributeUsage(AttributeTargets.Field)]
+public sealed class AuditedAttribute : Attribute;
+
+/// <summary>Uses of this <see cref="TenantScopeBypass"/> aren't audited, for <see cref="Reason"/>.</summary>
+[AttributeUsage(AttributeTargets.Field)]
+public sealed class NotAuditedAttribute(string reason) : Attribute
+{
+    public string Reason { get; } = reason;
 }
 
 /// <summary>
@@ -70,6 +93,18 @@ public static class TenantScope
     /// Lifts <see cref="TenantScope"/> from the whole query (every entity in it, not just <paramref name="source"/>'s),
     /// for <paramref name="reason"/>, which is tagged onto the SQL. The only way production code may ignore it.
     /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="reason"/> is <see cref="AuditedAttribute">audited</see>, so it
+    /// must go through <c>AuditLog.IgnoreTenantScopeAsync</c>.</exception>
     public static IQueryable<T> IgnoreTenantScope<T>(this IQueryable<T> source, TenantScopeBypass reason) where T : class =>
+        IsAudited(reason)
+            ? throw new ArgumentException($"{reason} is audited: bypass it through AuditLog.IgnoreTenantScopeAsync.", nameof(reason))
+            : Bypass(source, reason);
+
+    /// <summary>Lifts the filter without the audit check, for <c>AuditLog</c>, which records the use itself.</summary>
+    internal static IQueryable<T> Bypass<T>(IQueryable<T> source, TenantScopeBypass reason) where T : class =>
         source.IgnoreQueryFilters([Filter]).TagWith($"TenantScope bypass: {reason}");
+
+    /// <summary>Whether each use of <paramref name="reason"/> is recorded in the audit log.</summary>
+    public static bool IsAudited(TenantScopeBypass reason) =>
+        typeof(TenantScopeBypass).GetField(reason.ToString())?.IsDefined(typeof(AuditedAttribute), inherit: false) ?? true;
 }

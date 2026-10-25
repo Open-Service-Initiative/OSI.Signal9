@@ -1,6 +1,8 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using OSI.Signal9.API.Audit;
+using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Server.Data;
 
 namespace OSI.Signal9.API.Tenants;
@@ -29,9 +31,10 @@ public enum TenantTreeError
 
 /// <summary>
 /// The only writer of the tenant tree. Each change runs in its own transaction, one at a time under a
-/// PostgreSQL advisory lock, and updates the parent pointer and the closure table together (ADR-0001).
+/// PostgreSQL advisory lock, and updates the parent pointer and the closure table together (ADR-0001), with the audit
+/// entry that records it.
 /// </summary>
-public sealed class TenantTree(Signal9DbContext db, IOptions<TenantTreeOptions> options)
+public sealed class TenantTree(Signal9DbContext db, CallerAudit audit, IOptions<TenantTreeOptions> options)
 {
     /// <summary>Key of the transaction-level advisory lock every tree change holds.</summary>
     public const long LockKey = 0x5167_6E39_5472_6565; // "Sig9Tree"
@@ -54,6 +57,7 @@ public sealed class TenantTree(Signal9DbContext db, IOptions<TenantTreeOptions> 
             db.TenantClosures.Add(new TenantClosure { AncestorId = tenant.Id, DescendantId = tenant.Id, Depth = 0 });
             db.TenantClosures.AddRange(parentAncestors.Select(a =>
                 new TenantClosure { AncestorId = a.AncestorId, DescendantId = tenant.Id, Depth = a.Depth + 1 }));
+            Audit(AuditActions.TenantCreated, at: tenant.Id, tenant.Id);
             return TenantTreeError.None;
         }, cancellationToken);
 
@@ -84,6 +88,7 @@ public sealed class TenantTree(Signal9DbContext db, IOptions<TenantTreeOptions> 
                 from a in parentAncestors
                 from d in subtree
                 select new TenantClosure { AncestorId = a.AncestorId, DescendantId = d.DescendantId, Depth = a.Depth + d.Depth + 1 });
+            Audit(AuditActions.TenantMoved, at: tenantId, tenantId, $"From parent {tenant.ParentTenantId?.ToString() ?? "none"} to {newParentId}.");
             tenant.ParentTenantId = newParentId;
             return TenantTreeError.None;
         }, cancellationToken);
@@ -101,8 +106,13 @@ public sealed class TenantTree(Signal9DbContext db, IOptions<TenantTreeOptions> 
                 return TenantTreeError.HasChildTenants;
             db.Entry(tenant).Property(t => t.Version).OriginalValue = version;
             db.Tenants.Remove(tenant);
+            // At the parent, whose Administrators can still read it; a root's deletion is deployment-level.
+            Audit(AuditActions.TenantDeleted, at: tenant.ParentTenantId, tenant.Id);
             return TenantTreeError.None;
         }, cancellationToken);
+
+    private void Audit(string action, Guid? at, Guid tenantId, string? detail = null) =>
+        audit.Record(new AuditEntry { Action = action, TenantId = at, TargetType = "tenant", TargetId = tenantId, Detail = detail });
 
     // Runs inside the execution strategy, because Aspire's retrying strategy refuses a user-started transaction
     // outside it. A retry starts from a clean change tracker, so it doesn't carry entities from the failed attempt.

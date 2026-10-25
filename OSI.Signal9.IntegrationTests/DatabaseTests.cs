@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using OSI.Signal9.Server.Data;
 
 namespace OSI.Signal9.IntegrationTests;
@@ -34,5 +35,27 @@ public sealed class DatabaseTests
             .GetAppliedMigrationsAsync(TestContext.CancellationToken);
 
         Assert.IsEmpty(applied);
+    }
+
+    /// <summary>
+    /// The audit log is append-only in the database itself (#115), so not even a bug or a direct connection can rewrite
+    /// the trail. No API offers to change an entry, so this is checked at the database.
+    /// </summary>
+    [TestMethod]
+    [DataRow("UPDATE \"AuditEntries\" SET \"Detail\" = 'rewritten'")]
+    [DataRow("DELETE FROM \"AuditEntries\"")]
+    [DataRow("TRUNCATE \"AuditEntries\"")]
+    public async Task The_database_refuses_to_change_or_remove_audit_entries(string sql)
+    {
+        using var factory = new Signal9ApiFactory();
+        using var client = factory.CreateClient();
+        await factory.CreateTenantAsync(client, "Contoso");
+        await using var connection = new NpgsqlConnection(factory.ConnectionString);
+        await connection.OpenAsync(TestContext.CancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        var refused = await Assert.ThrowsExactlyAsync<PostgresException>(() => command.ExecuteNonQueryAsync(TestContext.CancellationToken));
+
+        Assert.AreEqual(PostgresErrorCodes.InsufficientPrivilege, refused.SqlState);
     }
 }

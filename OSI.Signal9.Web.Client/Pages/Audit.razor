@@ -1,0 +1,82 @@
+@page "/audit"
+@attribute [Authorize]
+@inject Signal9ApiClient Api
+
+<PageTitle>Audit log - Signal9</PageTitle>
+
+<div class="page-header">
+    <FluentText As="TextTag.H1" Size="TextSize.Size800">Audit log</FluentText>
+</div>
+<p>Everything security-relevant that happened in the tenants you oversee, newest first. Names are shown as they are now; an entry about an erased device shows IDs only.</p>
+
+<ProblemBar Error="error" />
+
+<FluentDataGrid Items="@entries.AsQueryable()" TGridItem="AuditEntryDto" Loading="loading" ItemKey="@(e => e.Id)">
+    <TemplateColumn Title="When">@context.OccurredAt.ToLocalTime().ToString("g")</TemplateColumn>
+    <PropertyColumn Title="Action" Property="@(e => e.Action)" />
+    <TemplateColumn Title="Outcome">
+        <FluentBadge Appearance="BadgeAppearance.Tint" Color="@OutcomeColor(context.Outcome)">@context.Outcome</FluentBadge>
+    </TemplateColumn>
+    <TemplateColumn Title="Actor">
+        @Actor(context.Actor)
+        @if (context.Actor.Superadministrator)
+        {
+            <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Important">Superadministrator</FluentBadge>
+        }
+    </TemplateColumn>
+    <TemplateColumn Title="Tenant">@(context.TenantId is { } tenantId ? context.TenantName ?? tenantId.ToString() : "Deployment")</TemplateColumn>
+    <TemplateColumn Title="About">@About(context)</TemplateColumn>
+    <PropertyColumn Title="Detail" Property="@(e => e.Detail)" />
+    <PropertyColumn Title="Client address" Property="@(e => e.ClientIp)" />
+</FluentDataGrid>
+<FluentPaginator State="pagination" CurrentPageIndexChanged="LoadAsync" />
+
+@code {
+    private const int PageSize = 25;
+
+    private readonly PaginationState pagination = new() { ItemsPerPage = PageSize };
+    private List<AuditEntryDto> entries = [];
+    private bool loading = true;
+    private ApiException? error;
+
+    protected override Task OnInitializedAsync() => LoadAsync(0);
+
+    private async Task LoadAsync(int pageIndex)
+    {
+        loading = true;
+        try
+        {
+            var page = await Api.ListAuditEntriesAsync(pageIndex + 1, PageSize);
+            entries = [.. page.Items];
+            await pagination.SetTotalItemCountAsync(page.TotalCount);
+            error = null;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private static BadgeColor OutcomeColor(AuditOutcome outcome) => outcome switch
+    {
+        AuditOutcome.Succeeded => BadgeColor.Success,
+        AuditOutcome.Denied => BadgeColor.Warning,
+        _ => BadgeColor.Danger,
+    };
+
+    private static string Actor(AuditActorDto actor) =>
+        actor.DisplayName ?? actor.Subject ?? actor.ClientId ?? actor.Kind.ToString();
+
+    // The names the API resolved, or the IDs when it returned none.
+    private static string About(AuditEntryDto entry) => string.Join(", ", new[]
+    {
+        entry.DeviceId is { } device ? $"Device {entry.DeviceName ?? device.ToString()}" : null,
+        entry.UserId is { } user ? $"User {entry.UserDisplayName ?? user.ToString()}" : null,
+        entry.RoleId is { } role ? $"Role {entry.RoleName ?? role.ToString()}" : null,
+        entry.DeviceId is null && entry.UserId is null && entry.TargetId is { } target ? $"{entry.TargetType} {target}" : null,
+    }.Where(part => part is not null));
+}

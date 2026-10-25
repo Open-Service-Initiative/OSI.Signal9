@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using OSI.Signal9.API.Audit;
 using OSI.Signal9.API.Authorization;
 using OSI.Signal9.API.Infrastructure;
 using OSI.Signal9.Contracts;
+using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Roles;
 using OSI.Signal9.Server.Data;
 using OSI.Signal9.Server.Identity;
@@ -14,7 +16,7 @@ namespace OSI.Signal9.API.Roles;
 /// </summary>
 [ApiController]
 [Route("api/v1/tenants/{tenantId:guid}/role-assignments")]
-public sealed class RoleAssignmentsController(Signal9DbContext db, TimeProvider time) : ControllerBase
+public sealed class RoleAssignmentsController(Signal9DbContext db, CallerAudit audit, TimeProvider time) : ControllerBase
 {
     /// <summary>Lists the role assignments made at the tenant.</summary>
     [RequireScope(Scopes.RoleAssignments.Read)]
@@ -80,6 +82,15 @@ public sealed class RoleAssignmentsController(Signal9DbContext db, TimeProvider 
             CreatedAt = time.GetUtcNow().UtcDateTime,
         };
         db.RoleAssignments.Add(assignment);
+        audit.Record(new AuditEntry
+        {
+            Action = AuditActions.RoleAssignmentCreated,
+            TenantId = tenantId,
+            TargetType = "role-assignment",
+            TargetId = assignment.Id,
+            UserId = assignment.UserId,
+            RoleId = assignment.RoleId,
+        });
         if (!await db.TrySaveUniqueAsync(cancellationToken))
             return Problem(statusCode: StatusCodes.Status409Conflict, title: "Role assignment already exists",
                 detail: "The user already has this role at this tenant.");

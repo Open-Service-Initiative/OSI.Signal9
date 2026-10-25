@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using OSI.Signal9.Contracts;
+using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Devices;
 using OSI.Signal9.Contracts.Serialization;
@@ -61,6 +62,12 @@ public sealed class Signal9ApiClient(HttpClient http, BffAuthenticationStateProv
     public Task<CommandDto> QueueCommandAsync(Guid deviceId, CreateCommandRequest request, CancellationToken cancellationToken = default) =>
         SendAsync<CommandDto>(HttpMethod.Post, $"api/v1/devices/{deviceId}/commands",
             JsonContent.Create(request, options: Signal9Json.Options), cancellationToken);
+
+    // Audit
+
+    /// <summary>The audit entries the signed-in person can read, newest first.</summary>
+    public Task<PagedResult<AuditEntryDto>> ListAuditEntriesAsync(int page, int pageSize, CancellationToken cancellationToken = default) =>
+        SendAsync<PagedResult<AuditEntryDto>>(HttpMethod.Get, $"api/v1/audit-entries?page={page}&pageSize={pageSize}", null, cancellationToken);
 
     private static JsonContent Patch<T>(T request) =>
         JsonContent.Create(request, new MediaTypeHeaderValue(MergePatch), Signal9Json.Options);

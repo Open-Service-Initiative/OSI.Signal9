@@ -1,3 +1,4 @@
+using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Tenants;
 
@@ -172,4 +173,42 @@ public sealed class RoleAssignment : ITenantOwned
 
     public User? User { get; set; }
     public Role? Role { get; set; }
+}
+
+/// <summary>
+/// One entry of the append-only audit log (#115). Stored at <see cref="TenantId"/>, the tenant where the event happened,
+/// or at no tenant for a deployment-level event. It isn't owned by its tenant, so it outlives it, and it refers to
+/// devices, users and roles by ID only: names are resolved when it's read, so erasing a device leaves just its ID.
+/// The database refuses to update, delete or truncate entries.
+/// </summary>
+public sealed class AuditEntry
+{
+    public Guid Id { get; set; }
+
+    /// <summary>Assigned by the database as entries are written: the log's order, even within one clock tick.</summary>
+    public long Sequence { get; set; }
+    public DateTime OccurredAt { get; set; }
+
+    /// <summary>The tenant where the event happened; none for a deployment-level event.</summary>
+    public Guid? TenantId { get; set; }
+    public required string Action { get; set; }
+    public AuditOutcome Outcome { get; set; }
+
+    public AuditActorKind ActorKind { get; set; }
+
+    /// <summary>The access token's subject: a person's <c>{tid}:{oid}</c>, or an application's client ID.</summary>
+    public string? ActorSubject { get; set; }
+    public string? ActorClientId { get; set; }
+    public bool ActorSuperadministrator { get; set; }
+
+    /// <summary>What the event was about, by kind (<c>tenant</c>, <c>command</c>, …) and ID.</summary>
+    public string? TargetType { get; set; }
+    public Guid? TargetId { get; set; }
+    public Guid? DeviceId { get; set; }
+    public Guid? UserId { get; set; }
+    public Guid? RoleId { get; set; }
+
+    /// <summary>A short, code-chosen detail (a status, a reason, a route). Never names, serials or output.</summary>
+    public string? Detail { get; set; }
+    public string? ClientIp { get; set; }
 }

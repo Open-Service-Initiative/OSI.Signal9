@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.OpenApi;
 using OpenIddict.Validation.AspNetCore;
+using OSI.Signal9.API.Audit;
 using OSI.Signal9.API.Authorization;
 using OSI.Signal9.API.Devices;
 using OSI.Signal9.API.Hubs;
@@ -31,6 +32,8 @@ builder.Services.AddSingleton<DevicePresence>();
 builder.Services.AddOptions<TenantTreeOptions>().BindConfiguration(TenantTreeOptions.SectionName)
     .ValidateDataAnnotations().ValidateOnStart();
 builder.Services.AddScoped<TenantTree>();
+builder.Services.AddSignal9Audit();
+builder.Services.AddScoped<CallerAudit>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(options => Signal9Json.Configure(options.JsonSerializerOptions));
@@ -94,6 +97,8 @@ app.UseSignal9ForwardedHeaders();
 app.UseHostHardening();
 
 app.UseRateLimitingAndAuthentication();
+// Around authorization, so it sees refusals as well as what endpoints did.
+app.UseRequestAudit();
 app.UseAuthorization();
 app.UseCallerAccess();
 

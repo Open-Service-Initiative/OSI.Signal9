@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using OSI.Signal9.API.Audit;
 using OSI.Signal9.API.Authorization;
 using OSI.Signal9.Server.Identity;
 using Microsoft.AspNetCore.SignalR;
@@ -8,6 +9,7 @@ using OSI.Signal9.Server.Data;
 using OSI.Signal9.API.Hubs;
 using OSI.Signal9.API.Infrastructure;
 using OSI.Signal9.Contracts;
+using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Hubs;
 
@@ -27,6 +29,7 @@ public sealed record CommandQuery : PageQuery
 public sealed class CommandsController(
     Signal9DbContext db,
     TimeProvider time,
+    CallerAudit audit,
     IHubContext<AgentHub, IAgentHubClient> agents,
     IHubContext<DashboardHub, IDashboardHubClient> dashboard) : ControllerBase
 {
@@ -103,6 +106,8 @@ public sealed class CommandsController(
             CreatedAt = time.GetUtcNow().UtcDateTime,
         };
         db.Commands.Add(command);
+        // The command's type only: its parameters may name things on the device.
+        Audit(AuditActions.CommandCreated, AuditOutcome.Succeeded, device, command, command.Type.ToString());
         await db.SaveChangesAsync(cancellationToken);
 
         var dto = command.ToDto();
@@ -124,8 +129,11 @@ public sealed class CommandsController(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public Task<ActionResult<CommandDto>> PutResult(
         Guid deviceId, Guid commandId, CommandResultRequest request, CancellationToken cancellationToken) =>
-        CompleteAsync(deviceId, commandId, TenantScopeBypass.AgentSelfService, cancellationToken, command =>
+        CompleteAsync(deviceId, commandId, TenantScopeBypass.AgentSelfService, cancellationToken, (command, device) =>
         {
+            // The resulting status only, never the output or error, which can hold anything from the device.
+            Audit(AuditActions.CommandResult, request.Succeeded ? AuditOutcome.Succeeded : AuditOutcome.Failed, device, command,
+                request.Succeeded ? nameof(CommandStatus.Completed) : nameof(CommandStatus.Failed));
             command.Status = request.Succeeded ? CommandStatus.Completed : CommandStatus.Failed;
             command.Output = request.Output;
             command.Error = request.Error;
@@ -139,24 +147,34 @@ public sealed class CommandsController(
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public Task<ActionResult<CommandDto>> Cancel(Guid deviceId, Guid commandId, CancellationToken cancellationToken) =>
-        CompleteAsync(deviceId, commandId, bypass: null, cancellationToken, command => command.Status = CommandStatus.Cancelled);
+        CompleteAsync(deviceId, commandId, bypass: null, cancellationToken, (command, device) =>
+        {
+            Audit(AuditActions.CommandCancelled, AuditOutcome.Succeeded, device, command, detail: null);
+            command.Status = CommandStatus.Cancelled;
+        });
 
     private async Task<ActionResult<CommandDto>> CompleteAsync(
-        Guid deviceId, Guid commandId, TenantScopeBypass? bypass, CancellationToken cancellationToken, Action<Command> complete)
+        Guid deviceId, Guid commandId, TenantScopeBypass? bypass, CancellationToken cancellationToken,
+        Action<Command, Device> complete)
     {
         IQueryable<Command> commands = db.Commands;
+        IQueryable<Device> devices = db.Devices.AsNoTracking();
         if (bypass is { } reason)
+        {
             commands = commands.IgnoreTenantScope(reason);
+            devices = devices.IgnoreTenantScope(reason);
+        }
         var command = await commands.SingleOrDefaultAsync(c => c.DeviceId == deviceId && c.Id == commandId, cancellationToken);
         if (command is null)
             return NotFound();
+        var device = await devices.SingleAsync(d => d.Id == deviceId, cancellationToken);
         if (this.Preconditions(command.ETag()) is { } refused)
             return refused;
         if (command.Status != CommandStatus.Pending)
             return Problem(statusCode: StatusCodes.Status409Conflict, title: "Command already finished",
                 detail: $"The command is {command.Status}.");
 
-        complete(command);
+        complete(command, device);
         command.CompletedAt = time.GetUtcNow().UtcDateTime;
         await db.SaveChangesAsync(cancellationToken);
 
@@ -165,4 +183,17 @@ public sealed class CommandsController(
         this.SetETag(command.ETag());
         return dto;
     }
+
+    /// <summary>Records <paramref name="action"/> on <paramref name="command"/> at the device's tenant, saved with it.</summary>
+    private void Audit(string action, AuditOutcome outcome, Device device, Command command, string? detail) =>
+        audit.Record(new AuditEntry
+        {
+            Action = action,
+            Outcome = outcome,
+            TenantId = device.TenantId,
+            TargetType = "command",
+            TargetId = command.Id,
+            DeviceId = device.Id,
+            Detail = detail,
+        });
 }

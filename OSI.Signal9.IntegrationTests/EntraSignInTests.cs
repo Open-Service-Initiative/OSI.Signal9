@@ -263,8 +263,8 @@ public sealed class EntraSignInTests : IDisposable
     }
 
     /// <summary>
-    /// Rows in every table but the authorization server's own (applications, authorizations, tokens) and the stored
-    /// keys: signing in must leave the rest of the system untouched.
+    /// Rows in every table but the authorization server's own (applications, authorizations, tokens), the stored keys
+    /// and the audit log, which records the sign-in (#115): signing in must leave the rest of the system untouched.
     /// </summary>
     private async Task<string[]> CountRowsAsync()
     {
@@ -274,7 +274,7 @@ public sealed class EntraSignInTests : IDisposable
         await using (var command = new NpgsqlCommand("""
             SELECT table_name FROM information_schema.tables
             WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-              AND table_name NOT LIKE 'OpenIddict%' AND table_name <> '__EFMigrationsHistory'
+              AND table_name NOT LIKE 'OpenIddict%' AND table_name NOT IN ('__EFMigrationsHistory', 'AuditEntries')
             """, connection))
         await using (var reader = await command.ExecuteReaderAsync(Ct))
         {

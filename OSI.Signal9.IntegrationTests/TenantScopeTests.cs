@@ -187,6 +187,31 @@ public sealed class TenantScopeTests : IDisposable
     }
 
     [TestMethod]
+    public void Every_bypass_declares_whether_its_uses_are_audited()
+    {
+        var undeclared = Enum.GetNames<TenantScopeBypass>()
+            .Where(name =>
+            {
+                var field = typeof(TenantScopeBypass).GetField(name)!;
+                var audited = field.IsDefined(typeof(AuditedAttribute), inherit: false);
+                var notAudited = field.GetCustomAttribute<NotAuditedAttribute>();
+                return audited == (notAudited is not null) || (notAudited is not null && string.IsNullOrWhiteSpace(notAudited.Reason));
+            })
+            .ToList();
+
+        Assert.IsEmpty(undeclared, $"Mark each bypass [Audited] or [NotAudited(reason)]: {string.Join(", ", undeclared)}");
+    }
+
+    [TestMethod]
+    public void A_bypass_that_declares_nothing_is_treated_as_audited()
+    {
+        using var db = CreateContext(NoAssignedTenants.Instance);
+
+        Assert.IsTrue(TenantScope.IsAudited((TenantScopeBypass)999));
+        Assert.ThrowsExactly<ArgumentException>(() => db.Tenants.IgnoreTenantScope((TenantScopeBypass)999));
+    }
+
+    [TestMethod]
     public void The_bypass_rule_catches_other_calls()
     {
         var violations = IgnoreQueryFiltersCallers(typeof(BypassesDirectly)).ToList();
