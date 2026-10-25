@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using OSI.Signal9.Contracts;
+using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.ApiApplications;
 using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Commands;
@@ -67,6 +68,18 @@ public sealed class Signal9ApiClient(HttpClient http, BffAuthenticationStateProv
     public Task<CommandDto> QueueCommandAsync(Guid deviceId, CreateCommandRequest request, CancellationToken cancellationToken = default) =>
         SendAsync<CommandDto>(HttpMethod.Post, $"api/v1/devices/{deviceId}/commands",
             JsonContent.Create(request, options: Signal9Json.Options), cancellationToken);
+
+    // Agents
+
+    /// <summary>The agents of a tenant and its descendants in <paramref name="status"/>, newest enrollment first.</summary>
+    public Task<PagedResult<AgentDto>> ListAgentsAsync(Guid tenantId, AgentStatus status, int page, int pageSize,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<PagedResult<AgentDto>>(HttpMethod.Get,
+            $"api/v1/tenants/{tenantId}/agents?status={status}&page={page}&pageSize={pageSize}", null, cancellationToken);
+
+    /// <summary>Approves the agent at its canonical <paramref name="url"/>, which then receives work.</summary>
+    public Task<AgentDto> ApproveAgentAsync(string url, CancellationToken cancellationToken = default) =>
+        SendAsync<AgentDto>(HttpMethod.Post, $"{url.TrimStart('/')}:approve", null, cancellationToken);
 
     // Users and role assignments
 

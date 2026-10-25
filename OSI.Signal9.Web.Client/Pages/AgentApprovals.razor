@@ -1,0 +1,126 @@
+@page "/agent-approvals"
+@attribute [Authorize]
+@inject Signal9ApiClient Api
+@inject IDialogService Dialogs
+
+<PageTitle>Agent approvals - Signal9</PageTitle>
+
+<div class="page-header">
+    <FluentText As="TextTag.H1" Size="TextSize.Size800">Agent approvals</FluentText>
+</div>
+<p>Where a tenant holds new agents for approval, they send heartbeats but receive no commands until approved here.</p>
+
+<div class="filters">
+    <FluentSelect Id="approval-tenant" TOption="string" TValue="string" Label="Tenant" Value="@tenantId?.ToString()"
+                  ValueChanged="SelectTenantAsync">
+        @foreach (var tenant in tenants)
+        {
+            <FluentOption TValue="string" Value="@tenant.Id.ToString()">@tenant.Name</FluentOption>
+        }
+    </FluentSelect>
+</div>
+
+<ProblemBar Error="error" />
+@if (notice is not null)
+{
+    <FluentMessageBar Class="notice-bar" Intent="MessageBarIntent.Success">@notice</FluentMessageBar>
+}
+
+<FluentDataGrid Items="@agents.AsQueryable()" TGridItem="AgentDto" Loading="loading" ItemKey="@(a => a.Id)">
+    <PropertyColumn Title="Device" Property="@(a => a.MachineName)" />
+    <TemplateColumn Title="Tenant"><span id="@($"tenant-{context.Id}")">@TenantName(context.TenantId)</span></TemplateColumn>
+    <PropertyColumn Title="Agent version" Property="@(a => a.AgentVersion)" />
+    <TemplateColumn Title="Enrolled">@context.EnrolledAt.ToLocalTime().ToString("g")</TemplateColumn>
+    <TemplateColumn Title="Last seen">@context.LastSeenAt.ToLocalTime().ToString("g")</TemplateColumn>
+    <TemplateColumn Title="Actions" Align="DataGridCellAlignment.End">
+        <FluentButton Id="@($"approve-{context.Id}")" Appearance="ButtonAppearance.Subtle"
+                      IconStart="@(new Icons.Regular.Size20.Checkmark())" OnClick="@(() => ApproveAsync(context))">Approve</FluentButton>
+    </TemplateColumn>
+</FluentDataGrid>
+<FluentPaginator State="pagination" CurrentPageIndexChanged="LoadAsync" />
+
+@code {
+    private const int PageSize = 25;
+
+    private readonly PaginationState pagination = new() { ItemsPerPage = PageSize };
+    private IReadOnlyList<TenantDto> tenants = [];
+    private Guid? tenantId;
+    private List<AgentDto> agents = [];
+    private bool loading = true;
+    private ApiException? error;
+    private string? notice;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // TODO: a search picker once there can be more tenants than one page (the API's maximum is 100).
+            tenants = (await Api.ListTenantsAsync(1, 100)).Items;
+            tenantId = tenants.FirstOrDefault()?.Id;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+        await LoadAsync(0);
+    }
+
+    private async Task SelectTenantAsync(string? value)
+    {
+        tenantId = Guid.TryParse(value, out var id) ? id : null;
+        notice = null;
+        await pagination.SetCurrentPageIndexAsync(0);
+        await LoadAsync(0);
+    }
+
+    private async Task LoadAsync(int pageIndex)
+    {
+        if (tenantId is not { } id)
+        {
+            loading = false;
+            agents = [];
+            return;
+        }
+
+        loading = true;
+        try
+        {
+            var page = await Api.ListAgentsAsync(id, AgentStatus.AwaitingApproval, pageIndex + 1, PageSize);
+            agents = [.. page.Items];
+            await pagination.SetTotalItemCountAsync(page.TotalCount);
+            error = null;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task ApproveAsync(AgentDto agent)
+    {
+        var confirm = await Dialogs.ShowConfirmationAsync(
+            $"Approve the agent on {agent.MachineName}? It starts receiving commands at once.",
+            "Approve agent", "Approve", "Cancel");
+        if (confirm.Cancelled)
+            return;
+
+        notice = null;
+        try
+        {
+            await Api.ApproveAgentAsync(agent.Url);
+            agents.RemoveAll(a => a.Id == agent.Id);
+            notice = $"Approved {agent.MachineName}.";
+            error = null;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+    }
+
+    private string TenantName(Guid id) => tenants.FirstOrDefault(t => t.Id == id)?.Name ?? id.ToString();
+}

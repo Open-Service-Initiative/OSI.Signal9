@@ -89,6 +89,12 @@ public static class AuditActions
     public const string TenantMoved = "tenant.moved";
     public const string TenantDeleted = "tenant.deleted";
 
+    /// <summary>
+    /// A person turned holding new agents for approval on or off at a tenant (story 96). <see cref="AuditEntryDto.Detail"/>
+    /// is <c>on</c> or <c>off</c>.
+    /// </summary>
+    public const string TenantApprovalHoldChanged = "tenant.approval-hold-changed";
+
     public const string RoleAssignmentCreated = "role-assignment.created";
     public const string RoleAssignmentDeleted = "role-assignment.deleted";
 
@@ -129,6 +135,9 @@ public static class AuditActions
 
     /// <summary>A person revoked an agent.</summary>
     public const string AgentRevoked = "agent.revoked";
+
+    /// <summary>A person approved an agent that was awaiting approval, so it may now receive work (story 97).</summary>
+    public const string AgentApproved = "agent.approved";
 
     /// <summary>
     /// An agent replaced its certificate with a new key's (story 102). <see cref="AuditEntryDto.Detail"/> names both by

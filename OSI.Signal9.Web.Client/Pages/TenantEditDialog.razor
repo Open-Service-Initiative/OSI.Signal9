@@ -13,6 +13,12 @@
             }
         </FluentSelect>
         <FluentTextInput Id="tenant-max-devices" Label="Max devices" TextInputType="TextInputType.Number" @bind-Value="Form.MaxDevices" />
+        @if (Parents is null)
+        {
+            @* Set when editing; a new tenant inherits its parent's hold. A descendant can't turn an inherited hold off. *@
+            <FluentSwitch Id="tenant-hold-agents" Label="@(Form.ApprovalHoldInherited ? "Hold new agents for approval (inherited from a parent tenant)" : "Hold new agents for approval")"
+                          Disabled="@Form.ApprovalHoldInherited" @bind-Value="Form.HoldsNewAgentsForApproval" />
+        }
         @if (Parents is not null)
         {
             @* A tenant's parent changes later only by a tenant transfer, so it's chosen here or not at all. *@

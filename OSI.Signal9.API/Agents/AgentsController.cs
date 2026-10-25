@@ -19,6 +19,7 @@ using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Hubs;
 using OSI.Signal9.Contracts.Tenants;
+using OSI.Signal9.API.Tenants;
 
 namespace OSI.Signal9.API.Agents;
 
@@ -37,6 +38,7 @@ public sealed class AgentsController(
     IOpenIddictApplicationManager applications,
     IOpenIddictTokenManager tokens,
     AgentHubConnections hubConnections,
+    IHubContext<AgentHub, IAgentHubClient> agentHub,
     IHubContext<DashboardHub, IDashboardHubClient> dashboard) : ControllerBase
 {
     [RequireScope(Scopes.Devices.Read)]
@@ -93,6 +95,52 @@ public sealed class AgentsController(
         // go next, so nothing it already holds keeps working.
         await CutOffAsync(agent.Id, cancellationToken);
 
+        await db.Entry(device).Reference(d => d.ActiveAgent).LoadAsync(cancellationToken);
+        await dashboard.Clients.All.DeviceChanged(device.ToDto(presence));
+        this.SetETag(agent.ETag(device));
+        return agent.ToDto(device);
+    }
+
+    /// <summary>
+    /// Approves an agent that is awaiting approval (story 97): from then on it receives work, and its doorbell rings if
+    /// work is already waiting. Its device no longer requires approval. Only an agent awaiting approval can be approved
+    /// (409).
+    /// </summary>
+    [RequireScope(Scopes.Devices.Write)]
+    [HttpPost("{agentId:guid}:approve")]
+    [OptimisticConcurrency]
+    [ProducesResponseType<AgentDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status412PreconditionFailed)]
+    public async Task<ActionResult<AgentDto>> Approve(Guid agentId, CancellationToken cancellationToken)
+    {
+        var agent = await db.Agents.Include(a => a.Device).SingleOrDefaultAsync(a => a.Id == agentId, cancellationToken);
+        if (agent is null)
+            return NotFound();
+        var device = agent.Device!;
+        if (this.Preconditions(agent.ETag(device)) is { } refused)
+            return refused;
+        if (agent.Status() != AgentStatus.AwaitingApproval)
+            return Problem(statusCode: StatusCodes.Status409Conflict, title: "Transition not allowed",
+                detail: $"The agent is {agent.Status()}, not awaiting approval.");
+
+        agent.AwaitingApproval = false;
+        if (device.ActiveAgentId == agent.Id)
+            device.RequiresAgentApproval = false;
+        audit.Record(new AuditEntry
+        {
+            Action = AuditActions.AgentApproved,
+            TenantId = device.TenantId,
+            TargetType = "agent",
+            TargetId = agent.Id,
+            DeviceId = device.Id,
+        });
+        await db.SaveChangesAsync(cancellationToken);
+
+        if (device.ActiveAgentId == agent.Id && await db.Commands.AnyAsync(
+                c => c.DeviceId == device.Id && c.Status == CommandStatus.Pending, cancellationToken))
+            await agentHub.Clients.Group(AgentHub.GroupFor(agent.Id)).WorkAvailable();
         await db.Entry(device).Reference(d => d.ActiveAgent).LoadAsync(cancellationToken);
         await dashboard.Clients.All.DeviceChanged(device.ToDto(presence));
         this.SetETag(agent.ETag(device));
@@ -204,19 +252,27 @@ public sealed class AgentsController(
     /// <summary>
     /// The tenant's "recently enrolled" feed (story 95): its agents, newest enrollment first, and by default those of its
     /// descendants too (<c>includeDescendants</c>), as far as the caller can see. Each carries its enrollment token, so
-    /// a leaked token's enrollments are easy to spot.
+    /// a leaked token's enrollments are easy to spot. <c>status</c> narrows it to agents in that status, such as those
+    /// awaiting approval.
     /// </summary>
     [RequireScope(Scopes.Devices.Read)]
     [HttpGet("/api/v1/tenants/{tenantId:guid}/agents")]
     [ProducesResponseType<PagedResult<AgentDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<PagedResult<AgentDto>>> ListTenantAgents(Guid tenantId, [FromQuery] PageQuery paging,
-        CancellationToken cancellationToken, [FromQuery] bool includeDescendants = true)
+        CancellationToken cancellationToken, [FromQuery] bool includeDescendants = true, [FromQuery] AgentStatus? status = null)
     {
         if (!await db.Tenants.AnyAsync(t => t.Id == tenantId, cancellationToken))
             return NotFound();
 
-        var agents = db.Agents.AsNoTracking().Include(a => a.Device);
+        var agents = db.Agents.AsNoTracking().Include(a => a.Device).AsQueryable();
+        agents = status switch
+        {
+            AgentStatus.Revoked => agents.Where(a => a.RevokedAt != null),
+            AgentStatus.AwaitingApproval => agents.Where(a => a.RevokedAt == null && a.AwaitingApproval),
+            AgentStatus.Active => agents.Where(a => a.RevokedAt == null && !a.AwaitingApproval),
+            _ => agents,
+        };
         var query = includeDescendants
             ? agents.Where(a => db.TenantClosures.Any(c => c.AncestorId == tenantId && c.DescendantId == a.Device!.TenantId))
             : agents.Where(a => a.Device!.TenantId == tenantId);
@@ -229,6 +285,7 @@ public sealed class AgentsController(
     /// (stories 95, 98). The certificate becomes the agent's credential: it then gets <c>agent</c> tokens with client
     /// credentials at the mTLS token endpoint, its ID as client ID. The enrollment counts as one use of the token. An
     /// enrollment that matches no existing device creates one in the token's tenant; devices are never matched by name.
+    /// The agent awaits approval if its tenant or an ancestor holds new agents, or its device requires approval.
     /// </summary>
     /// <response code="400">The certificate or machine facts aren't acceptable, or the enrollment token is unknown,
     /// revoked, expired or used up.</response>
@@ -338,6 +395,7 @@ public sealed class AgentsController(
             AgentVersion = request.AgentVersion,
             EnrolledAt = now,
             LastSeenAt = now,
+            AwaitingApproval = device.RequiresAgentApproval || await db.HoldsNewAgentsAsync(tenant.Id, cancellationToken),
         };
         db.Agents.Add(agent);
         device.ActiveAgent = agent;
@@ -373,7 +431,8 @@ public sealed class AgentsController(
     /// <summary>
     /// Lists the pending commands of the agent's device, oldest first. The agent calls it when its doorbell rings, every
     /// time it (re)connects and when a heartbeat says work is waiting, then reports each result at the command's URL.
-    /// Only the agent the access token names may call it (403 otherwise); a replaced agent gets 409.
+    /// Only the agent the access token names may call it (403 otherwise); a replaced agent gets 409. An agent awaiting
+    /// approval receives no work, so its list is empty.
     /// </summary>
     [RequireScope(Scopes.Agent)]
     [HttpGet("{agentId:guid}/pending-commands")]
@@ -388,15 +447,17 @@ public sealed class AgentsController(
         if (device is null)
             return (ActionResult)refusal!;
 
+        var mayReceiveWork = device.ActiveAgent!.Status() == AgentStatus.Active;
         return await db.Commands.AsNoTracking().IgnoreTenantScope(TenantScopeBypass.AgentSelfService)
-            .Where(c => c.DeviceId == device.Id && c.Status == CommandStatus.Pending)
+            .Where(c => mayReceiveWork && c.DeviceId == device.Id && c.Status == CommandStatus.Pending)
             .OrderBy(c => c.CreatedAt).ThenBy(c => c.Id)
             .ToPagedResultAsync(query, c => c.ToDto(), cancellationToken);
     }
 
     /// <summary>
     /// Records that the agent is alive and tells it whether work is waiting. Sent by the agent on a fixed interval.
-    /// Only the agent the access token names may send it (403 otherwise); a replaced agent gets 409.
+    /// Only the agent the access token names may send it (403 otherwise); a replaced agent gets 409. An agent awaiting
+    /// approval is accepted too, but never told work is waiting.
     /// </summary>
     [RequireScope(Scopes.Agent)]
     [HttpPut("{agentId:guid}/heartbeat")]
@@ -426,8 +487,9 @@ public sealed class AgentsController(
 
         if (!wasOnline)
             await dashboard.Clients.All.DeviceChanged(device.ToDto(presence));
-        var hasPendingWork = await db.Commands.IgnoreTenantScope(TenantScopeBypass.AgentSelfService).AnyAsync(
-            c => c.DeviceId == device.Id && c.Status == CommandStatus.Pending, cancellationToken);
+        var hasPendingWork = agent.Status() == AgentStatus.Active && await db.Commands
+            .IgnoreTenantScope(TenantScopeBypass.AgentSelfService)
+            .AnyAsync(c => c.DeviceId == device.Id && c.Status == CommandStatus.Pending, cancellationToken);
         return new HeartbeatResponse(hasPendingWork);
     }
 }

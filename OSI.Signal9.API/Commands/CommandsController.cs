@@ -66,7 +66,10 @@ public sealed class CommandsController(
         return command is null ? NotFound() : this.Conditional(command.ToDto(), command.ETag());
     }
 
-    /// <summary>Queues a command and rings the doorbell of the device's active agent, which then fetches it.</summary>
+    /// <summary>
+    /// Queues a command and rings the doorbell of the device's active agent, which then fetches it. An agent awaiting
+    /// approval hears nothing until it's approved.
+    /// </summary>
     [RequireScope(Scopes.Commands.Execute)]
     [EndpointDescription($"{nameof(CommandType.RunScript)} runs ad-hoc code, so it also requires {Scopes.Terminal.Execute}.")]
     [HttpPost]
@@ -89,7 +92,8 @@ public sealed class CommandsController(
             access.Require(Scopes.Terminal.Execute);
         }
 
-        var device = await db.Devices.AsNoTracking().SingleOrDefaultAsync(d => d.Id == deviceId, cancellationToken);
+        var device = await db.Devices.AsNoTracking().Include(d => d.ActiveAgent)
+            .SingleOrDefaultAsync(d => d.Id == deviceId, cancellationToken);
         if (device is null)
             return NotFound();
         if (this.Preconditions(current: null) is { } refused)
@@ -112,8 +116,8 @@ public sealed class CommandsController(
         await db.SaveChangesAsync(cancellationToken);
 
         var dto = command.ToDto();
-        if (device.ActiveAgentId is { } agentId)
-            await agents.Clients.Group(AgentHub.GroupFor(agentId)).WorkAvailable();
+        if (device.ActiveAgent is { } agent && agent.Status() == Contracts.Agents.AgentStatus.Active)
+            await agents.Clients.Group(AgentHub.GroupFor(agent.Id)).WorkAvailable();
         await dashboard.Clients.All.CommandChanged(dto);
         this.SetETag(command.ETag());
         return CreatedAtRoute(nameof(GetCommand), new { deviceId, commandId = command.Id }, dto);
@@ -121,7 +125,8 @@ public sealed class CommandsController(
 
     /// <summary>
     /// Records the outcome of a command. Sent once, when it finishes, by the agent the access token names, which must be
-    /// the active agent of the command's device; any other agent gets 404.
+    /// the active agent of the command's device; any other agent gets 404. An agent awaiting approval receives no work,
+    /// so it can't report any (409).
     /// </summary>
     [RequireScope(Scopes.Agent)]
     [HttpPut("{commandId:guid}/result")]
@@ -168,7 +173,7 @@ public sealed class CommandsController(
         Action<Command, Device> complete, Guid? onlyAgent = null)
     {
         IQueryable<Command> commands = db.Commands;
-        IQueryable<Device> devices = db.Devices.AsNoTracking();
+        IQueryable<Device> devices = db.Devices.AsNoTracking().Include(d => d.ActiveAgent);
         if (bypass is { } reason)
         {
             commands = commands.IgnoreTenantScope(reason);
@@ -180,6 +185,9 @@ public sealed class CommandsController(
         var device = await devices.SingleAsync(d => d.Id == deviceId, cancellationToken);
         if (onlyAgent is { } agentId && device.ActiveAgentId != agentId)
             return NotFound();
+        if (onlyAgent is not null && device.ActiveAgent!.Status() != Contracts.Agents.AgentStatus.Active)
+            return Problem(statusCode: StatusCodes.Status409Conflict, title: "Agent awaiting approval",
+                detail: "The agent receives no work until a person approves it.");
         if (this.Preconditions(command.ETag()) is { } refused)
             return refused;
         if (command.Status != CommandStatus.Pending)

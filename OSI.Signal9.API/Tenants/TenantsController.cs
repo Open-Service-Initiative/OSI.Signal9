@@ -1,19 +1,21 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using OSI.Signal9.API.Audit;
 using OSI.Signal9.API.Authorization;
 using OSI.Signal9.Server.Identity;
 using Microsoft.EntityFrameworkCore;
 using OSI.Signal9.Server.Data;
 using OSI.Signal9.API.Infrastructure;
 using OSI.Signal9.Contracts;
+using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Tenants;
 
 namespace OSI.Signal9.API.Tenants;
 
 [ApiController]
 [Route("api/v1/tenants")]
-public sealed class TenantsController(Signal9DbContext db, TenantTree tree, IAssignedTenants caller, TimeProvider time)
-    : ControllerBase
+public sealed class TenantsController(
+    Signal9DbContext db, TenantTree tree, IAssignedTenants caller, TimeProvider time, CallerAudit audit) : ControllerBase
 {
     /// <summary>Lists tenants, optionally filtered by parent or status.</summary>
     [RequireScope(Scopes.Tenants.Read)]
@@ -31,11 +33,14 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, IAss
         if (status is not null)
             query = query.Where(t => t.Status == status);
 
-        var result = await query
+        var page = await query
             .OrderBy(t => t.Name)
             .Select(t => new { Tenant = t, DeviceCount = t.Devices.Count })
-            .ToPagedResultAsync(paging, x => x.Tenant.ToDto(x.DeviceCount), cancellationToken);
-        return result;
+            .ToPagedResultAsync(paging, x => x, cancellationToken);
+        var inheriting = await db.InheritingHoldAsync([.. page.Items.Select(x => x.Tenant.Id)], cancellationToken);
+        return new PagedResult<TenantDto>(
+            [.. page.Items.Select(x => x.Tenant.ToDto(x.DeviceCount, inheriting.Contains(x.Tenant.Id)))],
+            page.Page, page.PageSize, page.TotalCount);
     }
 
     [RequireScope(Scopes.Tenants.Read)]
@@ -50,7 +55,10 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, IAss
             .Select(t => new { Tenant = t, DeviceCount = t.Devices.Count })
             .SingleOrDefaultAsync(cancellationToken);
 
-        return found is null ? NotFound() : this.Conditional(found.Tenant.ToDto(found.DeviceCount), found.Tenant.ETag(found.DeviceCount));
+        if (found is null)
+            return NotFound();
+        var inherited = await db.InheritsHoldAsync(tenantId, cancellationToken);
+        return this.Conditional(found.Tenant.ToDto(found.DeviceCount, inherited), found.Tenant.ETag(found.DeviceCount, inherited));
     }
 
     /// <summary>
@@ -101,8 +109,9 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, IAss
                     detail: "The parent tenant is already at the maximum depth of the tenant tree.");
         }
 
-        this.SetETag(tenant.ETag(deviceCount: 0));
-        return CreatedAtRoute(nameof(GetTenant), new { tenantId = tenant.Id }, tenant.ToDto(deviceCount: 0));
+        var holdInherited = await db.InheritsHoldAsync(tenant.Id, cancellationToken);
+        this.SetETag(tenant.ETag(deviceCount: 0, holdInherited));
+        return CreatedAtRoute(nameof(GetTenant), new { tenantId = tenant.Id }, tenant.ToDto(deviceCount: 0, holdInherited));
     }
 
     private ActionResult ParentNotFound(CreateTenantRequest request)
@@ -113,7 +122,8 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, IAss
 
     /// <summary>
     /// Updates a tenant's editable fields with a JSON merge patch (RFC 7396). Status is read-only: it changes through
-    /// the <c>:suspend</c>, <c>:activate</c> and <c>:cancel</c> actions.
+    /// the <c>:suspend</c>, <c>:activate</c> and <c>:cancel</c> actions. Turning off <c>holdsNewAgentsForApproval</c>
+    /// where an ancestor holds new agents is refused (409).
     /// </summary>
     [RequireScope(Scopes.Tenants.Write)]
     [HttpPatch("{tenantId:guid}")]
@@ -122,6 +132,7 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, IAss
     [ProducesResponseType<TenantDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status415UnsupportedMediaType)]
     public async Task<ActionResult<TenantDto>> Update(Guid tenantId, [FromBody] JsonElement patch, CancellationToken cancellationToken)
     {
@@ -129,9 +140,11 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, IAss
         if (tenant is null)
             return NotFound();
         var deviceCount = await db.Devices.CountAsync(d => d.TenantId == tenantId, cancellationToken);
-        if (this.Preconditions(tenant.ETag(deviceCount)) is { } refused)
+        var inherited = await db.InheritsHoldAsync(tenantId, cancellationToken);
+        if (this.Preconditions(tenant.ETag(deviceCount, inherited)) is { } refused)
             return refused;
 
+        var held = tenant.HoldsNewAgentsForApproval || inherited;
         UpdateTenantRequest request;
         try
         {
@@ -144,6 +157,7 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, IAss
                     ContactPhone = tenant.ContactPhone,
                     Plan = tenant.Plan,
                     MaxDevices = tenant.MaxDevices,
+                    HoldsNewAgentsForApproval = held,
                 },
                 patch);
         }
@@ -161,6 +175,22 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, IAss
         tenant.ContactPhone = request.ContactPhone;
         tenant.Plan = request.Plan;
         tenant.MaxDevices = request.MaxDevices;
+        // The hold changes only when the patch changes what applies here, so sending an inherited hold back is no change.
+        if (request.HoldsNewAgentsForApproval != held)
+        {
+            if (inherited)
+                return Problem(statusCode: StatusCodes.Status409Conflict, title: "Approval hold inherited",
+                    detail: "An ancestor tenant holds new agents for approval, so the hold can't be turned off here.");
+            tenant.HoldsNewAgentsForApproval = request.HoldsNewAgentsForApproval;
+            audit.Record(new AuditEntry
+            {
+                Action = AuditActions.TenantApprovalHoldChanged,
+                TenantId = tenant.Id,
+                TargetType = "tenant",
+                TargetId = tenant.Id,
+                Detail = request.HoldsNewAgentsForApproval ? "on" : "off",
+            });
+        }
         return await SaveAsync(tenant, cancellationToken);
     }
 
@@ -201,7 +231,7 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, IAss
         if (tenant is null)
             return NotFound();
         var deviceCount = await db.Devices.CountAsync(d => d.TenantId == tenantId, cancellationToken);
-        if (this.Preconditions(tenant.ETag(deviceCount)) is { } refused)
+        if (this.Preconditions(tenant.ETag(deviceCount, await db.InheritsHoldAsync(tenantId, cancellationToken))) is { } refused)
             return refused;
         if (!allowedFrom.Contains(tenant.Status))
             return Problem(statusCode: StatusCodes.Status409Conflict, title: "Transition not allowed",
@@ -217,8 +247,9 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, IAss
         await db.SaveChangesAsync(cancellationToken);
 
         var deviceCount = await db.Devices.CountAsync(d => d.TenantId == tenant.Id, cancellationToken);
-        this.SetETag(tenant.ETag(deviceCount));
-        return tenant.ToDto(deviceCount);
+        var inherited = await db.InheritsHoldAsync(tenant.Id, cancellationToken);
+        this.SetETag(tenant.ETag(deviceCount, inherited));
+        return tenant.ToDto(deviceCount, inherited);
     }
 
     /// <summary>Deletes a tenant. Tenants that still own devices or child tenants cannot be deleted.</summary>
@@ -237,7 +268,7 @@ public sealed class TenantsController(Signal9DbContext db, TenantTree tree, IAss
             .SingleOrDefaultAsync(cancellationToken);
         if (found is null)
             return NotFound();
-        if (this.Preconditions(found.Tenant.ETag(found.DeviceCount)) is { } refused)
+        if (this.Preconditions(found.Tenant.ETag(found.DeviceCount, await db.InheritsHoldAsync(tenantId, cancellationToken))) is { } refused)
             return refused;
 
         if (found.DeviceCount > 0)

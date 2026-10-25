@@ -37,11 +37,26 @@
 <FluentDataGrid Items="@devices.AsQueryable()" TGridItem="DeviceDto" Loading="loading" ItemKey="@(d => d.Id)">
     <PropertyColumn Title="Device" Property="@(d => d.MachineName)" />
     <TemplateColumn Title="Status">
-        <FluentBadge Appearance="BadgeAppearance.Tint" Color="@(context.Status == DeviceStatus.Online ? BadgeColor.Success : BadgeColor.Subtle)">@context.Status</FluentBadge>
-        @if (context.MaintenanceMode)
-        {
-            <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Warning">Maintenance</FluentBadge>
-        }
+        <span id="@($"status-{context.Id}")">
+            <FluentBadge Appearance="BadgeAppearance.Tint" Color="@(context.Status == DeviceStatus.Online ? BadgeColor.Success : BadgeColor.Subtle)">@context.Status</FluentBadge>
+            @if (context.MaintenanceMode)
+            {
+                <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Warning">Maintenance</FluentBadge>
+            }
+        </span>
+    </TemplateColumn>
+    <TemplateColumn Title="Agent">
+        @* Whether the agent may receive commands, apart from whether it's checking in. *@
+        <span id="@($"agent-status-{context.Id}")">
+            @if (context.AgentStatus is { } agentStatus)
+            {
+                <FluentBadge Appearance="BadgeAppearance.Tint" Color="@(agentStatus == AgentStatus.Active ? BadgeColor.Success : BadgeColor.Warning)">@AgentStatusText(agentStatus)</FluentBadge>
+            }
+            else
+            {
+                <span>No agent</span>
+            }
+        </span>
     </TemplateColumn>
     <PropertyColumn Title="Operating system" Property="@(d => d.OperatingSystem)" />
     <PropertyColumn Title="IP address" Property="@(d => d.IpAddress)" />
@@ -184,6 +199,12 @@
         if (devices.RemoveAll(d => d.Id == deviceId) > 0)
             StateHasChanged();
     });
+
+    private static string AgentStatusText(AgentStatus status) => status switch
+    {
+        AgentStatus.AwaitingApproval => "Awaiting approval",
+        _ => status.ToString(),
+    };
 
     private Task OnLiveStatusChanged() => InvokeAsync(StateHasChanged);
 

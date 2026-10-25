@@ -128,4 +128,46 @@ public sealed class TenantsPageTests : DashboardTestContext
         Assert.AreEqual("application/merge-patch+json", patch.ContentType);
         Assert.AreEqual("Contoso Ltd", JsonSerializer.Deserialize<UpdateTenantRequest>(patch.Body!, Signal9Json.Options)!.Name);
     }
+
+    [TestMethod]
+    public void Edit_turns_on_holding_new_agents_for_approval()
+    {
+        var id = Guid.NewGuid();
+        Http.SignedInAs("Ada", request => (request.Method.Method, request.RequestUri!.AbsolutePath) switch
+        {
+            ("GET", "/api/v1/tenants") => FakeHttp.Json(HttpStatusCode.OK, Page(Tenant("Contoso", TenantStatus.Active, id))),
+            ("PATCH", _) => FakeHttp.Json(HttpStatusCode.OK, Tenant("Contoso", TenantStatus.Active, id, holdsNewAgents: true)),
+            _ => null,
+        });
+        var app = RenderApp("/tenants");
+
+        app.WaitForElement($"#edit-{id}").Click();
+        app.WaitForElement("#tenant-hold-agents").Change(true);
+        app.Find("fluent-dialog fluent-button[appearance=primary]").Click();
+
+        app.WaitForAssertion(() => Assert.IsTrue(Http.Requests.Any(r => r.Method == HttpMethod.Patch)));
+        var patch = Http.Requests.Single(r => r.Method == HttpMethod.Patch);
+        Assert.IsTrue(JsonSerializer.Deserialize<UpdateTenantRequest>(patch.Body!, Signal9Json.Options)!.HoldsNewAgentsForApproval);
+        app.WaitForAssertion(() => Assert.Contains("Held", app.Find($"#hold-{id}").TextContent));
+    }
+
+    [TestMethod]
+    public void An_inherited_hold_cannot_be_turned_off_in_the_editor()
+    {
+        var id = Guid.NewGuid();
+        Http.SignedInAs("Ada", request => (request.Method.Method, request.RequestUri!.AbsolutePath) switch
+        {
+            ("GET", "/api/v1/tenants") => FakeHttp.Json(HttpStatusCode.OK,
+                Page(Tenant("Site", TenantStatus.Active, id, holdInherited: true))),
+            _ => null,
+        });
+        var app = RenderApp("/tenants");
+
+        app.WaitForAssertion(() => Assert.Contains("Held (inherited)", app.Find($"#hold-{id}").TextContent));
+        app.Find($"#edit-{id}").Click();
+
+        var hold = app.WaitForElement("#tenant-hold-agents");
+        Assert.IsTrue(hold.HasAttribute("disabled"));
+        Assert.IsTrue(hold.HasAttribute("checked"));
+    }
 }

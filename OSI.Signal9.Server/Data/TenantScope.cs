@@ -96,6 +96,13 @@ public enum TenantScopeBypass
     /// </summary>
     [NotAudited("Reads only the caller's own connections, and each revocation is audited.")]
     CallerConnections,
+
+    /// <summary>
+    /// Working out the settings a tenant inherits from its ancestors, including ancestors outside the caller's reach:
+    /// whether any of them holds new agents for approval (story 96). Only whether one does is read, never which.
+    /// </summary>
+    [NotAudited("Answers only yes or no about tenants the caller can already see.")]
+    InheritedTenantSettings,
 }
 
 /// <summary>Each use of this <see cref="TenantScopeBypass"/> is recorded in the audit log.</summary>

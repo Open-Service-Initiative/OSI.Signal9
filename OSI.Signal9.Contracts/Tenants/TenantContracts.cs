@@ -19,6 +19,13 @@ public enum SubscriptionPlan
 /// <summary>
 /// A node in the tenant tree, such as a consultancy, an MSP, a client or a site. Tenants nest to a configurable maximum depth.
 /// </summary>
+/// <param name="HoldsNewAgentsForApproval">
+/// Whether agents newly enrolling here wait for a person's approval before they receive work (story 96): set here or
+/// inherited from an ancestor. Off by default.
+/// </param>
+/// <param name="ApprovalHoldInherited">
+/// Whether an ancestor holds new agents for approval, so the hold can't be turned off here.
+/// </param>
 public sealed record TenantDto(
     Guid Id,
     Guid? ParentTenantId,
@@ -30,6 +37,8 @@ public sealed record TenantDto(
     int MaxDevices,
     TenantStatus Status,
     int DeviceCount,
+    bool HoldsNewAgentsForApproval,
+    bool ApprovalHoldInherited,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
@@ -77,4 +86,10 @@ public sealed record UpdateTenantRequest
 
     [Range(1, 100_000)]
     public int MaxDevices { get; init; }
+
+    /// <summary>
+    /// Whether agents newly enrolling here (and in descendants) wait for approval. Turning it off where an ancestor holds
+    /// is refused (409); agents already enrolled are unaffected either way.
+    /// </summary>
+    public bool HoldsNewAgentsForApproval { get; init; }
 }

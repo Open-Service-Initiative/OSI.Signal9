@@ -21,6 +21,12 @@ public sealed class Tenant
     public SubscriptionPlan Plan { get; set; }
     public int MaxDevices { get; set; }
     public TenantStatus Status { get; set; }
+
+    /// <summary>
+    /// Whether this tenant holds agents newly enrolling into it or its descendants for approval (story 96). Descendants
+    /// inherit it and can't turn it off; their own value says only whether it's also set there.
+    /// </summary>
+    public bool HoldsNewAgentsForApproval { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 
@@ -97,6 +103,12 @@ public sealed class Agent : IDeviceOwned
 
     /// <summary>When a person revoked it. A revoked agent is no longer its device's active agent and can't authenticate.</summary>
     public DateTime? RevokedAt { get; set; }
+
+    /// <summary>
+    /// Whether it waits for a person's approval before it receives work: it enrolled under an approval hold, or onto a
+    /// device that required approval (story 97). Cleared when it's approved.
+    /// </summary>
+    public bool AwaitingApproval { get; set; }
 
     public Device? Device { get; set; }
 }

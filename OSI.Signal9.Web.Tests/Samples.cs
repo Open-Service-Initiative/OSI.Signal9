@@ -1,4 +1,5 @@
 using OSI.Signal9.Contracts;
+using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.ApiApplications;
 using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Devices;
@@ -13,12 +14,23 @@ internal static class Samples
 {
     public static readonly DateTimeOffset Now = new(2026, 10, 23, 9, 0, 0, TimeSpan.Zero);
 
-    public static DeviceDto Device(string machineName, DeviceStatus status = DeviceStatus.Online, Guid? id = null) =>
+    public static DeviceDto Device(string machineName, DeviceStatus status = DeviceStatus.Online, Guid? id = null,
+        AgentStatus? agentStatus = AgentStatus.Active) =>
         new(id ?? Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), machineName, "corp.example", "Windows", "11", "x64",
-            "CPU", 8, 16_384, "10.0.0.5", null, "Servers", ["finance"], false, status, Now, Now, false);
+            "CPU", 8, 16_384, "10.0.0.5", null, "Servers", ["finance"], false, status, Now, Now, false, agentStatus);
 
-    public static TenantDto Tenant(string name, TenantStatus status = TenantStatus.Active, Guid? id = null) =>
-        new(id ?? Guid.NewGuid(), null, name, null, "ops@example.com", null, SubscriptionPlan.Basic, 25, status, 3, Now, Now);
+    public static AgentDto Agent(string machineName, Guid tenantId, AgentStatus status = AgentStatus.AwaitingApproval,
+        Guid? id = null)
+    {
+        var agentId = id ?? Guid.NewGuid();
+        return new(agentId, $"/api/v1/agents/{agentId}", Guid.NewGuid(), tenantId, machineName, Guid.NewGuid(), "1.0.0",
+            true, status, Now, Now, status == AgentStatus.Revoked ? Now : null);
+    }
+
+    public static TenantDto Tenant(string name, TenantStatus status = TenantStatus.Active, Guid? id = null,
+        bool holdsNewAgents = false, bool holdInherited = false) =>
+        new(id ?? Guid.NewGuid(), null, name, null, "ops@example.com", null, SubscriptionPlan.Basic, 25, status, 3,
+            holdsNewAgents || holdInherited, holdInherited, Now, Now);
 
     public static AuditEntryDto AuditEntry(string action, string? tenantName = "Contoso", Guid? deviceId = null,
         string? deviceName = null, string? actorName = "Alex Wilber", AuditOutcome outcome = AuditOutcome.Succeeded,

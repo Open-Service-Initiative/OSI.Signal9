@@ -3,6 +3,25 @@ using System.ComponentModel.DataAnnotations;
 namespace OSI.Signal9.Contracts.Agents;
 
 /// <summary>
+/// Whether an agent may receive commands: Active, or the first that applies of Revoked and Awaiting approval, which both
+/// block commands.
+/// </summary>
+public enum AgentStatus
+{
+    /// <summary>It may receive commands.</summary>
+    Active = 0,
+
+    /// <summary>A person revoked it: it can't authenticate.</summary>
+    Revoked = 1,
+
+    /// <summary>
+    /// It enrolled under an approval hold, or onto a device that required approval after a revocation. It sends
+    /// heartbeats but receives no work until a person approves it (POST {url}:approve).
+    /// </summary>
+    AwaitingApproval = 2,
+}
+
+/// <summary>
 /// One enrolled installation of the agent software on a device, holding its own credential. A machine runs one agent
 /// instance per deployment and root tenant tree; each is a separate agent.
 /// </summary>
@@ -11,6 +30,8 @@ namespace OSI.Signal9.Contracts.Agents;
 /// <param name="IsActive">
 /// Whether this is its device's active agent. A replaced or revoked agent is no longer active.
 /// </param>
+/// <param name="MachineName">Its device's machine name.</param>
+/// <param name="Status">Whether it may receive commands, apart from its device's online status.</param>
 /// <param name="RevokedAt">
 /// When a person revoked it (POST {url}:revoke), if they did. A revoked agent can't authenticate, and its device then
 /// requires approval for its next agent.
@@ -20,9 +41,11 @@ public sealed record AgentDto(
     string Url,
     Guid DeviceId,
     Guid TenantId,
+    string MachineName,
     Guid? EnrollmentTokenId,
     string? AgentVersion,
     bool IsActive,
+    AgentStatus Status,
     DateTimeOffset EnrolledAt,
     DateTimeOffset LastSeenAt,
     DateTimeOffset? RevokedAt);

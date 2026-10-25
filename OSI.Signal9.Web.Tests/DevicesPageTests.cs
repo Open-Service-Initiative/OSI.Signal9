@@ -27,6 +27,20 @@ public sealed class DevicesPageTests : DashboardTestContext
     }
 
     [TestMethod]
+    public void Shows_each_devices_agent_status_apart_from_its_own_status()
+    {
+        var id = Guid.NewGuid();
+        Http.SignedInAs("Ada", request => request.RequestUri!.AbsolutePath == "/api/v1/devices"
+            ? FakeHttp.Json(HttpStatusCode.OK, Page(Device("WS-001", id: id, agentStatus: Contracts.Agents.AgentStatus.AwaitingApproval)))
+            : null);
+
+        var app = RenderApp("/devices");
+
+        app.WaitForAssertion(() => Assert.Contains("Awaiting approval", app.Find($"#agent-status-{id}").TextContent));
+        Assert.Contains("Online", app.Find($"#status-{id}").TextContent);
+    }
+
+    [TestMethod]
     public void A_problem_response_is_shown_in_an_error_message_bar()
     {
         Http.SignedInAs("Ada", request => request.RequestUri!.AbsolutePath == "/api/v1/devices"

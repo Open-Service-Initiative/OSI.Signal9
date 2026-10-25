@@ -16,8 +16,9 @@ internal static class Mappings
 {
     // Each resource's ETag covers its row version and everything else its DTO shows, so it changes whenever the DTO does.
 
-    public static EntityTagHeaderValue ETag(this Tenant tenant, int deviceCount) =>
-        ConditionalRequests.ETag(tenant.Version, deviceCount);
+    /// <param name="holdInherited">Whether an ancestor holds new agents for approval.</param>
+    public static EntityTagHeaderValue ETag(this Tenant tenant, int deviceCount, bool holdInherited) =>
+        ConditionalRequests.ETag(tenant.Version, deviceCount, holdInherited);
 
     /// <param name="device">A device loaded with its <see cref="Device.ActiveAgent"/>.</param>
     public static EntityTagHeaderValue ETag(this Device device, DevicePresence presence) =>
@@ -72,7 +73,8 @@ internal static class Mappings
     public static RoleAssignmentDto ToDto(this RoleAssignment assignment) => new(
         assignment.Id, assignment.TenantId, assignment.UserId, assignment.RoleId, assignment.CreatedAt.AsUtcOffset());
 
-    public static TenantDto ToDto(this Tenant tenant, int deviceCount) => new(
+    /// <param name="holdInherited">Whether an ancestor holds new agents for approval.</param>
+    public static TenantDto ToDto(this Tenant tenant, int deviceCount, bool holdInherited) => new(
         tenant.Id,
         tenant.ParentTenantId,
         tenant.Name,
@@ -83,6 +85,8 @@ internal static class Mappings
         tenant.MaxDevices,
         tenant.Status,
         deviceCount,
+        tenant.HoldsNewAgentsForApproval || holdInherited,
+        holdInherited,
         tenant.CreatedAt.AsUtcOffset(),
         tenant.UpdatedAt.AsUtcOffset());
 
@@ -107,16 +111,25 @@ internal static class Mappings
         presence.StatusOf(device),
         device.CreatedAt.AsUtcOffset(),
         device.ActiveAgent?.LastSeenAt.AsUtcOffset(),
-        device.RequiresAgentApproval);
+        device.RequiresAgentApproval,
+        device.ActiveAgent?.Status());
+
+    /// <summary>The first that applies of Revoked and Awaiting approval, or else Active.</summary>
+    public static AgentStatus Status(this Agent agent) =>
+        agent.RevokedAt is not null ? AgentStatus.Revoked
+        : agent.AwaitingApproval ? AgentStatus.AwaitingApproval
+        : AgentStatus.Active;
 
     public static AgentDto ToDto(this Agent agent, Device device) => new(
         agent.Id,
         $"/api/v1/agents/{agent.Id}",
         agent.DeviceId,
         device.TenantId,
+        device.MachineName,
         agent.EnrollmentTokenId,
         agent.AgentVersion,
         device.ActiveAgentId == agent.Id,
+        agent.Status(),
         agent.EnrolledAt.AsUtcOffset(),
         agent.LastSeenAt.AsUtcOffset(),
         agent.RevokedAt?.AsUtcOffset());

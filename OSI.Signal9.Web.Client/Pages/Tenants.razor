@@ -28,6 +28,11 @@
     </TemplateColumn>
     <PropertyColumn Title="Plan" Property="@(t => t.Plan)" />
     <TemplateColumn Title="Devices">@context.DeviceCount / @context.MaxDevices</TemplateColumn>
+    <TemplateColumn Title="New agents">
+        <span id="@($"hold-{context.Id}")">
+            @(context.ApprovalHoldInherited ? "Held (inherited)" : context.HoldsNewAgentsForApproval ? "Held" : "Not held")
+        </span>
+    </TemplateColumn>
     <PropertyColumn Title="Contact" Property="@(t => t.ContactEmail)" />
     <TemplateColumn Title="Actions" Align="DataGridCellAlignment.End">
         <FluentButton Id="@($"edit-{context.Id}")" IconOnly="true" Title="Edit" Appearance="ButtonAppearance.Subtle"

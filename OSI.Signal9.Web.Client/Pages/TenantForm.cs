@@ -12,6 +12,12 @@ public sealed class TenantForm
     public string Plan { get; set; } = nameof(SubscriptionPlan.Basic);
     public string MaxDevices { get; set; } = "25";
 
+    /// <summary>Whether new agents wait for approval here, set here or inherited.</summary>
+    public bool HoldsNewAgentsForApproval { get; set; }
+
+    /// <summary>Whether an ancestor holds new agents, so the hold can't be turned off here.</summary>
+    public bool ApprovalHoldInherited { get; set; }
+
     /// <summary>The parent tenant's id, or empty for a top-level tenant. Only set when creating.</summary>
     public string ParentTenantId { get; set; } = string.Empty;
 
@@ -23,6 +29,8 @@ public sealed class TenantForm
         ContactPhone = tenant.ContactPhone,
         Plan = tenant.Plan.ToString(),
         MaxDevices = tenant.MaxDevices.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        HoldsNewAgentsForApproval = tenant.HoldsNewAgentsForApproval,
+        ApprovalHoldInherited = tenant.ApprovalHoldInherited,
     };
 
     // Values the API would refuse (a bad number) go as 0 and come back as a validation problem.
@@ -45,6 +53,7 @@ public sealed class TenantForm
         ContactPhone = Blank(ContactPhone),
         Plan = Enum.Parse<SubscriptionPlan>(Plan),
         MaxDevices = ParseMaxDevices(),
+        HoldsNewAgentsForApproval = HoldsNewAgentsForApproval,
     };
 
     private int ParseMaxDevices() =>

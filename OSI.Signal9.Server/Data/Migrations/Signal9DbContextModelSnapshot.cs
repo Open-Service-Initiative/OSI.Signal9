@@ -52,6 +52,9 @@ namespace OSI.Signal9.Server.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
+                    b.Property<bool>("AwaitingApproval")
+                        .HasColumnType("boolean");
+
                     b.Property<Guid>("DeviceId")
                         .HasColumnType("uuid");
 
@@ -616,6 +619,9 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.Property<string>("Description")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
+
+                    b.Property<bool>("HoldsNewAgentsForApproval")
+                        .HasColumnType("boolean");
 
                     b.Property<int>("MaxDevices")
                         .HasColumnType("integer");
