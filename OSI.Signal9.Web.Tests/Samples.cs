@@ -1,6 +1,7 @@
 using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Devices;
+using OSI.Signal9.Contracts.Enrollment;
 using OSI.Signal9.Contracts.Roles;
 using OSI.Signal9.Contracts.Tenants;
 using OSI.Signal9.Contracts.Users;
@@ -33,6 +34,14 @@ internal static class Samples
 
     public static RoleAssignmentDto RoleAssignment(Guid tenantId, Guid userId, Guid roleId, Guid? id = null) =>
         new(id ?? Guid.NewGuid(), tenantId, userId, roleId, Now);
+
+    public static EnrollmentTokenDto EnrollmentToken(string name, Guid tenantId, Guid? id = null,
+        EnrollmentTokenStatus status = EnrollmentTokenStatus.Active, int? maxUses = null, string? secret = null)
+    {
+        var tokenId = id ?? Guid.NewGuid();
+        return new(tokenId, tenantId, $"/api/v1/tenants/{tenantId}/enrollment-tokens/{tokenId}", name, maxUses, null, status,
+            Now, null, status == EnrollmentTokenStatus.Revoked ? Now : null, secret);
+    }
 
     public static PagedResult<T> Page<T>(params T[] items) => new(items, 1, 25, items.Length);
 }

@@ -4,6 +4,7 @@ using OSI.Signal9.Server.Data;
 using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Devices;
+using OSI.Signal9.Contracts.Enrollment;
 using OSI.Signal9.Contracts.Telemetry;
 using OSI.Signal9.Contracts.Tenants;
 using OSI.Signal9.Contracts.Roles;
@@ -36,6 +37,29 @@ internal static class Mappings
     /// <summary>Roles have no row version: they change only through migrations, so their content is their version.</summary>
     public static EntityTagHeaderValue ETag(this Role role) =>
         ConditionalRequests.ETag(0, role.Name, role.Description, role.BuiltIn, string.Join(' ', role.Scopes));
+
+    /// <summary>A token's status depends on the time as well as its row, so the ETag covers both.</summary>
+    public static EntityTagHeaderValue ETag(this EnrollmentToken token, DateTime now) =>
+        ConditionalRequests.ETag(token.Version, token.StatusAt(now));
+
+    public static EnrollmentTokenStatus StatusAt(this EnrollmentToken token, DateTime now) =>
+        token.RevokedAt is not null ? EnrollmentTokenStatus.Revoked
+        : token.ExpiresAt <= now ? EnrollmentTokenStatus.Expired
+        : EnrollmentTokenStatus.Active;
+
+    /// <param name="secret">The secret, only in the response that issues it.</param>
+    public static EnrollmentTokenDto ToDto(this EnrollmentToken token, DateTime now, string? secret = null) => new(
+        token.Id,
+        token.TenantId,
+        $"/api/v1/tenants/{token.TenantId}/enrollment-tokens/{token.Id}",
+        token.Name,
+        token.MaxUses,
+        token.ExpiresAt.AsUtcOffset(),
+        token.StatusAt(now),
+        token.CreatedAt.AsUtcOffset(),
+        token.RotatedAt.AsUtcOffset(),
+        token.RevokedAt.AsUtcOffset(),
+        secret);
 
     public static UserDto ToDto(this User user) => new(
         user.Id, user.TenantId, user.EntraTenantId, user.EntraObjectId, user.DisplayName, user.CreatedAt.AsUtcOffset());

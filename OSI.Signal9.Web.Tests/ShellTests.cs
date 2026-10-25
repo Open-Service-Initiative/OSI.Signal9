@@ -9,7 +9,7 @@ namespace OSI.Signal9.Web.Tests;
 public sealed class ShellTests : DashboardTestContext
 {
     [TestMethod]
-    public void The_navigation_links_to_home_devices_tenants_role_assignments_and_the_audit_log()
+    public void The_navigation_links_to_home_devices_tenants_role_assignments_enrollment_tokens_and_the_audit_log()
     {
         Http.SignedOut();
 
@@ -17,7 +17,7 @@ public sealed class ShellTests : DashboardTestContext
 
         // The hamburger's drawer repeats the navigation for narrow screens.
         var links = app.FindAll("nav a[href]").Select(a => a.GetAttribute("href")).Distinct().ToList();
-        CollectionAssert.AreEquivalent(new[] { "/", "/devices", "/tenants", "/role-assignments", "/audit" }, links);
+        CollectionAssert.AreEquivalent(new[] { "/", "/devices", "/tenants", "/role-assignments", "/enrollment-tokens", "/audit" }, links);
     }
 
     [TestMethod]

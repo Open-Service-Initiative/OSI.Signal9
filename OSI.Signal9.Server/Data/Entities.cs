@@ -176,6 +176,31 @@ public sealed class RoleAssignment : ITenantOwned
 }
 
 /// <summary>
+/// A revocable secret that lets new agents enroll into its tenant (#127, stories 92-94). Only a SHA-256 hash of the
+/// secret is stored: the secret is a 256-bit random value, so a fast hash is enough to make a stolen database useless
+/// for enrolling. Rotating replaces the secret; agents already enrolled with it are unaffected either way.
+/// </summary>
+public sealed class EnrollmentToken : ITenantOwned
+{
+    public Guid Id { get; set; }
+
+    /// <summary>Row version (PostgreSQL <c>xmin</c>): the concurrency token behind the resource's ETag.</summary>
+    public uint Version { get; set; }
+    public Guid TenantId { get; set; }
+    public required string Name { get; set; }
+
+    /// <summary>SHA-256 of the secret's UTF-8 bytes; unique, so enrollment finds the token by it.</summary>
+    public required byte[] SecretHash { get; set; }
+
+    /// <summary>How many agents can enroll with it; null for unlimited.</summary>
+    public int? MaxUses { get; set; }
+    public DateTime? ExpiresAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? RotatedAt { get; set; }
+    public DateTime? RevokedAt { get; set; }
+}
+
+/// <summary>
 /// One entry of the append-only audit log (#115). Stored at <see cref="TenantId"/>, the tenant where the event happened,
 /// or at no tenant for a deployment-level event. It isn't owned by its tenant, so it outlives it, and it refers to
 /// devices, users and roles by ID only: names are resolved when it's read, so erasing a device leaves just its ID.

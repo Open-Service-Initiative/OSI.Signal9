@@ -25,7 +25,8 @@
 }
 
 .error-bar,
-.notice-bar {
+.notice-bar,
+.secret-bar {
     margin-bottom: 16px;
 }
 
@@ -68,4 +69,16 @@
     .fluent-layout .fluent-layout-item[area="header"] .fluent-layout-hamburger {
         display: flex;
     }
+}
+
+.secret-value {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.secret-value fluent-text-input {
+    flex: 1;
+    font-family: monospace;
 }

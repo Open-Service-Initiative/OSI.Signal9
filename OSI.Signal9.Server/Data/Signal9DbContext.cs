@@ -30,6 +30,7 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<RoleAssignment> RoleAssignments => Set<RoleAssignment>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+    public DbSet<EnrollmentToken> EnrollmentTokens => Set<EnrollmentToken>();
 
     /// <summary>The ASP.NET Core Data Protection key ring, each key wrapped by the key-encryption key (ADR-0008).</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
@@ -48,6 +49,7 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
         modelBuilder.Entity<TelemetrySample>().Property(s => s.Version).IsRowVersion();
         modelBuilder.Entity<User>().Property(u => u.Version).IsRowVersion();
         modelBuilder.Entity<RoleAssignment>().Property(a => a.Version).IsRowVersion();
+        modelBuilder.Entity<EnrollmentToken>().Property(t => t.Version).IsRowVersion();
 
         modelBuilder.Entity<Tenant>(tenant =>
         {
@@ -173,6 +175,16 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
             assignment.HasOne<Tenant>().WithMany().HasForeignKey(a => a.TenantId).OnDelete(DeleteBehavior.Cascade);
             assignment.HasOne(a => a.User).WithMany().HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.Cascade);
             assignment.HasOne(a => a.Role).WithMany().HasForeignKey(a => a.RoleId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // Deleting a tenant revokes its enrollment tokens by deleting them (#63, Tenant deletion).
+        modelBuilder.Entity<EnrollmentToken>(token =>
+        {
+            token.Property(t => t.Name).HasMaxLength(200);
+            token.Property(t => t.SecretHash).HasMaxLength(32);
+            token.HasIndex(t => t.SecretHash).IsUnique();
+            token.HasIndex(t => t.TenantId);
+            token.HasOne<Tenant>().WithMany().HasForeignKey(t => t.TenantId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<AuditEntry>(entry =>

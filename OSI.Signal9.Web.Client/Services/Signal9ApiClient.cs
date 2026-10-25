@@ -6,6 +6,7 @@ using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Devices;
+using OSI.Signal9.Contracts.Enrollment;
 using OSI.Signal9.Contracts.Roles;
 using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Contracts.Tenants;
@@ -87,6 +88,24 @@ public sealed class Signal9ApiClient(HttpClient http, BffAuthenticationStateProv
 
     public Task DeleteRoleAssignmentAsync(Guid tenantId, Guid roleAssignmentId, CancellationToken cancellationToken = default) =>
         SendAsync<object>(HttpMethod.Delete, $"api/v1/tenants/{tenantId}/role-assignments/{roleAssignmentId}", null, cancellationToken);
+
+    // Enrollment tokens
+
+    /// <summary>The tenant's enrollment tokens and its descendants', newest first.</summary>
+    public Task<PagedResult<EnrollmentTokenDto>> ListEnrollmentTokensAsync(Guid tenantId, int page, int pageSize,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<PagedResult<EnrollmentTokenDto>>(HttpMethod.Get,
+            $"api/v1/tenants/{tenantId}/enrollment-tokens?page={page}&pageSize={pageSize}", null, cancellationToken);
+
+    /// <summary>Issues a token; the result carries its secret, the only time it's shown.</summary>
+    public Task<EnrollmentTokenDto> CreateEnrollmentTokenAsync(Guid tenantId, CreateEnrollmentTokenRequest request,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<EnrollmentTokenDto>(HttpMethod.Post, $"api/v1/tenants/{tenantId}/enrollment-tokens",
+            JsonContent.Create(request, options: Signal9Json.Options), cancellationToken);
+
+    /// <summary>A lifecycle action on the token at its canonical <paramref name="url"/>: <c>rotate</c> or <c>revoke</c>.</summary>
+    public Task<EnrollmentTokenDto> TransitionEnrollmentTokenAsync(string url, string action, CancellationToken cancellationToken = default) =>
+        SendAsync<EnrollmentTokenDto>(HttpMethod.Post, $"{url.TrimStart('/')}:{action}", null, cancellationToken);
 
     // Audit
 

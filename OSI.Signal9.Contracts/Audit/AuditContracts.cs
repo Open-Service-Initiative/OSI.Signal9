@@ -92,6 +92,10 @@ public static class AuditActions
     public const string RoleAssignmentCreated = "role-assignment.created";
     public const string RoleAssignmentDeleted = "role-assignment.deleted";
 
+    public const string EnrollmentTokenCreated = "enrollment-token.created";
+    public const string EnrollmentTokenRotated = "enrollment-token.rotated";
+    public const string EnrollmentTokenRevoked = "enrollment-token.revoked";
+
     public const string CommandCreated = "command.created";
     public const string CommandCancelled = "command.cancelled";
 
