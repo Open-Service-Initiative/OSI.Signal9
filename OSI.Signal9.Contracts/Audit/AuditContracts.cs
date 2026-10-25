@@ -112,6 +112,9 @@ public static class AuditActions
     public const string ApiApplicationCredentialAdded = "api-application.credential-added";
     public const string ApiApplicationCredentialRemoved = "api-application.credential-removed";
 
+    /// <summary>An agent enrolled with an enrollment token, which <see cref="AuditEntryDto.Detail"/> names by ID.</summary>
+    public const string AgentEnrolled = "agent.enrolled";
+
     public const string CommandCreated = "command.created";
     public const string CommandCancelled = "command.cancelled";
 

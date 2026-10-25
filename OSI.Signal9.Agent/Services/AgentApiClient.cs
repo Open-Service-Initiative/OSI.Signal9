@@ -9,24 +9,15 @@ using OSI.Signal9.Contracts.Telemetry;
 namespace OSI.Signal9.Agent.Services;
 
 /// <summary>
-/// The agent's view of the Signal9 REST API.
+/// The agent's view of the Signal9 REST API, as one enrolled agent: <paramref name="http"/> presents its certificate
+/// and access token, which is where the API takes its identity from.
 /// </summary>
-// TODO(auth): attach the agent credential issued at enrollment once the API requires it.
 public sealed class AgentApiClient(HttpClient http)
 {
-    public async Task<AgentDto> RegisterAsync(RegisterAgentRequest request, CancellationToken cancellationToken)
-    {
-        using var response = await http.PostAsJsonAsync("api/v1/agents", request, Signal9Json.Options, cancellationToken);
-        await EnsureSuccessAsync(response, cancellationToken);
-        return (await response.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options, cancellationToken))!;
-    }
-
-    /// <returns>Null when the API no longer knows this agent, or it was replaced, and it must re-register.</returns>
-    public async Task<HeartbeatResponse?> SendHeartbeatAsync(Guid agentId, HeartbeatRequest request, CancellationToken cancellationToken)
+    /// <summary>Fails when the API refuses the agent, such as one that was replaced or is unknown.</summary>
+    public async Task<HeartbeatResponse> SendHeartbeatAsync(Guid agentId, HeartbeatRequest request, CancellationToken cancellationToken)
     {
         using var response = await http.PutAsJsonAsync($"api/v1/agents/{agentId}/heartbeat", request, Signal9Json.Options, cancellationToken);
-        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Conflict)
-            return null;
         await EnsureSuccessAsync(response, cancellationToken);
         return (await response.Content.ReadFromJsonAsync<HeartbeatResponse>(Signal9Json.Options, cancellationToken))!;
     }
@@ -54,7 +45,7 @@ public sealed class AgentApiClient(HttpClient http)
             await EnsureSuccessAsync(response, cancellationToken);
     }
 
-    private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    internal static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         if (response.IsSuccessStatusCode)
             return;

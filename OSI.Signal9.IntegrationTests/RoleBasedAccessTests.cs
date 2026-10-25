@@ -459,9 +459,8 @@ public sealed class RoleBasedAccessTests : IDisposable
 
     private async Task<Guid> DeviceAsync(Guid tenantId)
     {
-        var registered = await Signal9ApiFactory.RegisterAsync(_superadministrator, tenantId, $"PC-{tenantId:N}");
-        Assert.AreEqual(HttpStatusCode.Created, registered.StatusCode);
-        return (await registered.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options, Ct))!.DeviceId;
+        using var agent = await _factory.EnrollAgentAsync(tenantId, $"PC-{tenantId:N}");
+        return agent.DeviceId;
     }
 
     /// <summary>A newly signed-in person, owned by <paramref name="owner"/>, holding these role assignments.</summary>

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text;
 
 namespace OSI.Signal9.IntegrationTests;
@@ -55,6 +56,52 @@ public sealed class RateLimitingTests
             Assert.AreEqual(HttpStatusCode.OK, (await RequestTokenAsync(auth, "busy-app")).StatusCode);
             Assert.AreEqual(HttpStatusCode.OK, (await GetAsync(api, "api/v1/tenants")).StatusCode);
         }
+    }
+
+    [TestMethod]
+    public async Task Enrollment_is_limited_per_ip()
+    {
+        using var factory = new Signal9ApiFactory(settings: Limit("Enrollment", 1));
+        using var admin = factory.CreateClient();
+        var tenant = await factory.CreateTenantAsync(admin, "Contoso");
+        var first = await factory.IssueEnrollmentTokenAsync(tenant.Id);
+        var second = await factory.IssueEnrollmentTokenAsync(tenant.Id);
+        var site = IPAddress.Parse("203.0.113.1");
+
+        var allowed = await factory.EnrollAsync(first.Secret!, TestCertificates.AgentCertificate(), from: site);
+        var limited = await factory.EnrollAsync(second.Secret!, TestCertificates.AgentCertificate(), from: site);
+        var otherIp = await factory.EnrollAsync(second.Secret!, TestCertificates.AgentCertificate(), from: IPAddress.Parse("198.51.100.7"));
+
+        Assert.AreEqual(HttpStatusCode.Created, allowed.StatusCode);
+        Assert.AreEqual(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.AreEqual(HttpStatusCode.Created, otherIp.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task Enrollment_is_limited_per_enrollment_token()
+    {
+        using var factory = new Signal9ApiFactory(settings: Limit("EnrollmentToken", 2));
+        using var admin = factory.CreateClient();
+        var tenant = await factory.CreateTenantAsync(admin, "Contoso");
+        var busy = await factory.IssueEnrollmentTokenAsync(tenant.Id);
+        var other = await factory.IssueEnrollmentTokenAsync(tenant.Id);
+
+        Assert.AreEqual(HttpStatusCode.Created,
+            (await factory.EnrollAsync(busy.Secret!, TestCertificates.AgentCertificate(), from: IPAddress.Parse("203.0.113.1"))).StatusCode);
+        Assert.AreEqual(HttpStatusCode.Created,
+            (await factory.EnrollAsync(busy.Secret!, TestCertificates.AgentCertificate(), from: IPAddress.Parse("203.0.113.2"))).StatusCode);
+        var limited = await factory.EnrollAsync(busy.Secret!, TestCertificates.AgentCertificate(), from: IPAddress.Parse("203.0.113.3"));
+        var otherToken = await factory.EnrollAsync(other.Secret!, TestCertificates.AgentCertificate(), from: IPAddress.Parse("203.0.113.3"));
+
+        Assert.AreEqual(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.AreEqual("application/problem+json", limited.Content.Headers.ContentType?.MediaType);
+        Assert.IsNotNull(limited.Headers.RetryAfter);
+        Assert.AreEqual(HttpStatusCode.Created, otherToken.StatusCode);
+        // A refused attempt isn't a use.
+        using var tokens = factory.CreateClient();
+        var used = await tokens.GetFromJsonAsync<OSI.Signal9.Contracts.Enrollment.EnrollmentTokenDto>(busy.Url.TrimStart('/'),
+            OSI.Signal9.Contracts.Serialization.Signal9Json.Options, Ct);
+        Assert.AreEqual(2, used!.UseCount);
     }
 
     [TestMethod]

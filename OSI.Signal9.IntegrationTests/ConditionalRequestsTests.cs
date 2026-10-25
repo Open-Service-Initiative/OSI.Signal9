@@ -151,7 +151,7 @@ public sealed class ConditionalRequestsTests : IDisposable
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
         var before = await GetETagAsync($"api/v1/tenants/{tenant.Id}");
 
-        await Signal9ApiFactory.RegisterAsync(_client, tenant.Id, "PC01");
+        using var agent = await _factory.EnrollAgentAsync(tenant.Id, "PC01");
 
         var response = await SendAsync(HttpMethod.Get, $"api/v1/tenants/{tenant.Id}", ifNoneMatch: before);
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
@@ -200,7 +200,7 @@ public sealed class ConditionalRequestsTests : IDisposable
 
         _factory.Time.Advance(TimeSpan.FromMinutes(5));
         var offline = await GetETagAsync($"api/v1/devices/{agent.DeviceId}");
-        await _client.PutAsJsonAsync($"api/v1/agents/{agent.Id}/heartbeat", new HeartbeatRequest(), Signal9Json.Options, Ct);
+        await agent.Client.PutAsJsonAsync($"api/v1/agents/{agent.Id}/heartbeat", new HeartbeatRequest(), Signal9Json.Options, Ct);
         var checkedIn = await GetETagAsync($"api/v1/devices/{agent.DeviceId}");
 
         Assert.AreNotEqual(online, offline);
@@ -284,8 +284,8 @@ public sealed class ConditionalRequestsTests : IDisposable
         var url = created.Headers.Location!.ToString();
         var etag = AssertStrongETag(created);
 
-        var stale = await SendAsync(HttpMethod.Put, $"{url}/result", ifMatch: "\"stale\"", content: ResultContent());
-        var reported = await SendAsync(HttpMethod.Put, $"{url}/result", ifMatch: etag, content: ResultContent());
+        var stale = await SendAsync(HttpMethod.Put, $"{url}/result", ifMatch: "\"stale\"", content: ResultContent(), client: agent.Client);
+        var reported = await SendAsync(HttpMethod.Put, $"{url}/result", ifMatch: etag, content: ResultContent(), client: agent.Client);
 
         await AssertPreconditionFailedAsync(stale);
         Assert.AreEqual(HttpStatusCode.OK, reported.StatusCode);
@@ -297,13 +297,16 @@ public sealed class ConditionalRequestsTests : IDisposable
     [TestMethod]
     public async Task Agent_and_telemetry_resources_carry_etags()
     {
-        var registered = await Signal9ApiFactory.RegisterAsync(_client, (await _factory.CreateTenantAsync(_client, "Contoso")).Id, "PC01");
+        var token = await _factory.IssueEnrollmentTokenAsync((await _factory.CreateTenantAsync(_client, "Contoso")).Id);
+        using var certificate = TestCertificates.AgentCertificate();
+        var registered = await _factory.EnrollAsync(token.Secret!, certificate);
         var agent = await registered.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options, Ct);
-        var sample = await _client.PostAsJsonAsync($"api/v1/agents/{agent!.Id}/telemetry",
+        using var asAgent = await _factory.CreateAgentClientAsync(agent!.Id, certificate);
+        var sample = await asAgent.PostAsJsonAsync($"api/v1/agents/{agent.Id}/telemetry",
             new CreateTelemetrySampleRequest { CollectedAt = _factory.Time.GetUtcNow() }, Signal9Json.Options, Ct);
         var agentETag = await GetETagAsync($"api/v1/agents/{agent.Id}");
         var heartbeat = await SendAsync(HttpMethod.Put, $"api/v1/agents/{agent.Id}/heartbeat", ifMatch: agentETag,
-            content: JsonContent.Create(new HeartbeatRequest(), options: Signal9Json.Options));
+            content: JsonContent.Create(new HeartbeatRequest(), options: Signal9Json.Options), client: asAgent);
 
         Assert.AreEqual(HttpStatusCode.Created, registered.StatusCode);
         AssertStrongETag(registered);
@@ -400,7 +403,7 @@ public sealed class ConditionalRequestsTests : IDisposable
         var agent = await RegisterAsync("PC01");
 
         using var racing = RaceWith($"""UPDATE "Agents" SET "AgentVersion" = 'Concurrent' WHERE "Id" = '{agent.Id}'; UPDATE "Devices" SET "GroupName" = 'Concurrent' WHERE "Id" = '{agent.DeviceId}'""");
-        using var client = racing.CreateClient();
+        using var client = Signal9ApiFactory.AsAgent(racing.Server, agent);
         var heartbeat = await client.PutAsJsonAsync($"api/v1/agents/{agent.Id}/heartbeat",
             new HeartbeatRequest { AgentVersion = "2.0.0", IpAddress = "10.0.0.2" }, Signal9Json.Options, Ct);
         var telemetry = await client.PostAsJsonAsync($"api/v1/agents/{agent.Id}/telemetry",
@@ -420,12 +423,10 @@ public sealed class ConditionalRequestsTests : IDisposable
             services.ConfigureDbContext<Signal9DbContext>(options =>
                 options.AddInterceptors(new ConcurrentWriter(_factory.ConnectionString, sql)))));
 
-    private async Task<AgentDto> RegisterAsync(string machineName)
+    private async Task<TestAgent> RegisterAsync(string machineName)
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
-        var response = await Signal9ApiFactory.RegisterAsync(_client, tenant.Id, machineName);
-        response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options, Ct))!;
+        return await _factory.EnrollAgentAsync(tenant.Id, machineName);
     }
 
     private async Task<HttpResponseMessage> QueueCommandAsync(Guid deviceId)

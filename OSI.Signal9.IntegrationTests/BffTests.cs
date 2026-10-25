@@ -63,8 +63,8 @@ public sealed partial class BffTests : IDisposable
         var contoso = await _factory.CreateTenantAsync(fixture, "Contoso");
         var site = await _factory.CreateTenantAsync(fixture, "Contoso-Site", parentTenantId: contoso.Id);
         var other = await _factory.CreateTenantAsync(fixture, "Fabrikam");
-        var registered = await Signal9ApiFactory.RegisterAsync(fixture, site.Id, "SITE-PC");
-        var device = (await registered.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options, Ct))!.DeviceId;
+        using var agent = await _factory.EnrollAgentAsync(site.Id, "SITE-PC");
+        var device = agent.DeviceId;
         var person = EntraUser.WithMfa();
         var user = await (await fixture.PostAsJsonAsync("api/v1/users", new CreateUserRequest
         {

@@ -108,8 +108,10 @@ app.UseCallerAccess();
 app.MapTokenEndpoint().RequireRateLimiting(RateLimiting.Token);
 // The API description is public (story 132): it shows what each call needs, never data.
 app.MapOpenApi(ApiDocs.DocumentPattern).AllowAnonymous().RequireRateLimiting(RateLimiting.Api);
-app.MapControllers().RequireRateLimiting(RateLimiting.Api);
-app.MapHub<AgentHub>(HubRoutes.Agents).RequireRateLimiting(RateLimiting.Api);
+app.MapControllers().RequireRateLimitingUnlessNamed(RateLimiting.Api);
+// The agent hub closes a connection when its access token expires; the agent reconnects with a fresh one (story 115).
+app.MapHub<AgentHub>(HubRoutes.Agents, options => options.CloseOnAuthenticationExpiration = true)
+    .RequireRateLimiting(RateLimiting.Api);
 app.MapHub<DashboardHub>(HubRoutes.Dashboard).RequireRateLimiting(RateLimiting.Api);
 
 app.Run();

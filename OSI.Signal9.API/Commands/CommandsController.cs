@@ -1,3 +1,4 @@
+using OSI.Signal9.API.Agents;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OSI.Signal9.API.Audit;
@@ -118,18 +119,25 @@ public sealed class CommandsController(
         return CreatedAtRoute(nameof(GetCommand), new { deviceId, commandId = command.Id }, dto);
     }
 
-    /// <summary>Records the outcome of a command. Sent by the agent once, when it finishes.</summary>
+    /// <summary>
+    /// Records the outcome of a command. Sent once, when it finishes, by the agent the access token names, which must be
+    /// the active agent of the command's device; any other agent gets 404.
+    /// </summary>
     [RequireScope(Scopes.Agent)]
     [HttpPut("{commandId:guid}/result")]
     [OptimisticConcurrency]
     [Consumes("application/json")]
     [ProducesResponseType<CommandDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
-    public Task<ActionResult<CommandDto>> PutResult(
-        Guid deviceId, Guid commandId, CommandResultRequest request, CancellationToken cancellationToken) =>
-        CompleteAsync(deviceId, commandId, TenantScopeBypass.AgentSelfService, cancellationToken, (command, device) =>
+    public async Task<ActionResult<CommandDto>> PutResult(
+        Guid deviceId, Guid commandId, CommandResultRequest request, CancellationToken cancellationToken)
+    {
+        if (User.AgentId() is not { } agentId)
+            return Forbid();
+        return await CompleteAsync(deviceId, commandId, TenantScopeBypass.AgentSelfService, cancellationToken, (command, device) =>
         {
             // The resulting status only, never the output or error, which can hold anything from the device.
             Audit(AuditActions.CommandResult, request.Succeeded ? AuditOutcome.Succeeded : AuditOutcome.Failed, device, command,
@@ -137,7 +145,8 @@ public sealed class CommandsController(
             command.Status = request.Succeeded ? CommandStatus.Completed : CommandStatus.Failed;
             command.Output = request.Output;
             command.Error = request.Error;
-        });
+        }, onlyAgent: agentId);
+    }
 
     /// <summary>Cancels a pending command. Commands that already finished can't be cancelled (409).</summary>
     [RequireScope(Scopes.Commands.Execute)]
@@ -153,9 +162,10 @@ public sealed class CommandsController(
             command.Status = CommandStatus.Cancelled;
         });
 
+    /// <param name="onlyAgent">If given, the agent that must be the device's active agent; for any other, 404.</param>
     private async Task<ActionResult<CommandDto>> CompleteAsync(
         Guid deviceId, Guid commandId, TenantScopeBypass? bypass, CancellationToken cancellationToken,
-        Action<Command, Device> complete)
+        Action<Command, Device> complete, Guid? onlyAgent = null)
     {
         IQueryable<Command> commands = db.Commands;
         IQueryable<Device> devices = db.Devices.AsNoTracking();
@@ -168,6 +178,8 @@ public sealed class CommandsController(
         if (command is null)
             return NotFound();
         var device = await devices.SingleAsync(d => d.Id == deviceId, cancellationToken);
+        if (onlyAgent is { } agentId && device.ActiveAgentId != agentId)
+            return NotFound();
         if (this.Preconditions(command.ETag()) is { } refused)
             return refused;
         if (command.Status != CommandStatus.Pending)

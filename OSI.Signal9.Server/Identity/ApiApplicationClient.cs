@@ -50,8 +50,8 @@ public static class ApiApplicationClient
     /// <summary>
     /// The key set OpenIddict verifies the client with: its certificates (with <c>x5c</c>, for
     /// <c>self_signed_tls_client_auth</c>) and public keys (for <c>private_key_jwt</c>), each identified by credential ID.
-    /// Built by hand rather than with <see cref="JsonWebKeyConverter"/>, which leaves an ECDSA certificate's <c>x5c</c>
-    /// out, so OpenIddict couldn't match it (#108).
+    /// Certificates become JWKs with <see cref="ClientCertificateKey.From"/>, which keeps an ECDSA certificate's
+    /// <c>x5c</c> (#108).
     /// </summary>
     public static JsonWebKeySet KeySet(IEnumerable<Credential> credentials)
     {
@@ -61,8 +61,8 @@ public static class ApiApplicationClient
             if (credential.Certificate is { } der)
             {
                 using var certificate = X509CertificateLoader.LoadCertificate(Convert.FromBase64String(der));
-                var key = PublicKeyJwk(credential.Id, certificate.PublicKey.ExportSubjectPublicKeyInfo());
-                key.X5c.Add(der);
+                var key = ClientCertificateKey.From(certificate);
+                key.Kid = credential.Id.ToString("D");
                 set.Keys.Add(key);
             }
             else if (credential.PublicKey is { } spki)

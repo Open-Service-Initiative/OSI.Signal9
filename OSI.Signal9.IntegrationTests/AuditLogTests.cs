@@ -82,9 +82,10 @@ public sealed class AuditLogTests : IDisposable
     public async Task Commands_are_audited_when_created_cancelled_and_reported_on()
     {
         var tree = await TreeAsync();
-        var device = await DeviceAsync(tree.Client, "HOST-123");
+        using var enrolled = await _factory.EnrollAgentAsync(tree.Client, "HOST-123");
+        var device = enrolled.DeviceId;
         using var technician = await PersonAsync(tree.Msp, ("Technician", tree.Msp));
-        using var agent = await _factory.CreateClientAsync("agent");
+        var agent = enrolled.Client;
         var cancelled = await QueueAsync(technician, device);
         var reported = await QueueAsync(technician, device);
 
@@ -319,9 +320,8 @@ public sealed class AuditLogTests : IDisposable
 
     private async Task<Guid> DeviceAsync(Guid tenantId, string machineName)
     {
-        var registered = await Signal9ApiFactory.RegisterAsync(_superadministrator, tenantId, machineName);
-        Assert.AreEqual(HttpStatusCode.Created, registered.StatusCode);
-        return (await registered.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options, Ct))!.DeviceId;
+        using var agent = await _factory.EnrollAgentAsync(tenantId, machineName);
+        return agent.DeviceId;
     }
 
     /// <summary>A newly signed-in person, owned by <paramref name="owner"/>, holding these role assignments.</summary>

@@ -48,6 +48,9 @@
     <TemplateColumn Title="Uses">
         <span id="@($"uses-{context.Id}")">@(context.MaxUses switch { null => "Unlimited", 1 => "Single use", var n => $"Up to {n}" })</span>
     </TemplateColumn>
+    <TemplateColumn Title="Used">
+        <span id="@($"used-{context.Id}")">@(context.LastUsedAt is { } lastUsed ? $"{context.UseCount} · last {lastUsed.ToLocalTime():g}" : "Never")</span>
+    </TemplateColumn>
     <TemplateColumn Title="Expires">@(context.ExpiresAt?.ToLocalTime().ToString("g") ?? "Never")</TemplateColumn>
     <TemplateColumn Title="Created">@context.CreatedAt.ToLocalTime().ToString("g")</TemplateColumn>
     <TemplateColumn Title="Actions" Align="DataGridCellAlignment.End">
@@ -200,7 +203,7 @@
     private static BadgeColor StatusColor(EnrollmentTokenStatus status) => status switch
     {
         EnrollmentTokenStatus.Active => BadgeColor.Success,
-        EnrollmentTokenStatus.Expired => BadgeColor.Warning,
+        EnrollmentTokenStatus.Expired or EnrollmentTokenStatus.UsedUp => BadgeColor.Warning,
         _ => BadgeColor.Subtle,
     };
 }

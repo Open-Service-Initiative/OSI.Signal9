@@ -121,6 +121,10 @@ _Avoid_: Move, re-assign
 One enrolled installation of the Signal9 agent software on a device, holding its own credential. A device has at most one active agent.
 _Avoid_: Client, sensor
 
+**Agent instance**:
+One independent copy of the agent running on a machine, for one deployment and one root tenant tree, with its own key, certificate, configuration and state. A machine can run several side by side; each one that enrolls is a separate agent.
+_Avoid_: Side-by-side agent, second agent
+
 **Identification**:
 Deciding which device a newly enrolled agent belongs to: an existing device, or a new one. Ambiguous cases wait for a person to decide.
 _Avoid_: Matching, pairing, onboarding

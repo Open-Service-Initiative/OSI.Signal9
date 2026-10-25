@@ -45,6 +45,45 @@ public sealed class MutualTlsTests : IDisposable
     }
 
     [TestMethod]
+    [DataRow(AgentKey.EcdsaP256)]
+    [DataRow(AgentKey.EcdsaP384)]
+    [DataRow(AgentKey.Rsa3072)]
+    public async Task Self_signed_client_registered_as_its_keys_own_jwk_authenticates(AgentKey key)
+    {
+        // An ECDSA certificate's JWK is an EC key (RFC 7517 §4.7), which OpenIddict alone wouldn't read a certificate from.
+        using var certificate = TestCertificates.AgentCertificate(key);
+        await _factory.SeedSelfSignedTlsClientAsync("ec-app", OSI.Signal9.Server.Identity.ClientCertificateKey.From(certificate));
+        using var other = TestCertificates.AgentCertificate(key);
+
+        var response = await RequestAsync("ec-app", certificate);
+        var refused = await RequestAsync("ec-app", other);
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, await response.Content.ReadAsStringAsync(Ct));
+        Assert.AreEqual(HttpStatusCode.Unauthorized, refused.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task An_ec_key_whose_certificate_holds_another_key_is_not_trusted()
+    {
+        using var certificate = TestCertificates.AgentCertificate();
+        using var impostor = TestCertificates.AgentCertificate();
+        var mismatched = OSI.Signal9.Server.Identity.ClientCertificateKey.From(certificate);
+        mismatched.X5c.Clear();
+        mismatched.X5c.Add(Convert.ToBase64String(impostor.RawData));
+        await _factory.SeedSelfSignedTlsClientAsync("ec-app", mismatched);
+
+        var response = await RequestAsync("ec-app", impostor);
+
+        Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    private async Task<HttpResponseMessage> RequestAsync(string clientId, X509Certificate2 certificate)
+    {
+        using var api = _factory.CreateForwardedCertificateClient(certificate);
+        return await api.PostAsync("connect/token", Signal9ApiFactory.MtlsClientCredentials(clientId), Ct);
+    }
+
+    [TestMethod]
     public async Task Self_signed_client_authenticates_with_the_certificate_from_the_tls_handshake()
     {
         using var certificate = TestCertificates.SelfSigned();

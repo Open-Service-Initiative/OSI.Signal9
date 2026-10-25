@@ -47,12 +47,18 @@ public interface IDeviceOwned
 public enum TenantScopeBypass
 {
     /// <summary>
-    /// An agent's requests about itself: its heartbeats, telemetry, pending commands and their results, and registering.
-    /// Agents aren't assigned to tenants; they reach only the records of the device named by the request.
+    /// An agent's requests about itself: its heartbeats, telemetry, pending commands and their results. Agents aren't
+    /// assigned to tenants; they reach only the device whose active agent their access token names (ADR-0005).
     /// </summary>
-    // TODO(auth): scope agents to their own device once agent identity comes from the token (ADR-0005).
     [NotAudited("An agent reaches only its own device; the command results it reports are audited.")]
     AgentSelfService,
+
+    /// <summary>
+    /// A new agent enrolling with an enrollment token: finding the token by its secret's hash, and creating the device
+    /// and agent in the token's tenant. The caller has no access token; the enrollment token is its only authority.
+    /// </summary>
+    [NotAudited("Reaches only the presented token's tenant, and each enrollment is audited.")]
+    Enrollment,
 
     /// <summary>
     /// Reading the caller's own role assignments to work out their access, which the filter itself depends on. Only

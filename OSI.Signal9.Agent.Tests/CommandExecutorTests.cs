@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using OSI.Signal9.Agent.Services;
 using OSI.Signal9.Contracts.Commands;
@@ -11,26 +10,22 @@ namespace OSI.Signal9.Agent.Tests;
 [TestClass]
 public sealed class CommandExecutorTests(TestContext testContext)
 {
-    private static readonly Guid TenantId = Guid.Parse("4f0c2b8e-7a51-4d3e-9b6a-1c2d3e4f5a6b");
-
     private readonly FakeTimeProvider _time = new();
 
     private CancellationToken Ct => testContext.CancellationToken;
 
     [TestMethod]
-    public async Task Collecting_system_info_succeeds_with_this_machine_s_registration_as_output()
+    public async Task Collecting_system_info_succeeds_with_this_machine_s_facts_as_output()
     {
-        var executor = Executor(new CollectSystemInfoHandler(
-            new SystemInfoProvider(Options.Create(new AgentOptions { ApiBaseUrl = new Uri("https://api.invalid"), TenantId = TenantId })),
+        var executor = Executor(new CollectSystemInfoHandler(new SystemInfoProvider(),
             new TelemetryCollector(_time, NullLogger<TelemetryCollector>.Instance)));
 
         var result = await executor.ExecuteAsync(Command(CommandType.CollectSystemInfo), Ct);
 
         Assert.IsTrue(result.Succeeded);
         using var output = JsonDocument.Parse(result.Output!);
-        var registration = output.RootElement.GetProperty("registration");
-        Assert.AreEqual(TenantId, registration.GetProperty("tenantId").GetGuid());
-        Assert.AreEqual(Environment.MachineName, registration.GetProperty("machineName").GetString());
+        var system = output.RootElement.GetProperty("system");
+        Assert.AreEqual(Environment.MachineName, system.GetProperty("machineName").GetString());
     }
 
     [TestMethod]

@@ -2,25 +2,22 @@ using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Options;
+using OSI.Signal9.Agent.Identity;
 using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Hubs;
 
 namespace OSI.Signal9.Agent.Services;
 
-/// <summary>Builds an agent's connection to the agent hub, with automatic reconnects.</summary>
-public delegate HubConnection AgentHubConnectionFactory(Guid agentId);
-
 /// <summary>
 /// One enrolled agent's session: it listens for the doorbell, sends heartbeats and telemetry, and runs its pending
 /// commands. Work is fetched over REST when the doorbell rings, every time the hub (re)connects, and when a heartbeat
-/// says work is waiting (ADR-0009); there's no other polling.
+/// says work is waiting (ADR-0009); there's no other polling. The hub closes when the agent's token expires, and
+/// reconnects with a fresh one.
 /// </summary>
 public sealed class AgentSession(
-    AgentApiClient api,
     CommandExecutor executor,
     TelemetryCollector telemetry,
-    AgentHubConnectionFactory connectToHub,
     TimeProvider time,
     IOptions<AgentOptions> options,
     ILogger<AgentSession> logger)
@@ -28,15 +25,16 @@ public sealed class AgentSession(
     private readonly AgentOptions _options = options.Value;
 
     /// <summary>
-    /// Runs until the agent must enroll again (it's unknown or was replaced), or throws when the session fails,
-    /// including when the hub gives up reconnecting.
+    /// Runs until stopped, or throws when the session fails: when the API refuses the agent, or the hub gives up
+    /// reconnecting.
     /// </summary>
-    public async Task RunAsync(AgentDto agent, CancellationToken stoppingToken)
+    public async Task RunAsync(AgentConnection connection, CancellationToken stoppingToken)
     {
         using var session = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-        var work = new PendingWork(api, executor, agent.Id, logger);
+        var api = connection.Api;
+        var work = new PendingWork(api, executor, connection.AgentId, logger);
 
-        await using var hub = connectToHub(agent.Id);
+        await using var hub = connection.ConnectToHub();
         hub.On(nameof(IAgentHubClient.WorkAvailable), work.RequestFetch);
         hub.Reconnecting += error =>
         {
@@ -50,20 +48,28 @@ public sealed class AgentSession(
             return Task.CompletedTask;
         };
         // Automatic reconnect gave up: end the session so the worker starts over.
-        hub.Closed += _ => session.CancelAsync();
+        var closed = new TaskCompletionSource<Exception?>();
+        hub.Closed += error =>
+        {
+            closed.TrySetResult(error);
+            return Task.CompletedTask;
+        };
 
         await hub.StartAsync(session.Token);
         work.RequestFetch();
 
         var finished = await Task.WhenAny(
+            closed.Task,
             work.RunAsync(session.Token),
-            HeartbeatLoopAsync(agent.Id, work, session.Token),
-            TelemetryLoopAsync(agent.Id, session.Token));
+            HeartbeatLoopAsync(api, connection.AgentId, work, session.Token),
+            TelemetryLoopAsync(api, connection.AgentId, session.Token));
         await session.CancelAsync();
+        if (finished == closed.Task && !stoppingToken.IsCancellationRequested)
+            throw new InvalidOperationException("The agent hub connection closed.", closed.Task.Result);
         await finished; // Rethrows the failure, if any, so the worker backs off.
     }
 
-    private async Task HeartbeatLoopAsync(Guid agentId, PendingWork work, CancellationToken cancellationToken)
+    private async Task HeartbeatLoopAsync(AgentApiClient api, Guid agentId, PendingWork work, CancellationToken cancellationToken)
     {
         using var timer = new PeriodicTimer(_options.HeartbeatInterval, time);
         do
@@ -71,18 +77,13 @@ public sealed class AgentSession(
             var (ipAddress, _) = SystemInfoProvider.GetPrimaryNetworkAddress();
             var response = await api.SendHeartbeatAsync(agentId,
                 new HeartbeatRequest { IpAddress = ipAddress, AgentVersion = SystemInfoProvider.AgentVersion }, cancellationToken);
-            if (response is null)
-            {
-                logger.LogWarning("Agent {AgentId} is unknown or was replaced; re-enrolling", agentId);
-                return;
-            }
             if (response.HasPendingWork)
                 work.RequestFetch();
         }
         while (await timer.WaitForNextTickAsync(cancellationToken));
     }
 
-    private async Task TelemetryLoopAsync(Guid agentId, CancellationToken cancellationToken)
+    private async Task TelemetryLoopAsync(AgentApiClient api, Guid agentId, CancellationToken cancellationToken)
     {
         using var timer = new PeriodicTimer(_options.TelemetryInterval, time);
         while (await timer.WaitForNextTickAsync(cancellationToken))

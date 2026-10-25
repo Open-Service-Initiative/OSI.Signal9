@@ -4,8 +4,8 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using OpenIddict.Abstractions;
 using Microsoft.IdentityModel.Tokens;
+using OpenIddict.Abstractions;
 using OpenIddict.Core;
 using OSI.Signal9.Contracts.ApiApplications;
 
@@ -15,7 +15,8 @@ namespace OSI.Signal9.Server.Identity;
 /// OpenIddict's application manager, with <c>tls_client_auth</c> as RFC 8705 §2.1.2 defines it: a CA-issued
 /// certificate is accepted when it chains to a trusted authority and matches the subject the client registered.
 /// OpenIddict's default instead matches the certificate against the client's redirect URI hosts, which an
-/// application acting as itself doesn't have. Client certificates are checked for validity on the hosts'
+/// application acting as itself doesn't have. <c>self_signed_tls_client_auth</c> accepts only a certificate the client
+/// registered, RSA or ECDSA (agents' TPM keys are ECDSA), which OpenIddict's own check would drop. Client certificates are checked for validity on the hosts'
 /// <see cref="TimeProvider"/>, the clock every other expiry uses.
 /// </summary>
 public sealed class Signal9ApplicationManager<TApplication>(
@@ -27,45 +28,67 @@ public sealed class Signal9ApplicationManager<TApplication>(
     : OpenIddictApplicationManager<TApplication>(cache, logger, options, store)
     where TApplication : class
 {
+    /// <summary>
+    /// <c>self_signed_tls_client_auth</c> (RFC 8705 §2.2) for every client, agents and API applications alike, in place of
+    /// OpenIddict's, which reads a JWK's certificate only for RSA keys. The certificate must be self-issued with the
+    /// digitalSignature and clientAuth usages, and be exactly one the client registered in its key set as a signing
+    /// JWK's <c>x5c</c>, holding that JWK's own key (RFC 7517 §4.7). Its chain, trusting only that certificate, then
+    /// checks its signature, validity and the clientAuth usage under OpenIddict's policy.
+    /// </summary>
     public override async ValueTask<bool> ValidateSelfSignedTlsClientCertificateAsync(TApplication application,
         X509Certificate2 certificate, X509ChainPolicy policy, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(policy);
+        ArgumentNullException.ThrowIfNull(application);
         ArgumentNullException.ThrowIfNull(certificate);
-        var properties = await GetPropertiesAsync(application, cancellationToken);
-        if (ApiApplicationClient.AuthMethod(properties) is not { } method)
-            return await base.ValidateSelfSignedTlsClientCertificateAsync(application, certificate, Now(policy), cancellationToken);
-        if (method != TokenEndpointAuthMethods.SelfSignedTlsClientAuth)
+        ArgumentNullException.ThrowIfNull(policy);
+        if (!await UsesAsync(application, TokenEndpointAuthMethods.SelfSignedTlsClientAuth, cancellationToken))
             return false;
 
-        // RFC 8705 §2.2: the certificate must be one the application registered. Its chain, trusting only that
-        // certificate, checks its signature, validity and the clientAuth usage under OpenIddict's policy.
-        var thumbprint = ApiApplicationClient.Thumbprint(certificate.RawData);
-        if (ApiApplicationClient.Credentials(properties).FirstOrDefault(c => c.Thumbprint == thumbprint && c.Certificate is not null)
-            is not { Certificate: { } registered })
-            return false;
-        using var trusted = X509CertificateLoader.LoadCertificate(Convert.FromBase64String(registered));
-        var chainPolicy = Now(policy);
-        chainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
-        chainPolicy.CustomTrustStore.Clear();
-        chainPolicy.CustomTrustStore.Add(trusted);
-        chainPolicy.ExtraStore.Clear();
-        chainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-        using var chain = new X509Chain { ChainPolicy = chainPolicy };
-        try
+        var clientId = await GetClientIdAsync(application, cancellationToken);
+        if (!IsSelfIssuedClientCertificate(certificate))
         {
-            if (chain.Build(certificate))
-                return true;
-            Logger.LogInformation("The self-signed certificate of client {ClientId} isn't valid: {Status}.",
-                await GetClientIdAsync(application, cancellationToken), chain.ChainStatus.Select(status => status.Status).ToArray());
+            Logger.LogInformation("The certificate client {ClientId} presented isn't a self-issued client certificate.", clientId);
             return false;
         }
-        finally
+
+        var keys = (await GetJsonWebKeySetAsync(application, cancellationToken))?.Keys ?? [];
+        foreach (var key in keys)
         {
-            foreach (var element in chain.ChainElements)
-                element.Certificate.Dispose();
+            using var registered = ClientCertificateKey.Certificate(key);
+            if (registered is null || !registered.RawData.AsSpan().SequenceEqual(certificate.RawData))
+                continue;
+
+            var chainPolicy = Now(policy);
+            chainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+            chainPolicy.CustomTrustStore.Clear();
+            chainPolicy.CustomTrustStore.Add(registered);
+            chainPolicy.ExtraStore.Clear();
+            chainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+            using var chain = new X509Chain { ChainPolicy = chainPolicy };
+            try
+            {
+                if (chain.Build(certificate))
+                    return true;
+                Logger.LogInformation("The self-signed certificate of client {ClientId} isn't valid: {Status}.",
+                    clientId, chain.ChainStatus.Select(status => status.Status).ToArray());
+                return false;
+            }
+            finally
+            {
+                foreach (var element in chain.ChainElements)
+                    element.Certificate.Dispose();
+            }
         }
+
+        Logger.LogInformation("Client {ClientId} presented a certificate it didn't register.", clientId);
+        return false;
     }
+
+    private static bool IsSelfIssuedClientCertificate(X509Certificate2 certificate) =>
+        certificate.SubjectName.RawData.AsSpan().SequenceEqual(certificate.IssuerName.RawData)
+        && certificate.Extensions.OfType<X509KeyUsageExtension>().Any(u => u.KeyUsages.HasFlag(X509KeyUsageFlags.DigitalSignature))
+        && certificate.Extensions.OfType<X509EnhancedKeyUsageExtension>()
+            .Any(e => e.EnhancedKeyUsages.Cast<Oid>().Any(o => o.Value == "1.3.6.1.5.5.7.3.2"));
 
     /// <summary>An API application's key set is built from its credentials (<see cref="ApiApplicationClient"/>).</summary>
     public override async ValueTask<JsonWebKeySet?> GetJsonWebKeySetAsync(TApplication application,

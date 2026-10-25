@@ -7,12 +7,19 @@ namespace OSI.Signal9.API.Agents;
 internal static class ActiveAgents
 {
     /// <summary>
-    /// Finds the device whose active agent is <paramref name="agentId"/>, for requests an agent sends about itself.
+    /// Finds the device whose active agent is <paramref name="agentId"/>, for requests an agent sends about itself. The
+    /// agent is the one the access token names; a request naming any other agent is refused (story 100).
     /// </summary>
-    /// <returns>The tracked device with its active agent, or the 404 (unknown agent) or 409 (replaced agent) to return.</returns>
+    /// <returns>
+    /// The tracked device with its active agent, or the 403 (not the caller), 404 (unknown agent) or 409 (replaced
+    /// agent) to return.
+    /// </returns>
     public static async Task<(Device? Device, IActionResult? Refusal)> FindDeviceOfActiveAgentAsync(
         this Signal9DbContext db, ControllerBase controller, Guid agentId, CancellationToken cancellationToken)
     {
+        if (controller.User.AgentId() != agentId)
+            return (null, controller.Forbid());
+
         var agent = await db.Agents.IgnoreTenantScope(TenantScopeBypass.AgentSelfService).Include(a => a.Device!).ThenInclude(d => d.ActiveAgent)
             .SingleOrDefaultAsync(a => a.Id == agentId, cancellationToken);
         if (agent is null)

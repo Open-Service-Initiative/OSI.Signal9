@@ -45,6 +45,7 @@ internal static class Mappings
     public static EnrollmentTokenStatus StatusAt(this EnrollmentToken token, DateTime now) =>
         token.RevokedAt is not null ? EnrollmentTokenStatus.Revoked
         : token.ExpiresAt <= now ? EnrollmentTokenStatus.Expired
+        : token.UseCount >= token.MaxUses ? EnrollmentTokenStatus.UsedUp
         : EnrollmentTokenStatus.Active;
 
     /// <param name="secret">The secret, only in the response that issues it.</param>
@@ -59,6 +60,8 @@ internal static class Mappings
         token.CreatedAt.AsUtcOffset(),
         token.RotatedAt.AsUtcOffset(),
         token.RevokedAt.AsUtcOffset(),
+        token.UseCount,
+        token.LastUsedAt.AsUtcOffset(),
         secret);
 
     public static UserDto ToDto(this User user) => new(
@@ -107,8 +110,10 @@ internal static class Mappings
 
     public static AgentDto ToDto(this Agent agent, Device device) => new(
         agent.Id,
+        $"/api/v1/agents/{agent.Id}",
         agent.DeviceId,
         device.TenantId,
+        agent.EnrollmentTokenId,
         agent.AgentVersion,
         device.ActiveAgentId == agent.Id,
         agent.EnrolledAt.AsUtcOffset(),

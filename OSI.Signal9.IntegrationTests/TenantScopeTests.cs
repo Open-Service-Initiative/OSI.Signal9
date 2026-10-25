@@ -26,6 +26,7 @@ public sealed class TenantScopeTests : IDisposable
     private readonly Signal9ApiFactory _factory = new();
     private readonly HttpClient _client;
     private readonly TestContext _testContext;
+    private readonly Dictionary<Guid, TestAgent> _agents = [];
 
     public TenantScopeTests(TestContext testContext)
     {
@@ -89,10 +90,10 @@ public sealed class TenantScopeTests : IDisposable
     }
 
     [TestMethod]
-    public async Task An_agent_reaches_its_own_records_whatever_its_client_is_assigned()
+    public async Task An_agent_reaches_its_own_records_though_it_is_assigned_no_tenants()
     {
         var tree = await SeedAsync();
-        using var agent = await _factory.CreateAssignedClientAsync([], OSI.Signal9.Server.Identity.Scopes.Agent);
+        var agent = _agents[tree.Site.Agent].Client;
 
         var heartbeat = await agent.PutAsJsonAsync($"api/v1/agents/{tree.Site.Agent}/heartbeat", new HeartbeatRequest(), Signal9Json.Options, Ct);
         var pending = await agent.GetFromJsonAsync<PagedResult<CommandDto>>($"api/v1/agents/{tree.Site.Agent}/pending-commands", Signal9Json.Options, Ct);
@@ -100,13 +101,11 @@ public sealed class TenantScopeTests : IDisposable
             new CreateTelemetrySampleRequest { CollectedAt = _factory.Time.GetUtcNow() }, Signal9Json.Options, Ct);
         var result = await agent.PutAsJsonAsync($"api/v1/devices/{tree.Site.Device}/commands/{tree.Site.Command}/result",
             new CommandResultRequest { Succeeded = true }, Signal9Json.Options, Ct);
-        var registered = await Signal9ApiFactory.RegisterAsync(agent, tree.Site.Tenant, "PC-NEW");
 
         Assert.AreEqual(HttpStatusCode.OK, heartbeat.StatusCode);
         Assert.AreEqual(tree.Site.Command, Assert.ContainsSingle(pending!.Items).Id);
         Assert.AreEqual(HttpStatusCode.Created, telemetry.StatusCode);
         Assert.AreEqual(HttpStatusCode.OK, result.StatusCode);
-        Assert.AreEqual(HttpStatusCode.Created, registered.StatusCode);
     }
 
     [TestMethod]
@@ -313,13 +312,13 @@ public sealed class TenantScopeTests : IDisposable
     private async Task<Branch> BranchAsync(string name, Guid? parent)
     {
         var tenant = await _factory.CreateTenantAsync(_client, name, parentTenantId: parent);
-        var registered = await Signal9ApiFactory.RegisterAsync(_client, tenant.Id, $"{name}-PC");
-        Assert.AreEqual(HttpStatusCode.Created, registered.StatusCode);
-        var agent = (await registered.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options, Ct))!;
+        var enrolled = await _factory.EnrollAgentAsync(tenant.Id, $"{name}-PC");
+        _agents[enrolled.Id] = enrolled;
+        var agent = enrolled.Agent;
         var command = await _client.PostAsJsonAsync($"api/v1/devices/{agent.DeviceId}/commands",
             new CreateCommandRequest { Type = CommandType.CollectSystemInfo }, Signal9Json.Options, Ct);
         Assert.AreEqual(HttpStatusCode.Created, command.StatusCode);
-        var sample = await _client.PostAsJsonAsync($"api/v1/agents/{agent.Id}/telemetry",
+        var sample = await enrolled.Client.PostAsJsonAsync($"api/v1/agents/{agent.Id}/telemetry",
             new CreateTelemetrySampleRequest { CollectedAt = _factory.Time.GetUtcNow() }, Signal9Json.Options, Ct);
         Assert.AreEqual(HttpStatusCode.Created, sample.StatusCode);
         return new Branch(tenant.Id, agent.DeviceId, agent.Id,
@@ -352,6 +351,8 @@ public sealed class TenantScopeTests : IDisposable
 
     public void Dispose()
     {
+        foreach (var agent in _agents.Values)
+            agent.Dispose();
         _client.Dispose();
         _factory.Dispose();
     }

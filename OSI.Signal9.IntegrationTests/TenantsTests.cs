@@ -251,7 +251,7 @@ public sealed class TenantsTests : IDisposable
     public async Task Delete_tenant_with_devices_returns_409()
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
-        await Signal9ApiFactory.RegisterAsync(_client, tenant.Id, "PC01");
+        using var agent = await _factory.EnrollAgentAsync(tenant.Id, "PC01");
         using var superadministrator = await _factory.CreatePersonClientAsync(_factory.Superadministrator());
 
         var response = await superadministrator.DeleteAsync($"api/v1/tenants/{tenant.Id}", Ct);
@@ -264,7 +264,7 @@ public sealed class TenantsTests : IDisposable
     {
         await _factory.CreateTenantAsync(_client, "Alpha");
         var bravo = await _factory.CreateTenantAsync(_client, "Bravo");
-        await Signal9ApiFactory.RegisterAsync(_client, bravo.Id, "PC01");
+        using var agent = await _factory.EnrollAgentAsync(bravo.Id, "PC01");
 
         var page = await _client.GetFromJsonAsync<PagedResult<TenantDto>>("api/v1/tenants?page=2&pageSize=1", Signal9Json.Options,
             Ct);

@@ -105,6 +105,11 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
                 .WithMany()
                 .HasForeignKey(a => a.DeviceId)
                 .OnDelete(DeleteBehavior.Cascade);
+            agent.HasOne<EnrollmentToken>()
+                .WithMany()
+                .HasForeignKey(a => a.EnrollmentTokenId)
+                .OnDelete(DeleteBehavior.SetNull);
+            agent.HasIndex(a => a.EnrolledAt);
         });
 
         modelBuilder.Entity<Command>(command =>

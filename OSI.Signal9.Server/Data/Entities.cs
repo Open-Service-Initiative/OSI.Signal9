@@ -79,6 +79,12 @@ public sealed class Agent : IDeviceOwned
     /// <summary>Row version (PostgreSQL <c>xmin</c>): the concurrency token behind the resource's ETag.</summary>
     public uint Version { get; set; }
     public Guid DeviceId { get; set; }
+
+    /// <summary>
+    /// The enrollment token it enrolled with, while that token exists. The agent's credential is its own certificate,
+    /// registered as its OAuth client (its ID is the client ID), so rotating or revoking the token doesn't affect it.
+    /// </summary>
+    public Guid? EnrollmentTokenId { get; set; }
     public string? AgentVersion { get; set; }
     public DateTime EnrolledAt { get; set; }
     public DateTime LastSeenAt { get; set; }
@@ -198,6 +204,12 @@ public sealed class EnrollmentToken : ITenantOwned
     public DateTime CreatedAt { get; set; }
     public DateTime? RotatedAt { get; set; }
     public DateTime? RevokedAt { get; set; }
+
+    /// <summary>How many agents have enrolled with it (story 95).</summary>
+    public int UseCount { get; set; }
+
+    /// <summary>When an agent last enrolled with it.</summary>
+    public DateTime? LastUsedAt { get; set; }
 }
 
 /// <summary>

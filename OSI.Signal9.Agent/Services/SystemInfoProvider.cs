@@ -2,7 +2,6 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using Microsoft.Extensions.Options;
 using OSI.Signal9.Contracts.Agents;
 
 namespace OSI.Signal9.Agent.Services;
@@ -10,29 +9,49 @@ namespace OSI.Signal9.Agent.Services;
 /// <summary>
 /// Facts about this machine that the agent reports when it enrolls.
 /// </summary>
-public sealed class SystemInfoProvider(IOptions<AgentOptions> options)
+public sealed class SystemInfoProvider
 {
     public static string AgentVersion { get; } =
         typeof(SystemInfoProvider).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]
         ?? "0.0.0";
 
-    public RegisterAgentRequest GetRegistration()
+    /// <summary>What this machine is: the facts the agent reports when it enrolls.</summary>
+    public MachineFacts GetFacts()
     {
         var (ipAddress, macAddress) = GetPrimaryNetworkAddress();
-        return new RegisterAgentRequest
+        return new MachineFacts(
+            MachineName: Environment.MachineName,
+            Domain: OperatingSystem.IsWindows() ? Environment.UserDomainName : null,
+            OperatingSystem: RuntimeInformation.OSDescription,
+            OsVersion: Environment.OSVersion.Version.ToString(),
+            Architecture: RuntimeInformation.OSArchitecture.ToString(),
+            ProcessorName: GetProcessorName(),
+            ProcessorCores: Environment.ProcessorCount,
+            TotalMemoryMb: NativeMetrics.ReadMemory()?.TotalMb ?? 0,
+            IpAddress: ipAddress,
+            MacAddress: macAddress,
+            AgentVersion: AgentVersion);
+    }
+
+    /// <summary>An enrollment request presenting <paramref name="enrollmentToken"/> and the agent's certificate.</summary>
+    public EnrollAgentRequest GetEnrollment(string enrollmentToken, string certificatePem)
+    {
+        var facts = GetFacts();
+        return new EnrollAgentRequest
         {
-            TenantId = options.Value.TenantId!.Value,
-            MachineName = Environment.MachineName,
-            Domain = OperatingSystem.IsWindows() ? Environment.UserDomainName : null,
-            OperatingSystem = RuntimeInformation.OSDescription,
-            OsVersion = Environment.OSVersion.Version.ToString(),
-            Architecture = RuntimeInformation.OSArchitecture.ToString(),
-            ProcessorName = GetProcessorName(),
-            ProcessorCores = Environment.ProcessorCount,
-            TotalMemoryMb = NativeMetrics.ReadMemory()?.TotalMb ?? 0,
-            IpAddress = ipAddress,
-            MacAddress = macAddress,
-            AgentVersion = AgentVersion,
+            EnrollmentToken = enrollmentToken,
+            Certificate = certificatePem,
+            MachineName = facts.MachineName,
+            Domain = facts.Domain,
+            OperatingSystem = facts.OperatingSystem,
+            OsVersion = facts.OsVersion,
+            Architecture = facts.Architecture,
+            ProcessorName = facts.ProcessorName,
+            ProcessorCores = facts.ProcessorCores,
+            TotalMemoryMb = facts.TotalMemoryMb,
+            IpAddress = facts.IpAddress,
+            MacAddress = facts.MacAddress,
+            AgentVersion = facts.AgentVersion,
         };
     }
 
@@ -74,3 +93,17 @@ public sealed class SystemInfoProvider(IOptions<AgentOptions> options)
         return null;
     }
 }
+
+/// <summary>Facts about the machine an agent runs on.</summary>
+public sealed record MachineFacts(
+    string MachineName,
+    string? Domain,
+    string OperatingSystem,
+    string? OsVersion,
+    string? Architecture,
+    string? ProcessorName,
+    int ProcessorCores,
+    long TotalMemoryMb,
+    string? IpAddress,
+    string? MacAddress,
+    string AgentVersion);

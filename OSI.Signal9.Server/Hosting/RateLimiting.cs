@@ -6,6 +6,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using static OpenIddict.Abstractions.OpenIddictConstants;
@@ -34,6 +35,15 @@ public static class RateLimiting
     /// <summary>The api's resources, per caller: the access token's subject, or the client IP without one.</summary>
     public const string Api = "Api";
 
+    /// <summary>Agent enrollment, per client IP.</summary>
+    public const string Enrollment = "Enrollment";
+
+    /// <summary>
+    /// Agent enrollment, per enrollment token. The token is in the request body, which the middleware can't read, so
+    /// the endpoint acquires the permit itself from <see cref="RequestRateLimits"/>.
+    /// </summary>
+    public const string EnrollmentToken = "EnrollmentToken";
+
     public static IServiceCollection AddSignal9RateLimiting(this IServiceCollection services)
     {
         AddLimitOptions(services, Global);
@@ -56,7 +66,25 @@ public static class RateLimiting
         services.AddRateLimitPolicy(Token, context => $"{ClientId(context)} {ClientIp(context)}");
         services.AddRateLimitPolicy(Authorize, ClientIp);
         services.AddRateLimitPolicy(Api, Caller);
+        services.AddRateLimitPolicy(Enrollment, ClientIp);
+        AddLimitOptions(services, EnrollmentToken);
+        services.AddSingleton<RequestRateLimits>();
         return services;
+    }
+
+    /// <summary>
+    /// Requires <paramref name="policy"/> on every endpoint that doesn't name its own policy with
+    /// <see cref="EnableRateLimitingAttribute"/>.
+    /// </summary>
+    public static TBuilder RequireRateLimitingUnlessNamed<TBuilder>(this TBuilder builder, string policy)
+        where TBuilder : IEndpointConventionBuilder
+    {
+        builder.Add(endpoint =>
+        {
+            if (!endpoint.Metadata.OfType<EnableRateLimitingAttribute>().Any())
+                endpoint.Metadata.Add(new EnableRateLimitingAttribute(policy));
+        });
+        return builder;
     }
 
     /// <summary>Adds a named policy, configured under <c>RateLimiting:{name}</c>, with one limit per partition key.</summary>
@@ -103,11 +131,13 @@ public static class RateLimiting
         services.AddOptions<RateLimitOptions>(name).BindConfiguration($"{SectionName}:{name}")
             .ValidateDataAnnotations().ValidateOnStart();
 
-    private static RateLimitPartition<string> Partition(HttpContext context, string policy, string key)
+    private static RateLimitPartition<string> Partition(HttpContext context, string policy, string key) =>
+        Partition(context.RequestServices.GetRequiredService<IOptionsMonitor<RateLimitOptions>>().Get(policy), key);
+
+    internal static RateLimitPartition<TKey> Partition<TKey>(RateLimitOptions limit, TKey key)
     {
-        var limit = context.RequestServices.GetRequiredService<IOptionsMonitor<RateLimitOptions>>().Get(policy);
         if (limit.PermitLimit is not { } permits)
-            return RateLimitPartition.GetNoLimiter(string.Empty);
+            return RateLimitPartition.GetNoLimiter(key);
 
         return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
         {
@@ -152,6 +182,22 @@ public static class RateLimiting
 
         return string.Empty;
     }
+}
+
+/// <summary>
+/// Named policies whose partition key only the endpoint knows, such as a value in the request body: the endpoint
+/// acquires a permit itself, on top of the policy the middleware applied. Configured like every other policy.
+/// </summary>
+public sealed class RequestRateLimits(IOptionsMonitor<RateLimitOptions> options) : IDisposable
+{
+    private readonly PartitionedRateLimiter<(string Policy, string Key)> _limiter =
+        PartitionedRateLimiter.Create<(string Policy, string Key), (string Policy, string Key)>(
+            partition => RateLimiting.Partition(options.Get(partition.Policy), partition));
+
+    /// <summary>Takes a permit from <paramref name="policy"/>'s partition for <paramref name="key"/>, if one is left.</summary>
+    public RateLimitLease Acquire(string policy, string key) => _limiter.AttemptAcquire((policy, key));
+
+    public void Dispose() => _limiter.Dispose();
 }
 
 /// <summary>One rate limit policy's settings. Without a <see cref="PermitLimit"/>, nothing is limited.</summary>

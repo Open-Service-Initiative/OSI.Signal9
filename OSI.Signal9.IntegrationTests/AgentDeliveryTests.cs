@@ -1,50 +1,54 @@
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Net.WebSockets;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using OSI.Signal9.Agent;
+using OSI.Signal9.Agent.Identity;
 using OSI.Signal9.Agent.Services;
+using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Hubs;
 using OSI.Signal9.Contracts.Serialization;
+using OSI.Signal9.Server.Identity;
 
 namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>
-/// End to end: the agent's session against the API in memory. Work reaches the agent by doorbell then fetch, by a fetch
-/// on every reconnect, and by a fetch when a heartbeat says work is waiting.
+/// End to end: the real agent enrolls with an enrollment token, authenticates with its certificate and runs its session
+/// against the API in memory. Work reaches the agent by doorbell then fetch, by a fetch on every reconnect, and by a
+/// fetch when a heartbeat says work is waiting.
 /// </summary>
 [TestClass]
 public sealed class AgentDeliveryTests : IAsyncDisposable
 {
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
 
-    private readonly Signal9ApiFactory _factory = new();
-    private readonly HttpClient _client;
-    private readonly RequestLog _agentRequests = new();
-    private readonly FakeTimeProvider _agentTime = new();
-    private readonly AgentOptions _agentOptions = new()
-    {
-        ApiBaseUrl = Signal9ApiFactory.HttpsLocalhost,
-        TenantId = Guid.NewGuid(),
-        HeartbeatInterval = TimeSpan.FromSeconds(30),
-        TelemetryInterval = TimeSpan.FromHours(1),
-    };
+    private readonly Signal9ApiFactory _factory;
+    private HttpClient _client;
+    private readonly string _stateDirectory = Path.Combine(Path.GetTempPath(), $"signal9-agents-{Guid.NewGuid():N}");
+    private readonly InMemoryKeyStore _keys = new();
+    private readonly FakeTimeProvider _agentTime;
     private readonly CancellationTokenSource _stop;
     private readonly TestContext _testContext;
-    private Network _network = null!;
-    private Task _session = Task.CompletedTask;
+    private readonly List<RunningAgent> _agents = [];
 
     public AgentDeliveryTests(TestContext testContext)
     {
         _testContext = testContext;
+        // SignalR closes a connection when its token expires by the real clock, so the expiry test starts the hosts'
+        // clock just short of a token lifetime ago: its first tokens expire for real a few seconds in.
+        _factory = testContext.TestName == nameof(When_its_token_expires_the_hub_closes_and_the_agent_reconnects_with_a_fresh_token)
+            ? new Signal9ApiFactory(start: DateTimeOffset.UtcNow - AuthorizationServer.AccessTokenLifetime + TimeSpan.FromSeconds(10))
+            : new Signal9ApiFactory();
+        _agentTime = new FakeTimeProvider(_factory.Time.GetUtcNow());
         _client = _factory.CreateClient();
         _stop = CancellationTokenSource.CreateLinkedTokenSource(testContext.CancellationToken);
     }
@@ -67,13 +71,13 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
     public async Task After_missing_doorbells_while_disconnected_the_agent_fetches_its_work_on_reconnect()
     {
         var agent = await StartAgentAsync();
-        await _network.GoOfflineAsync();
+        await agent.Network.GoOfflineAsync();
 
         var first = await QueueCommandAsync(agent.DeviceId);
         var second = await QueueCommandAsync(agent.DeviceId);
         Assert.AreEqual(CommandStatus.Pending, (await GetAsync(first)).Status);
 
-        _network.GoOnline();
+        agent.Network.GoOnline();
 
         Assert.AreEqual(CommandStatus.Completed, (await WaitUntilFinishedAsync(first)).Status);
         Assert.AreEqual(CommandStatus.Completed, (await WaitUntilFinishedAsync(second)).Status);
@@ -83,41 +87,111 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
     public async Task When_a_heartbeat_says_work_is_waiting_the_agent_fetches_it()
     {
         var agent = await StartAgentAsync();
-        await _network.GoOfflineAsync();
+        await agent.Network.GoOfflineAsync();
         var command = await QueueCommandAsync(agent.DeviceId);
 
-        _agentTime.Advance(_agentOptions.HeartbeatInterval);
+        _agentTime.Advance(agent.Options.HeartbeatInterval);
 
         Assert.AreEqual(CommandStatus.Completed, (await WaitUntilFinishedAsync(command)).Status);
-        Assert.AreEqual(HubConnectionState.Reconnecting, _network.Hub!.State);
+        Assert.AreEqual(HubConnectionState.Reconnecting, agent.Network.Hub!.State);
+    }
+
+    [TestMethod]
+    public async Task When_its_token_expires_the_hub_closes_and_the_agent_reconnects_with_a_fresh_token()
+    {
+        var agent = await StartAgentAsync();
+        var connections = agent.Network.Connections;
+
+        // Both clocks catch up with the real one, which reaches the token's expiry within seconds: the hub closes the
+        // connection, and the agent reconnects with a new token.
+        _factory.Time.Advance(AuthorizationServer.AccessTokenLifetime);
+        _agentTime.Advance(AuthorizationServer.AccessTokenLifetime);
+        _client.Dispose();
+        _client = await _factory.CreateClientAsync(Signal9ApiFactory.GrantableScopes);
+        await WaitUntilAsync(() => Task.FromResult(
+            agent.Network.Connections > connections && agent.Network.Hub!.State == HubConnectionState.Connected));
+
+        var command = await QueueCommandAsync(agent.DeviceId);
+        Assert.AreEqual(CommandStatus.Completed, (await WaitUntilFinishedAsync(command)).Status);
+        Assert.IsGreaterThanOrEqualTo(2, agent.Network.DistinctTokens);
+    }
+
+    [TestMethod]
+    public async Task Two_instances_on_one_machine_enroll_into_different_root_trees_and_run_independently()
+    {
+        var contoso = await StartAgentAsync("contoso");
+        var fabrikam = await StartAgentAsync("fabrikam");
+
+        var forContoso = await QueueCommandAsync(contoso.DeviceId);
+        var forFabrikam = await QueueCommandAsync(fabrikam.DeviceId);
+
+        Assert.AreNotEqual(contoso.Agent.Id, fabrikam.Agent.Id);
+        Assert.AreNotEqual(contoso.Agent.TenantId, fabrikam.Agent.TenantId);
+        Assert.AreNotEqual(contoso.DeviceId, fabrikam.DeviceId);
+        Assert.AreEqual(CommandStatus.Completed, (await WaitUntilFinishedAsync(forContoso)).Status);
+        Assert.AreEqual(CommandStatus.Completed, (await WaitUntilFinishedAsync(forFabrikam)).Status);
+    }
+
+    [TestMethod]
+    public async Task A_restarted_instance_runs_as_the_agent_it_enrolled_as_without_enrolling_again()
+    {
+        var first = await StartAgentAsync();
+        await first.StopAsync();
+
+        var restarted = await StartAgentAsync(enrollmentToken: null);
+
+        Assert.AreEqual(first.Agent.Id, restarted.Agent.Id);
+        var command = await QueueCommandAsync(restarted.DeviceId);
+        Assert.AreEqual(CommandStatus.Completed, (await WaitUntilFinishedAsync(command)).Status);
     }
 
     /// <summary>
-    /// Registers an agent and starts its session, returning once it has connected, fetched its work and sent its first
-    /// heartbeat, so the only things left to make it fetch again are the doorbell, a reconnect and the heartbeat timer.
+    /// Starts an agent instance in a new root tenant (or on its existing enrollment when there's no token), returning
+    /// once it has enrolled, connected, fetched its work and sent its first heartbeat, so the only things left to make it
+    /// fetch again are the doorbell, a reconnect and the heartbeat timer.
     /// </summary>
-    private async Task<AgentDto> StartAgentAsync()
+    private async Task<RunningAgent> StartAgentAsync(string instanceId = "default", string? enrollmentToken = "issue")
     {
-        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
-        var response = await Signal9ApiFactory.RegisterAsync(_client, tenant.Id, "PC01");
-        response.EnsureSuccessStatusCode();
-        var agent = (await response.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options, Ct))!;
+        if (enrollmentToken == "issue")
+        {
+            var tenant = await _factory.CreateTenantAsync(_client, $"Root{instanceId}{Guid.NewGuid():N}");
+            enrollmentToken = (await _factory.IssueEnrollmentTokenAsync(tenant.Id)).Secret;
+        }
 
-        _network = new Network(_factory.Server, _client.DefaultRequestHeaders.Authorization!);
-        var api = new AgentApiClient(_factory.CreateDefaultClient(_agentRequests));
-        var options = Options.Create(_agentOptions);
+        var options = new AgentOptions
+        {
+            ApiBaseUrl = Signal9ApiFactory.HttpsLocalhost,
+            EnrollmentToken = enrollmentToken,
+            InstanceId = instanceId,
+            StateDirectory = _stateDirectory,
+            HeartbeatInterval = TimeSpan.FromSeconds(30),
+            TelemetryInterval = TimeSpan.FromHours(1),
+        };
+        var wrapped = Options.Create(options);
+        var network = new InMemoryTransport(_factory.Server);
+        var identities = new AgentIdentityStore(_keys, wrapped, _agentTime);
+        var systemInfo = new SystemInfoProvider();
         var telemetry = new TelemetryCollector(_agentTime, NullLogger<TelemetryCollector>.Instance);
-        var executor = new CommandExecutor([new CollectSystemInfoHandler(new SystemInfoProvider(options), telemetry)], _agentTime,
+        var executor = new CommandExecutor([new CollectSystemInfoHandler(systemInfo, telemetry)], _agentTime,
             NullLogger<CommandExecutor>.Instance);
-        var session = new AgentSession(api, executor, telemetry, _network.Connect, _agentTime, options,
-            NullLogger<AgentSession>.Instance);
-        _session = session.RunAsync(agent, _stop.Token);
+        var worker = new AgentWorker(
+            new AgentEnrollment(identities, network, systemInfo, wrapped, NullLogger<AgentEnrollment>.Instance),
+            network,
+            new AgentSession(executor, telemetry, _agentTime, wrapped, NullLogger<AgentSession>.Instance),
+            _agentTime,
+            NullLogger<AgentWorker>.Instance);
+        await worker.StartAsync(_stop.Token);
+        var running = new RunningAgent(worker, network, options);
+        _agents.Add(running);
 
+        await WaitUntilAsync(() => Task.FromResult(identities.Load() is not null));
+        var agentId = identities.Load()!.AgentId;
         await WaitUntilAsync(() => Task.FromResult(
-            _network.Hub?.State == HubConnectionState.Connected &&
-            _agentRequests.Completed($"/api/v1/agents/{agent.Id}/pending-commands") > 0 &&
-            _agentRequests.Completed($"/api/v1/agents/{agent.Id}/heartbeat") > 0));
-        return agent;
+            network.Hub?.State == HubConnectionState.Connected &&
+            network.Completed($"/api/v1/agents/{agentId}/pending-commands") > 0 &&
+            network.Completed($"/api/v1/agents/{agentId}/heartbeat") > 0));
+        running.Agent = (await _client.GetFromJsonAsync<AgentDto>($"api/v1/agents/{agentId}", Signal9Json.Options, Ct))!;
+        return running;
     }
 
     private async Task<CommandDto> QueueCommandAsync(Guid deviceId)
@@ -144,8 +218,8 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
         timeout.CancelAfter(Timeout);
         while (!await condition())
         {
-            if (_session.IsCompleted)
-                await _session; // Surfaces why the agent's session ended.
+            foreach (var agent in _agents.Where(a => a.Worker.ExecuteTask is { IsCompleted: true }))
+                await agent.Worker.ExecuteTask!; // Surfaces why an agent stopped.
             await Task.Delay(20, timeout.Token);
         }
     }
@@ -153,23 +227,104 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await _stop.CancelAsync();
-        try { await _session; }
-        catch (OperationCanceledException) { }
+        foreach (var agent in _agents)
+            await agent.StopAsync();
         _stop.Dispose();
         _client.Dispose();
         await _factory.DisposeAsync();
+        if (Directory.Exists(_stateDirectory))
+            Directory.Delete(_stateDirectory, recursive: true);
     }
 
-    /// <summary>The agent's connection to the hub over an in-memory WebSocket that the test can cut.</summary>
-    private sealed class Network(TestServer server, AuthenticationHeaderValue authorization)
+    private sealed class RunningAgent(AgentWorker worker, InMemoryTransport network, AgentOptions options)
     {
+        public AgentWorker Worker { get; } = worker;
+
+        public InMemoryTransport Network { get; } = network;
+
+        public AgentOptions Options { get; } = options;
+
+        public AgentDto Agent { get; set; } = null!;
+
+        public Guid DeviceId => Agent.DeviceId;
+
+        public async Task StopAsync()
+        {
+            try
+            {
+                await Worker.StopAsync(CancellationToken.None);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            Worker.Dispose();
+        }
+    }
+
+    /// <summary>Stands in for the TPM or DPAPI key store, shared by every instance on the "machine".</summary>
+    private sealed class InMemoryKeyStore : IAgentKeyStore
+    {
+        private readonly Dictionary<string, ECParameters> _keys = [];
+
+        public ECDsa Create(string name)
+        {
+            var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            lock (_keys)
+                _keys[name] = key.ExportParameters(includePrivateParameters: true);
+            return key;
+        }
+
+        public ECDsa? Open(string name)
+        {
+            lock (_keys)
+                return _keys.TryGetValue(name, out var parameters) ? ECDsa.Create(parameters) : null;
+        }
+    }
+
+    /// <summary>
+    /// The agent's network, in memory: requests reach api through Container Apps' ingress, which forwards the agent's
+    /// certificate, and the hub runs over a WebSocket the test can cut. It counts completed REST requests by path.
+    /// </summary>
+    private sealed class InMemoryTransport(TestServer server) : IAgentTransport
+    {
+        private readonly List<string> _completed = [];
+        private readonly HashSet<string> _tokens = [];
         private volatile bool _offline;
         private WebSocket? _socket;
+        private int _connections;
 
         public HubConnection? Hub { get; private set; }
 
-        public HubConnection Connect(Guid agentId) => Hub = new HubConnectionBuilder()
-            .WithUrl(new Uri(Signal9ApiFactory.HttpsLocalhost, $"{HubRoutes.Agents.TrimStart('/')}?agentId={agentId}"), options =>
+        /// <summary>How many times the hub has connected.</summary>
+        public int Connections => _connections;
+
+        /// <summary>How many different access tokens the hub has connected with.</summary>
+        public int DistinctTokens
+        {
+            get
+            {
+                lock (_tokens)
+                    return _tokens.Count;
+            }
+        }
+
+        public int Completed(string path)
+        {
+            lock (_completed)
+                return _completed.Count(p => p == path);
+        }
+
+        public HttpClient CreateClient(AgentIdentity? identity, params DelegatingHandler[] handlers)
+        {
+            var ingress = server.CreateHandler(context => context.Connection.RemoteIpAddress = Signal9ApiFactory.TrustedProxy);
+            return new HttpClient(MutualTlsTransport.Chain([.. handlers, new Ingress(identity?.Certificate, this)], ingress))
+            {
+                BaseAddress = Signal9ApiFactory.HttpsLocalhost,
+            };
+        }
+
+        public HubConnection ConnectToHub(AgentIdentity identity, Func<Task<string?>> accessToken) => Hub = new HubConnectionBuilder()
+            .WithUrl(new Uri(Signal9ApiFactory.HttpsLocalhost, HubRoutes.Agents.TrimStart('/')), options =>
             {
                 options.Transports = HttpTransportType.WebSockets;
                 options.SkipNegotiation = true;
@@ -177,9 +332,19 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
                 {
                     if (_offline)
                         throw new WebSocketException("The network is down.");
+                    var token = await accessToken();
+                    lock (_tokens)
+                        _tokens.Add(token!);
                     var client = server.CreateWebSocketClient();
-                    client.ConfigureRequest = request => request.Headers.Authorization = authorization.ToString();
-                    return _socket = await client.ConnectAsync(context.Uri, cancellationToken);
+                    client.ConfigureRequest = request =>
+                    {
+                        request.HttpContext.Connection.RemoteIpAddress = Signal9ApiFactory.TrustedProxy;
+                        request.Headers.Authorization = $"Bearer {token}";
+                        request.Headers[Signal9ApiFactory.ClientCertificateHeader] = TestCertificates.ContainerAppsHeader(identity.Certificate);
+                    };
+                    _socket = await client.ConnectAsync(context.Uri, cancellationToken);
+                    Interlocked.Increment(ref _connections);
+                    return _socket;
                 };
             })
             .AddJsonProtocol(o => Signal9Json.Configure(o.PayloadSerializerOptions))
@@ -197,30 +362,23 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
         }
 
         public void GoOnline() => _offline = false;
+
+        private sealed class Ingress(X509Certificate2? certificate, InMemoryTransport transport) : DelegatingHandler
+        {
+            protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                if (certificate is not null)
+                    request.Headers.Add(Signal9ApiFactory.ClientCertificateHeader, TestCertificates.ContainerAppsHeader(certificate));
+                var response = await base.SendAsync(request, cancellationToken);
+                lock (transport._completed)
+                    transport._completed.Add(request.RequestUri!.AbsolutePath);
+                return response;
+            }
+        }
     }
 
     private sealed class RetryQuickly : IRetryPolicy
     {
         public TimeSpan? NextRetryDelay(Microsoft.AspNetCore.SignalR.Client.RetryContext retryContext) => TimeSpan.FromMilliseconds(50);
-    }
-
-    /// <summary>Counts the agent's completed REST requests by path.</summary>
-    private sealed class RequestLog : DelegatingHandler
-    {
-        private readonly List<string> _completed = [];
-
-        public int Completed(string path)
-        {
-            lock (_completed)
-                return _completed.Count(p => p == path);
-        }
-
-        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            var response = await base.SendAsync(request, cancellationToken);
-            lock (_completed)
-                _completed.Add(request.RequestUri!.AbsolutePath);
-            return response;
-        }
     }
 }

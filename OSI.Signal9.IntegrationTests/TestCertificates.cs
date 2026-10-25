@@ -4,6 +4,9 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace OSI.Signal9.IntegrationTests;
 
+/// <summary>The key kinds a test agent certificate can be made with.</summary>
+public enum AgentKey { EcdsaP256, EcdsaP384, Rsa3072, Rsa2048 }
+
 /// <summary>Client certificates for mTLS tests: self-signed ones and ones issued by a test certificate authority.</summary>
 internal static class TestCertificates
 {
@@ -25,6 +28,34 @@ internal static class TestCertificates
         var request = new CertificateRequest($"CN={commonName}", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         AddClientExtensions(request);
         return request.CreateSelfSigned(Now.AddMinutes(-5), Now.AddDays(30));
+    }
+
+    /// <summary>
+    /// A self-signed certificate as an agent makes for its new key at enrollment: ECDSA P-256 by default (a TPM's
+    /// usual key), valid for a year, with the digitalSignature key usage and the clientAuth EKU. Each part can be
+    /// varied to make one an enrollment must refuse.
+    /// </summary>
+    public static X509Certificate2 AgentCertificate(AgentKey key = AgentKey.EcdsaP256, bool clientAuth = true,
+        bool digitalSignature = true, bool certificateAuthority = false, DateTimeOffset? notBefore = null,
+        DateTimeOffset? notAfter = null, string commonName = "Signal9 agent")
+    {
+        using AsymmetricAlgorithm algorithm = key switch
+        {
+            AgentKey.EcdsaP256 => ECDsa.Create(ECCurve.NamedCurves.nistP256),
+            AgentKey.EcdsaP384 => ECDsa.Create(ECCurve.NamedCurves.nistP384),
+            AgentKey.Rsa3072 => RSA.Create(3072),
+            _ => RSA.Create(2048),
+        };
+        var request = algorithm is ECDsa ecdsa
+            ? new CertificateRequest($"CN={commonName}", ecdsa, HashAlgorithmName.SHA256)
+            : new CertificateRequest($"CN={commonName}", (RSA)algorithm, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        request.CertificateExtensions.Add(new X509KeyUsageExtension(
+            digitalSignature ? X509KeyUsageFlags.DigitalSignature : X509KeyUsageFlags.KeyEncipherment, critical: true));
+        request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
+            [clientAuth ? ClientAuthentication : new Oid("1.3.6.1.5.5.7.3.1")], critical: false));
+        if (certificateAuthority)
+            request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, critical: true));
+        return request.CreateSelfSigned(notBefore ?? Now.AddMinutes(-5), notAfter ?? Now.AddDays(365));
     }
 
     /// <summary>

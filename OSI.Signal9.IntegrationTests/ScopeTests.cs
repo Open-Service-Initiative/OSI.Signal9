@@ -168,7 +168,6 @@ public sealed class ScopeTests : IDisposable
     [DataRow("PATCH", "api/v1/devices/" + AnyId, "devices.write")]
     [DataRow("DELETE", "api/v1/devices/" + AnyId, "devices.delete")]
     [DataRow("GET", "api/v1/agents/" + AnyId, "devices.read")]
-    [DataRow("POST", "api/v1/agents", "agent")]
     [DataRow("PUT", "api/v1/agents/" + AnyId + "/heartbeat", "agent")]
     [DataRow("GET", "api/v1/agents/" + AnyId + "/pending-commands", "agent")]
     [DataRow("GET", "api/v1/devices/" + AnyId + "/commands", "commands.read")]
@@ -202,7 +201,13 @@ public sealed class ScopeTests : IDisposable
         // The dashboard hub accepts either of its two scopes, so neither may be in the token that lacks the scope.
         string[] alternatives = path.StartsWith("hubs/dashboard", StringComparison.Ordinal) ? ["devices.read", "telemetry.read"] : [scope];
         // Deleting a tenant also needs a person with a recent MFA (#120), which an application acting as itself isn't.
-        using var withScope = method == "DELETE" && path.StartsWith("api/v1/tenants/", StringComparison.Ordinal)
+        // The agent scope works only for an enrolled agent, acting as itself.
+        using var agent = scope == "agent"
+            ? await _factory.EnrollAgentAsync((await _factory.CreateTenantAsync(_factory.CreateClient(), $"T{Guid.NewGuid():N}")).Id)
+            : null;
+        path = agent is null ? path : path.Replace(AnyId, agent.Id.ToString(), StringComparison.Ordinal);
+        using var withScope = agent is not null ? Signal9ApiFactory.AsAgent(_factory.Server, agent)
+            : method == "DELETE" && path.StartsWith("api/v1/tenants/", StringComparison.Ordinal)
             ? await _factory.CreatePersonClientAsync(_factory.Superadministrator(), scope)
             : await _factory.CreateClientAsync(scope);
         using var withEverythingElse = await _factory.CreateClientAsync(GrantableScopes.Except(alternatives).ToArray());
@@ -220,9 +225,8 @@ public sealed class ScopeTests : IDisposable
     {
         using var admin = _factory.CreateClient();
         var tenant = await _factory.CreateTenantAsync(admin, "Contoso");
-        var agent = await (await Signal9ApiFactory.RegisterAsync(admin, tenant.Id, "PC01"))
-            .Content.ReadFromJsonAsync<JsonElement>(Signal9Json.Options, Ct);
-        var commands = $"api/v1/devices/{agent.GetProperty("deviceId").GetGuid()}/commands";
+        using var agent = await _factory.EnrollAgentAsync(tenant.Id, "PC01");
+        var commands = $"api/v1/devices/{agent.DeviceId}/commands";
         using var commandsOnly = await _factory.CreateClientAsync("commands.execute");
         using var terminalOnly = await _factory.CreateClientAsync("terminal.execute");
         using var both = await _factory.CreateClientAsync("commands.execute", "terminal.execute");
@@ -260,10 +264,14 @@ public sealed class ScopeTests : IDisposable
         CollectionAssert.AreEqual(new[] { "tenants.delete" }, ScopesOf(document, "/api/v1/tenants/{tenantId}", "delete"));
         CollectionAssert.AreEqual(new[] { "devices.write" }, ScopesOf(document, "/api/v1/devices/{deviceId}", "patch"));
         CollectionAssert.AreEqual(new[] { "agent" }, ScopesOf(document, "/api/v1/agents/{agentId}/telemetry", "post"));
-        // Every operation in the document names its scopes and its 401 and 403 responses.
+        // Enrollment is the one anonymous operation: an enrollment token in the body is its authority.
+        Assert.IsFalse(document.GetProperty("paths").GetProperty("/api/v1/agents").GetProperty("post").TryGetProperty("security", out _));
+        // Every other operation in the document names its scopes and its 401 and 403 responses.
         foreach (var path in document.GetProperty("paths").EnumerateObject())
             foreach (var operation in path.Value.EnumerateObject())
             {
+                if ((path.Name, operation.Name) == ("/api/v1/agents", "post"))
+                    continue;
                 Assert.IsTrue(operation.Value.TryGetProperty("security", out var security), $"{operation.Name} {path.Name}");
                 Assert.IsGreaterThan(0, security.GetArrayLength(), $"{operation.Name} {path.Name}");
                 var responses = operation.Value.GetProperty("responses");

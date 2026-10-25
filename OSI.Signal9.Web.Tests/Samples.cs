@@ -37,11 +37,12 @@ internal static class Samples
         new(id ?? Guid.NewGuid(), tenantId, userId, roleId, Now);
 
     public static EnrollmentTokenDto EnrollmentToken(string name, Guid tenantId, Guid? id = null,
-        EnrollmentTokenStatus status = EnrollmentTokenStatus.Active, int? maxUses = null, string? secret = null)
+        EnrollmentTokenStatus status = EnrollmentTokenStatus.Active, int? maxUses = null, string? secret = null,
+        int useCount = 0, DateTimeOffset? lastUsedAt = null)
     {
         var tokenId = id ?? Guid.NewGuid();
         return new(tokenId, tenantId, $"/api/v1/tenants/{tenantId}/enrollment-tokens/{tokenId}", name, maxUses, null, status,
-            Now, null, status == EnrollmentTokenStatus.Revoked ? Now : null, secret);
+            Now, null, status == EnrollmentTokenStatus.Revoked ? Now : null, useCount, lastUsedAt, secret);
     }
 
     public static ApiApplicationDto ApiApplication(string name, Guid tenantId, Guid roleId, string method, Guid? id = null,

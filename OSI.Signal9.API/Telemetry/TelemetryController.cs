@@ -62,8 +62,8 @@ public sealed class TelemetryController(
     }
 
     /// <summary>
-    /// Stores a telemetry sample sent by an agent on its device. Also counts as a heartbeat.
-    /// The sample's canonical URL is under the device.
+    /// Stores a telemetry sample sent by an agent on its device. Also counts as a heartbeat. Only the agent the access
+    /// token names may send it (403 otherwise). The sample's canonical URL is under the device.
     /// </summary>
     [RequireScope(Scopes.Agent)]
     [HttpPost("agents/{agentId:guid}/telemetry")]
@@ -71,6 +71,7 @@ public sealed class TelemetryController(
     [Consumes("application/json")]
     [ProducesResponseType<TelemetrySampleDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TelemetrySampleDto>> Create(

@@ -1,13 +1,16 @@
+using OSI.Signal9.Agent.Identity;
+
 namespace OSI.Signal9.Agent.Services;
 
 /// <summary>
-/// Enrolls the machine, then runs an <see cref="AgentSession"/> until it ends. Any failure starts over with
-/// exponential backoff.
+/// Enrolls this agent instance if it hasn't yet, then runs an <see cref="AgentSession"/> as it until it ends. Any
+/// failure starts over with exponential backoff.
 /// </summary>
 public sealed class AgentWorker(
-    AgentApiClient api,
-    SystemInfoProvider systemInfo,
+    AgentEnrollment enrollment,
+    IAgentTransport transport,
     AgentSession session,
+    TimeProvider time,
     ILogger<AgentWorker> logger) : BackgroundService
 {
     private static readonly TimeSpan MaxBackoff = TimeSpan.FromMinutes(5);
@@ -19,9 +22,9 @@ public sealed class AgentWorker(
         {
             try
             {
-                var agent = await api.RegisterAsync(systemInfo.GetRegistration(), stoppingToken);
-                logger.LogInformation("Enrolled as agent {AgentId} of device {DeviceId} in tenant {TenantId}", agent.Id, agent.DeviceId, agent.TenantId);
-                await session.RunAsync(agent, stoppingToken);
+                var identity = await enrollment.EnsureEnrolledAsync(stoppingToken);
+                using var connection = new AgentConnection(identity, transport, time);
+                await session.RunAsync(connection, stoppingToken);
                 failures = 0;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -33,7 +36,7 @@ public sealed class AgentWorker(
                 failures++;
                 var delay = TimeSpan.FromSeconds(Math.Min(Math.Pow(2, failures), MaxBackoff.TotalSeconds));
                 logger.LogError(ex, "Agent session failed; retrying in {Delay}", delay);
-                await Task.Delay(delay, stoppingToken);
+                await Task.Delay(delay, time, stoppingToken);
             }
         }
     }

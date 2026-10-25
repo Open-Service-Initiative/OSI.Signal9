@@ -19,6 +19,7 @@ using OpenIddict.Abstractions;
 using OSI.Signal9.API;
 using OSI.Signal9.API.Authorization;
 using OSI.Signal9.Contracts.Agents;
+using OSI.Signal9.Contracts.Enrollment;
 using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Contracts.Tenants;
 using OSI.Signal9.Server.Data;
@@ -327,13 +328,14 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
     /// Seeds a confidential client that authenticates with <c>self_signed_tls_client_auth</c>: its certificate is
     /// registered in its key set (RFC 8705 §2.2).
     /// </summary>
-    public async Task SeedSelfSignedTlsClientAsync(string clientId, X509Certificate2 certificate, params string[] scopes)
+    public Task SeedSelfSignedTlsClientAsync(string clientId, X509Certificate2 certificate, params string[] scopes) =>
+        SeedSelfSignedTlsClientAsync(clientId, JsonWebKeyConverter.ConvertFromX509SecurityKey(new X509SecurityKey(certificate)), scopes);
+
+    /// <summary>Seeds a <c>self_signed_tls_client_auth</c> client whose key set holds exactly <paramref name="key"/>.</summary>
+    public async Task SeedSelfSignedTlsClientAsync(string clientId, JsonWebKey key, params string[] scopes)
     {
         var descriptor = MtlsClient(clientId, scopes);
-        descriptor.JsonWebKeySet = new JsonWebKeySet
-        {
-            Keys = { JsonWebKeyConverter.ConvertFromX509SecurityKey(new X509SecurityKey(certificate)) },
-        };
+        descriptor.JsonWebKeySet = new JsonWebKeySet { Keys = { key } };
         await CreateApplicationAsync(descriptor);
     }
 
@@ -480,10 +482,86 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         return (await response.Content.ReadFromJsonAsync<TenantDto>(Signal9Json.Options))!;
     }
 
-    public static async Task<HttpResponseMessage> RegisterAsync(HttpClient client, Guid tenantId, string machineName) =>
-        await client.PostAsJsonAsync("api/v1/agents",
-            new RegisterAgentRequest { TenantId = tenantId, MachineName = machineName, OperatingSystem = "Windows 11 Pro", ProcessorCores = 8 },
+    /// <summary>
+    /// Enrolls a new agent into <paramref name="tenantId"/> as an installer would: the fixture's client issues an
+    /// enrollment token, and the agent enrolls with it and a new self-signed certificate. The returned agent's
+    /// <see cref="TestAgent.Client"/> calls api as the agent, with a certificate-bound token from api's mTLS alias.
+    /// </summary>
+    public async Task<TestAgent> EnrollAgentAsync(Guid tenantId, string machineName = "PC01")
+    {
+        var token = await IssueEnrollmentTokenAsync(tenantId);
+        var certificate = TestCertificates.AgentCertificate();
+        var response = await EnrollAsync(token.Secret!, certificate, machineName);
+        if (response.StatusCode != HttpStatusCode.Created)
+            throw new InvalidOperationException($"Enrollment failed: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync()}");
+        var agent = (await response.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options))!;
+        return new TestAgent(agent, certificate, await CreateAgentClientAsync(agent.Id, certificate));
+    }
+
+    /// <summary>Issues an enrollment token for <paramref name="tenantId"/> with the fixture's client.</summary>
+    public async Task<EnrollmentTokenDto> IssueEnrollmentTokenAsync(Guid tenantId, int? maxUses = null,
+        DateTimeOffset? expiresAt = null)
+    {
+        using var client = CreateClient();
+        var response = await client.PostAsJsonAsync($"api/v1/tenants/{tenantId}/enrollment-tokens",
+            new CreateEnrollmentTokenRequest { Name = "Installer", MaxUses = maxUses, ExpiresAt = expiresAt },
             Signal9Json.Options);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<EnrollmentTokenDto>(Signal9Json.Options))!;
+    }
+
+    /// <summary>
+    /// An agent's enrollment request (POST /api/v1/agents), sent with no access token, from <paramref name="from"/> if
+    /// given.
+    /// </summary>
+    public async Task<HttpResponseMessage> EnrollAsync(string enrollmentToken, X509Certificate2 certificate,
+        string machineName = "PC01", IPAddress? from = null)
+    {
+        using var client = CreateAnonymousClient();
+        if (from is not null)
+            client.DefaultRequestHeaders.Add(ClientIpHeader, from.ToString());
+        return await client.PostAsJsonAsync("api/v1/agents", Enrollment(enrollmentToken, certificate, machineName),
+            Signal9Json.Options);
+    }
+
+    public static EnrollAgentRequest Enrollment(string enrollmentToken, X509Certificate2 certificate,
+        string machineName = "PC01") => new()
+        {
+            EnrollmentToken = enrollmentToken,
+            Certificate = certificate.ExportCertificatePem(),
+            MachineName = machineName,
+            OperatingSystem = "Windows 11 Pro",
+            ProcessorCores = 8,
+        };
+
+    /// <summary>The agent's token request at api's mTLS alias: client credentials, authenticated by its certificate.</summary>
+    public async Task<HttpResponseMessage> RequestAgentTokenAsync(Guid agentId, X509Certificate2 certificate,
+        string scope = OSI.Signal9.Server.Identity.Scopes.Agent)
+    {
+        using var api = CreateForwardedCertificateClient(certificate);
+        return await api.PostAsync("connect/token", MtlsClientCredentials(agentId.ToString(), scope));
+    }
+
+    /// <summary>A client for <paramref name="server"/> acting as <paramref name="agent"/>, with its certificate and token.</summary>
+    public static HttpClient AsAgent(TestServer server, TestAgent agent)
+    {
+        var client = CreatePeerClient(server, TrustedProxy, null);
+        client.DefaultRequestHeaders.Add(ClientCertificateHeader, TestCertificates.ContainerAppsHeader(agent.Certificate));
+        client.DefaultRequestHeaders.Authorization = agent.Client.DefaultRequestHeaders.Authorization;
+        return client;
+    }
+
+    /// <summary>A client for <c>api</c> acting as the agent: it presents the certificate and a token bound to it.</summary>
+    public async Task<HttpClient> CreateAgentClientAsync(Guid agentId, X509Certificate2 certificate)
+    {
+        var response = await RequestAgentTokenAsync(agentId, certificate);
+        if (response.StatusCode != HttpStatusCode.OK)
+            throw new InvalidOperationException($"Agent token refused: {await response.Content.ReadAsStringAsync()}");
+        var token = (await response.Content.ReadFromJsonAsync<AccessToken>())!;
+        var client = CreateForwardedCertificateClient(certificate);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Value);
+        return client;
+    }
 
     // Dispose() goes through DisposeAsync() too.
     public override async ValueTask DisposeAsync()
@@ -519,3 +597,26 @@ public sealed record AccessToken(
     [property: JsonPropertyName("access_token")] string Value,
     [property: JsonPropertyName("token_type")] string TokenType,
     [property: JsonPropertyName("expires_in")] int ExpiresIn);
+
+/// <summary>An agent the fixture enrolled, with its certificate and a client calling <c>api</c> as it.</summary>
+public sealed class TestAgent(AgentDto agent, X509Certificate2 certificate, HttpClient client) : IDisposable
+{
+    public AgentDto Agent { get; } = agent;
+
+    public Guid Id => Agent.Id;
+
+    public Guid DeviceId => Agent.DeviceId;
+
+    public Guid TenantId => Agent.TenantId;
+
+    public X509Certificate2 Certificate { get; } = certificate;
+
+    /// <summary>Calls <c>api</c> as the agent, with its certificate and a certificate-bound access token.</summary>
+    public HttpClient Client { get; } = client;
+
+    public void Dispose()
+    {
+        Client.Dispose();
+        Certificate.Dispose();
+    }
+}

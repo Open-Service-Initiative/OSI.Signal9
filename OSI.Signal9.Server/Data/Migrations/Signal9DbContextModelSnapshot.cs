@@ -58,6 +58,9 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.Property<DateTime>("EnrolledAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("EnrollmentTokenId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("LastSeenAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -70,6 +73,10 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("DeviceId");
+
+                    b.HasIndex("EnrolledAt");
+
+                    b.HasIndex("EnrollmentTokenId");
 
                     b.ToTable("Agents");
                 });
@@ -387,6 +394,9 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.Property<DateTime?>("ExpiresAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("LastUsedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int?>("MaxUses")
                         .HasColumnType("integer");
 
@@ -408,6 +418,9 @@ namespace OSI.Signal9.Server.Data.Migrations
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
+
+                    b.Property<int>("UseCount")
+                        .HasColumnType("integer");
 
                     b.Property<uint>("Version")
                         .IsConcurrencyToken()
@@ -933,6 +946,11 @@ namespace OSI.Signal9.Server.Data.Migrations
                         .HasForeignKey("DeviceId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.HasOne("OSI.Signal9.Server.Data.EnrollmentToken", null)
+                        .WithMany()
+                        .HasForeignKey("EnrollmentTokenId")
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Device");
                 });

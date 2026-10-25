@@ -40,6 +40,35 @@ public sealed class EnrollmentTokensPageTests : DashboardTestContext
     }
 
     [TestMethod]
+    public void Shows_how_often_and_when_each_token_was_last_used()
+    {
+        var lastUsed = new DateTimeOffset(2026, 10, 24, 9, 30, 0, TimeSpan.Zero);
+        Http.SignedInAs("Ada", request => (request.Method.Method, request.RequestUri!.AbsolutePath) switch
+        {
+            ("GET", "/api/v1/tenants") => FakeHttp.Json(HttpStatusCode.OK, Page(Tenant("Contoso", TenantStatus.Active, _tenantId))),
+            ("GET", var path) when path == Collection => FakeHttp.Json(HttpStatusCode.OK, Page(
+                EnrollmentToken("Head office", _tenantId, _tokenId, EnrollmentTokenStatus.UsedUp, maxUses: 3, useCount: 3, lastUsedAt: lastUsed))),
+            _ => null,
+        });
+
+        var app = RenderApp("/enrollment-tokens");
+
+        app.WaitForAssertion(() => Assert.Contains("Head office", app.Markup));
+        Assert.AreEqual($"3 · last {lastUsed.ToLocalTime():g}", app.Find($"#used-{_tokenId}").TextContent.Trim());
+        Assert.Contains("UsedUp", app.Find($"#status-{_tokenId}").TextContent);
+    }
+
+    [TestMethod]
+    public void A_token_never_used_says_so()
+    {
+        Serve();
+
+        var app = RenderApp("/enrollment-tokens");
+
+        app.WaitForAssertion(() => Assert.AreEqual("Never", app.Find($"#used-{_tokenId}").TextContent.Trim()));
+    }
+
+    [TestMethod]
     public void Issuing_posts_the_limits_and_shows_the_secret_once()
     {
         Serve(request => request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == Collection

@@ -1,6 +1,6 @@
 # Signal9
 
-Remote monitoring and management (RMM) for MSPs. Pre-alpha: not ready for production use. Authentication is being built (#63): every API endpoint now requires an access token carrying its scope. The dashboard signs people in through web, which holds their tokens; the agent doesn't send one yet.
+Remote monitoring and management (RMM) for MSPs. Pre-alpha: not ready for production use. Authentication is being built (#63): every API endpoint now requires an access token carrying its scope. The dashboard signs people in through web, which holds their tokens; agents enroll with an enrollment token and then authenticate with their own certificate.
 
 ## Projects
 
@@ -38,11 +38,26 @@ dotnet ef database update --project OSI.Signal9.Server --connection "<connection
 
 Signal9 generates its own token signing and encryption keys and its Data Protection keys, and stores them in the database, wrapped by a key-encryption key (ADR-0008). Locally that's a certificate the AppHost creates on first run at `Signal9/local-kek.pfx` under your local application data folder. Keep it: the keys in your local database can't be read without it. If you lose it, delete the PostgreSQL data volume too.
 
-To enroll a machine, create a tenant in the dashboard, then run the agent with the tenant's ID:
+To enroll a machine, issue an enrollment token for a tenant (`POST /api/v1/tenants/{tenantId}/enrollment-tokens`), then run the agent with its secret. The agent enrolls once and keeps its identity for every later start:
 
 ```sh
-dotnet run --project OSI.Signal9.Agent -- --Agent:TenantId=<tenant id>
+dotnet run --project OSI.Signal9.Agent -- --Agent:EnrollmentToken=<secret>
 ```
+
+### Agent enrollment and instances
+
+An agent enrolls with an enrollment token and the self-signed certificate of a key it has just generated: non-exportable, in the TPM where there is one and otherwise protected by DPAPI (Windows only so far). Signal9 registers the certificate as the agent's OAuth client, whose client ID is the agent's ID. From then on the agent gets access tokens with client credentials at api's mTLS token endpoint (`self_signed_tls_client_auth`): they carry the `agent` scope, are bound to the certificate, and come without refresh tokens. Every agent request, and the agent hub, takes the agent's identity from its token alone; the hub closes when the token expires and the agent reconnects with a new one. Rotating or revoking the enrollment token doesn't affect agents already enrolled with it.
+
+A machine runs one agent instance per deployment and root tenant tree. Each has its own `Agent:InstanceId` (default `default`), under which its key, certificate and state are kept (`Agent:StateDirectory`, by default `Signal9/Agent` under the machine's common application data folder), so instances never collide.
+
+| Setting | Purpose |
+| --- | --- |
+| `Agent:ApiBaseUrl` | The deployment's api host. |
+| `Agent:EnrollmentToken` | The enrollment token's secret. Needed only until the instance has enrolled. |
+| `Agent:InstanceId` | Names the instance among the machine's instances: letters, digits and hyphens. |
+| `Agent:StateDirectory` | Where instances keep their state, each in a folder named after it. |
+
+**TLS inspection must exclude the api host.** Agents authenticate with mutual TLS, which a TLS-inspecting proxy breaks (ADR-0004), and there's no fallback: exclude the api host from TLS inspection on every network agents run on.
 
 ## Keys
 
@@ -120,15 +135,17 @@ A `tls_client_auth` client registers exactly one RFC 8705 subject (`tls_client_a
 | `/api/v1/devices/{deviceId}/commands/{commandId}` | `GET` |
 | `/api/v1/devices/{deviceId}/commands/{commandId}/result` | `PUT` (the agent reports the outcome) |
 | `/api/v1/devices/{deviceId}/commands/{commandId}:cancel` | `POST` |
-| `/api/v1/agents` | `POST` (agent registration: a new agent, active on its device) |
+| `/api/v1/agents` | `POST` (enrollment, with no access token: an enrollment token and the agent's self-signed certificate; a new device and agent) |
 | `/api/v1/agents/{agentId}` | `GET` |
 | `/api/v1/agents/{agentId}/heartbeat` | `PUT` (sent by the agent; the response says whether work is waiting) |
 | `/api/v1/agents/{agentId}/pending-commands` | `GET` (paged, oldest first; the agent's pending work, each with its canonical URL) |
 | `/api/v1/agents/{agentId}/telemetry` | `POST` (sent by the agent; stored on its device) |
+| `/api/v1/tenants/{tenantId}/agents` | `GET` (paged, newest enrollment first; the tenant's "recently enrolled" feed, `includeDescendants` defaults to `true`) |
+| `/api/v1/tenants/{tenantId}/enrollment-tokens` | `GET` (paged), `POST`; each token shows its use count and last use |
 
 Single resources and write responses carry a strong `ETag`. Send it back in `If-Match` on a `PUT`, `PATCH`, `DELETE` or `:action` to get `412 Precondition Failed` instead of overwriting someone else's change, and in `If-None-Match` on a `GET` to get `304 Not Modified` when nothing changed.
 
-A device is the managed machine; an agent is one installation on it. Telemetry and command history belong to the device and survive the agent being replaced.
+A device is the managed machine; an agent is one enrolled installation on it. Telemetry and command history belong to the device and survive the agent being replaced. The agent's own requests (`/api/v1/agents/{agentId}/...` and command results) are refused with 403 unless `{agentId}` is the agent the access token belongs to.
 
 Hubs: `/hubs/agents` and `/hubs/dashboard` (live updates for the dashboard, reached through web). The agent hub is a doorbell (ADR-0009): it rings a device's active agent when a command is queued, carries no command content and accepts no calls. The agent fetches its pending commands over REST when the doorbell rings, every time it (re)connects and when a heartbeat response says work is waiting.
 
@@ -144,6 +161,8 @@ Rate limiting is off until configured. Each policy has a `RateLimiting:<policy>`
 | `Token` | the token endpoint on auth and its mTLS alias on api | `client_id` and client IP |
 | `Authorize` | the authorization endpoint on auth | client IP |
 | `Api` | api's resources and hubs | caller (the access token's subject), or client IP without a token |
+| `Enrollment` | agent enrollment on api | client IP |
+| `EnrollmentToken` | agent enrollment on api | enrollment token |
 
 ```json
 "RateLimiting": { "Token": { "PermitLimit": 20, "Window": "00:01:00" } }
