@@ -27,7 +27,7 @@ Prerequisites: .NET 10 SDK and Docker (for the PostgreSQL container).
 dotnet run --project OSI.Signal9.AppHost
 ```
 
-This starts PostgreSQL (a `postgres:18` container), the authorization server (`https://localhost:7101`), the API (`https://localhost:7201`) and web, the dashboard (`https://localhost:7001`). The API reference is at `https://localhost:7001/docs` ("try it" uses your dashboard session), the OpenAPI document at `https://localhost:7201/docs/openapi/v1.json`, and `OSI.Signal9.API/OSI.Signal9.API.http` has sample requests.
+This starts PostgreSQL (a `postgres:18` container), the authorization server (`https://localhost:7101`), the API (`https://localhost:7201`) and web, the dashboard (`https://localhost:7001`). The API reference is at `https://localhost:7001/docs` ("try it" uses your dashboard session), the OpenAPI document at `https://localhost:7201/docs/openapi/v1.json`, and `OSI.Signal9.API/OSI.Signal9.API.http` has sample requests. The hosts take their addresses (`Identity:*`), probe port and real-time hosting from the AppHost alone, and refuse to start without them, so run them through the AppHost.
 
 The hosts never apply migrations at startup. The first time, and after pulling new migrations, copy the `signal9` database's connection string from the Aspire dashboard and apply them:
 
@@ -190,7 +190,7 @@ Rejected requests get `429` ProblemDetails with `Retry-After`. Errors are Proble
 
 ### Real-time
 
-The agent and dashboard hubs (ADR-0009) are hosted as the AppHost's `Realtime:Hosting` says:
+The agent and dashboard hubs (ADR-0009) are hosted as the AppHost's `Realtime:Hosting` says. The AppHost passes it to api and web in every mode, and neither starts without it:
 
 - `AzureSignalR` (the default when published): both hubs run on Azure SignalR Service. api negotiates and hands the client a token for the service that carries only what the hubs read and lasts `Realtime:ServiceTokenLifetime` (default two minutes). The dashboard reaches the service through web, at `/hubs/dashboard/service/`, so browsers stay on web's origin; agents connect to it directly. Clients can't connect to api's hubs directly.
 - `SelfHosted` (the default locally): both hubs run in api. With `Realtime:ApiReplicas` above 1, the AppHost adds a Redis container and api's replicas share it as their backplane (`Realtime:BackplaneChannelPrefix`, default `signal9`); the hubs then take WebSockets only and answer negotiation without keeping state, so no sticky sessions are needed. A single replica needs no Redis.

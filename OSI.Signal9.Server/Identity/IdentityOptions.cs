@@ -8,11 +8,11 @@ public sealed class IdentityOptions
     public const string SectionName = "Identity";
 
     /// <summary>The static issuer, on the <c>auth</c> host (ADR-0003). It's the same on every host.</summary>
-    [Required]
+    [Required(ErrorMessage = "Identity:Issuer is required: auth's public address, which the AppHost sets.")]
     public Uri Issuer { get; set; } = null!;
 
     /// <summary>The base address of the <c>api</c> host, where the RFC 8705 mTLS endpoint aliases live.</summary>
-    [Required]
+    [Required(ErrorMessage = "Identity:ApiUri is required: api's public address, which the AppHost sets.")]
     public Uri ApiUri { get; set; } = null!;
 
     /// <summary>

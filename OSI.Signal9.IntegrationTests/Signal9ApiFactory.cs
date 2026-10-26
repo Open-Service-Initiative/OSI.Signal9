@@ -252,6 +252,8 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         builder.UseSetting("ConnectionStrings:signal9", connectionString);
         builder.UseSetting("Identity:Issuer", Signal9AuthFactory.Issuer);
         builder.UseSetting("Identity:ApiUri", Signal9AuthFactory.ApiUri);
+        // The AppHost sets it in every mode; tests that need Azure SignalR say so.
+        builder.UseSetting("Realtime:Hosting", "SelfHosted");
         builder.UseSetting("Logging:LogLevel:Default", "Warning");
         builder.UseSetting("KeyEncryption:Provider", "Certificate");
         builder.UseSetting("KeyEncryption:Certificate:Path", kekPath ?? TestKeys.KekPath);

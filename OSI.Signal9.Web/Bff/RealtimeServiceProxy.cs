@@ -13,7 +13,8 @@ public sealed class RealtimeServiceOptions
 {
     public const string SectionName = "Realtime";
 
-    public RealtimeHostingMode Hosting { get; set; } = RealtimeHostingMode.SelfHosted;
+    /// <summary>Where the hubs run, as api has it. The AppHost sets it in every mode; web doesn't start without it.</summary>
+    public RealtimeHostingMode? Hosting { get; set; }
 
     /// <summary>Azure SignalR Service's endpoint, such as <c>https://signal9.service.signalr.net/</c>, when on Azure.</summary>
     public Uri? ServiceEndpoint { get; set; }
@@ -58,6 +59,8 @@ public static class RealtimeServiceProxy
     public static IServiceCollection AddRealtimeServiceProxy(this IServiceCollection services, IConfiguration configuration)
     {
         var options = Options(configuration);
+        if (options.Hosting is null)
+            throw new InvalidOperationException("Realtime:Hosting is required (SelfHosted or AzureSignalR): the AppHost sets it.");
         if (options.Hosting == RealtimeHostingMode.AzureSignalR && options.ServiceEndpoint is not { IsAbsoluteUri: true })
             throw new InvalidOperationException("Realtime:ServiceEndpoint must give Azure SignalR Service's endpoint.");
         services.AddSingleton<IRealtimeServiceHandlerFactory, SocketsRealtimeServiceHandlerFactory>();

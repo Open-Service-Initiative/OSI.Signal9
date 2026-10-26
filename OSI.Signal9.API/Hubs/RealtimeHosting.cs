@@ -24,7 +24,12 @@ public sealed class RealtimeOptions
     /// <summary>The Redis backplane's connection string's name; given only when self-hosted api scales out.</summary>
     public const string RedisConnection = "redis";
 
-    public RealtimeHostingMode Hosting { get; set; } = RealtimeHostingMode.SelfHosted;
+    /// <summary>Where the hubs run. The AppHost sets it in every mode; api doesn't start without it.</summary>
+    [Required(ErrorMessage = HostingRequired)]
+    public RealtimeHostingMode? Hosting { get; set; }
+
+    internal const string HostingRequired =
+        "Realtime:Hosting is required (SelfHosted or AzureSignalR): the AppHost sets it.";
 
     /// <summary>
     /// How long the token Azure SignalR issues a client for the service lasts. The client uses it only to open its
@@ -67,7 +72,7 @@ public static class RealtimeHosting
         var signalR = builder.Services.AddSignalR()
             .AddJsonProtocol(json => Signal9Json.Configure(json.PayloadSerializerOptions));
 
-        switch (options.Hosting)
+        switch (options.Hosting ?? throw new InvalidOperationException(RealtimeOptions.HostingRequired))
         {
             case RealtimeHostingMode.AzureSignalR:
                 var connectionString = builder.Configuration.GetConnectionString(RealtimeOptions.AzureSignalRConnection)
@@ -108,7 +113,7 @@ public static class RealtimeHosting
 
     /// <summary>Whether api's hubs share a Redis backplane, because it runs more than one replica.</summary>
     public static bool IsScaledOut(IConfiguration configuration) =>
-        configuration.GetSection(RealtimeOptions.SectionName).Get<RealtimeOptions>()?.Hosting is null or RealtimeHostingMode.SelfHosted
+        configuration.GetSection(RealtimeOptions.SectionName).Get<RealtimeOptions>()?.Hosting is RealtimeHostingMode.SelfHosted
         && configuration.GetConnectionString(RealtimeOptions.RedisConnection) is not null;
 
     /// <summary>Maps both hubs. Each closes a connection when its access token expires (story 115).</summary>

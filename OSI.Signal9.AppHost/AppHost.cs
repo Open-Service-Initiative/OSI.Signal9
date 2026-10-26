@@ -59,12 +59,18 @@ if (string.Equals(realtime, "AzureSignalR", StringComparison.OrdinalIgnoreCase))
     web.WithEnvironment("Realtime__Hosting", "AzureSignalR")
         .WithEnvironment("Realtime__ServiceEndpoint", ReferenceExpression.Create($"https://{signalr.Resource.HostName}/"));
 }
-else if (builder.Configuration.GetValue("Realtime:ApiReplicas", 1) is var replicas and > 1)
+else
 {
-    var redis = builder.AddRedis("redis");
-    api.WithReference(redis)
-        .WaitFor(redis)
-        .WithReplicas(replicas);
+    // api and web refuse to start without Realtime:Hosting, so it's set in every mode.
+    api.WithEnvironment("Realtime__Hosting", "SelfHosted");
+    web.WithEnvironment("Realtime__Hosting", "SelfHosted");
+    if (builder.Configuration.GetValue("Realtime:ApiReplicas", 1) is var replicas and > 1)
+    {
+        var redis = builder.AddRedis("redis");
+        api.WithReference(redis)
+            .WaitFor(redis)
+            .WithReplicas(replicas);
+    }
 }
 
 var issuer = ReferenceExpression.Create($"{auth.GetEndpoint("https")}/");
