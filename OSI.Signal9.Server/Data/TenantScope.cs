@@ -143,6 +143,14 @@ public enum TenantScopeBypass
     /// </summary>
     [NotAudited("Answers only yes or no, and the transfer it guards is audited.")]
     DeviceTransferHardwareCheck,
+
+    /// <summary>
+    /// Finding the tenants where a user the caller is editing holds role assignments, including tenants outside the
+    /// caller's reach, to check the caller has authority over every one of them (story 16). Only those tenant IDs are
+    /// read, and they're never returned.
+    /// </summary>
+    [NotAudited("Answers only whether the caller may edit the user; the edit it guards is audited.")]
+    UserRoleAssignmentGuard,
 }
 
 /// <summary>Each use of this <see cref="TenantScopeBypass"/> is recorded in the audit log.</summary>

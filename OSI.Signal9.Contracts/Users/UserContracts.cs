@@ -31,3 +31,14 @@ public sealed record CreateUserRequest
     [Required, StringLength(200, MinimumLength = 1)]
     public string DisplayName { get; init; } = string.Empty;
 }
+
+/// <summary>
+/// A user's editable fields: the document a JSON merge patch (RFC 7396) applies to. The owning tenant changes only with
+/// a user transfer (#93), and the Entra identity never changes. A user who holds role assignments can be edited only
+/// with <c>roleassignments.write</c> covering every one of them (story 16).
+/// </summary>
+public sealed record UpdateUserRequest
+{
+    [Required, StringLength(200, MinimumLength = 1)]
+    public string DisplayName { get; init; } = string.Empty;
+}

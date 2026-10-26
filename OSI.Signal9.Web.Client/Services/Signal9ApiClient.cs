@@ -100,6 +100,13 @@ public sealed class Signal9ApiClient(HttpClient http, BffAuthenticationStateProv
     public Task<PagedResult<UserDto>> ListUsersAsync(int page, int pageSize, CancellationToken cancellationToken = default) =>
         SendAsync<PagedResult<UserDto>>(HttpMethod.Get, $"api/v1/users?page={page}&pageSize={pageSize}", null, cancellationToken);
 
+    public Task<UserDto> CreateUserAsync(CreateUserRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<UserDto>(HttpMethod.Post, "api/v1/users", JsonContent.Create(request, options: Signal9Json.Options), cancellationToken);
+
+    /// <summary>Sends every editable field as a JSON merge patch.</summary>
+    public Task<UserDto> UpdateUserAsync(Guid userId, UpdateUserRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<UserDto>(HttpMethod.Patch, $"api/v1/users/{userId}", Patch(request), cancellationToken);
+
     public Task<PagedResult<RoleDto>> ListRolesAsync(CancellationToken cancellationToken = default) =>
         SendAsync<PagedResult<RoleDto>>(HttpMethod.Get, "api/v1/roles?pageSize=100", null, cancellationToken);
 

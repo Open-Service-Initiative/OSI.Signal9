@@ -124,6 +124,12 @@ public static class AuditActions
     /// </summary>
     public const string TenantApprovalHoldChanged = "tenant.approval-hold-changed";
 
+    /// <summary>A user was created, stored at their owning tenant (story 15).</summary>
+    public const string UserCreated = "user.created";
+
+    /// <summary>A user's editable fields changed (stories 15-16), stored at their owning tenant.</summary>
+    public const string UserUpdated = "user.updated";
+
     public const string RoleAssignmentCreated = "role-assignment.created";
     public const string RoleAssignmentDeleted = "role-assignment.deleted";
 

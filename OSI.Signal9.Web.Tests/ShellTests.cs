@@ -17,7 +17,7 @@ public sealed class ShellTests : DashboardTestContext
 
         // The hamburger's drawer repeats the navigation for narrow screens.
         var links = app.FindAll("nav a[href]").Select(a => a.GetAttribute("href")).Distinct().ToList();
-        CollectionAssert.AreEquivalent(new[] { "/", "/devices", "/agent-approvals", "/needs-decision", "/tenants", "/tenant-transfers", "/role-assignments", "/enrollment-tokens",
+        CollectionAssert.AreEquivalent(new[] { "/", "/devices", "/agent-approvals", "/needs-decision", "/tenants", "/tenant-transfers", "/users", "/role-assignments", "/enrollment-tokens",
             "/api-applications", "/api-applications/connections", "/connected-applications", "/audit" }, links);
     }
 
