@@ -445,6 +445,75 @@ public sealed class ApiApplicationTests : IDisposable
         Assert.AreEqual(HttpStatusCode.Created, addedByAdministrator.StatusCode, await addedByAdministrator.Content.ReadAsStringAsync(Ct));
     }
 
+    [TestMethod]
+    public async Task A_peer_administrator_application_is_removed_or_downgraded_only_from_above_its_tenant()
+    {
+        var tree = await TreeAsync();
+        var administratorRole = await RoleIdAsync("Administrator");
+        var peerApplication = await RegisterAsSuperadministratorAsync(tree.Msp, Registration("Automation",
+            administratorRole, TokenEndpointAuthMethods.ClientSecret, "tenants.read", "audit.read"));
+        var viewerApplication = await RegisterAsSuperadministratorAsync(tree.Msp, Registration("Reporting",
+            await RoleIdAsync("Viewer"), TokenEndpointAuthMethods.ClientSecret, "tenants.read"));
+        using var peer = await PersonAsync(tree.Msp, ("Administrator", tree.Msp));
+        using var above = await PersonAsync(tree.Root, ("Administrator", tree.Root));
+
+        var deletedByPeer = await peer.DeleteAsync($"{ApplicationsUrl(tree.Msp)}/{peerApplication.Id}", Ct);
+        var demotedByPeer = await PatchAsync(peer, peerApplication,
+            $$"""{"roleId":"{{await RoleIdAsync("Viewer")}}","scopes":["tenants.read"]}""");
+        var narrowedByPeer = await PatchAsync(peer, peerApplication, """{"scopes":["tenants.read"]}""");
+        var renamedByPeer = await PatchAsync(peer, peerApplication, """{"displayName":"Automation (prod)"}""");
+        var widenedByPeer = await PatchAsync(peer, peerApplication, """{"scopes":["tenants.read","audit.read","devices.read"]}""");
+        var viewerDeletedByPeer = await peer.DeleteAsync($"{ApplicationsUrl(tree.Msp)}/{viewerApplication.Id}", Ct);
+
+        Assert.AreEqual(HttpStatusCode.Forbidden, deletedByPeer.StatusCode);
+        Assert.AreEqual(HttpStatusCode.Forbidden, demotedByPeer.StatusCode);
+        Assert.AreEqual(HttpStatusCode.Forbidden, narrowedByPeer.StatusCode);
+        Assert.AreEqual(HttpStatusCode.OK, renamedByPeer.StatusCode, await renamedByPeer.Content.ReadAsStringAsync(Ct));
+        Assert.AreEqual(HttpStatusCode.OK, widenedByPeer.StatusCode, await widenedByPeer.Content.ReadAsStringAsync(Ct));
+        Assert.AreEqual(HttpStatusCode.NoContent, viewerDeletedByPeer.StatusCode);
+
+        var narrowedFromAbove = await PatchAsync(above, peerApplication, """{"scopes":["tenants.read"]}""");
+        var deletedFromAbove = await above.DeleteAsync($"{ApplicationsUrl(tree.Msp)}/{peerApplication.Id}", Ct);
+        Assert.AreEqual(HttpStatusCode.OK, narrowedFromAbove.StatusCode, await narrowedFromAbove.Content.ReadAsStringAsync(Ct));
+        Assert.AreEqual(HttpStatusCode.NoContent, deletedFromAbove.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task An_administrator_application_can_remove_itself_but_not_a_peer_administrator_application()
+    {
+        var tree = await TreeAsync();
+        var administratorRole = await RoleIdAsync("Administrator");
+        var peerApplication = await RegisterAsSuperadministratorAsync(tree.Msp, Registration("Automation",
+            administratorRole, TokenEndpointAuthMethods.ClientSecret, "tenants.read"));
+        var application = await RegisterAsSuperadministratorAsync(tree.Msp, Registration("Provisioning",
+            administratorRole, TokenEndpointAuthMethods.ClientSecret, "apiapplications.read", "apiapplications.write"));
+        using var asApplication = await SecretClientAsync(application.ClientId,
+            await AddSecretAsync(await MfaSuperadministratorAsync(), application), "apiapplications.read", "apiapplications.write");
+
+        var peerDeleted = await asApplication.DeleteAsync($"{ApplicationsUrl(tree.Msp)}/{peerApplication.Id}", Ct);
+        var selfDeleted = await asApplication.DeleteAsync($"{ApplicationsUrl(tree.Msp)}/{application.Id}", Ct);
+
+        Assert.AreEqual(HttpStatusCode.Forbidden, peerDeleted.StatusCode);
+        Assert.AreEqual(HttpStatusCode.NoContent, selfDeleted.StatusCode, await selfDeleted.Content.ReadAsStringAsync(Ct));
+    }
+
+    [TestMethod]
+    public async Task An_administrator_application_does_not_count_as_a_tenants_remaining_administrator()
+    {
+        var tree = await TreeAsync();
+        await RegisterAsSuperadministratorAsync(tree.Root, Registration("Automation", await RoleIdAsync("Administrator"),
+            TokenEndpointAuthMethods.ClientSecret, "tenants.read"));
+        var person = EntraUser.WithMfa();
+        using var administrator = await PersonAsync(person, tree.Root, [], ("Administrator", tree.Root));
+        var assignments = await administrator.GetFromJsonAsync<PagedResult<RoleAssignmentDto>>(
+            $"api/v1/tenants/{tree.Root}/role-assignments", Signal9Json.Options, Ct);
+
+        var leaving = await administrator.DeleteAsync(
+            $"api/v1/tenants/{tree.Root}/role-assignments/{assignments!.Items.Single().Id}", Ct);
+
+        Assert.AreEqual(HttpStatusCode.Conflict, leaving.StatusCode);
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
 
     private static readonly string[] ViewerScopes =

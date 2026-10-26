@@ -141,7 +141,8 @@ public sealed class ApiApplicationsController(
     /// <summary>
     /// Updates an API application with a JSON merge patch (RFC 7396): its name, its role and scopes (under the same
     /// rules as registering it), and a <c>tls_client_auth</c> application's certificate subject. Only a caller whose own
-    /// access covers the application's current role can change it (403). Its token endpoint
+    /// access covers the application's current role can change it (403), and only an Administrator above its tenant can
+    /// take a role or scope away from an application holding the Administrator role (story 22, 403). Its token endpoint
     /// authentication method can't change. Changes take effect on its next request.
     /// </summary>
     [RequireScope(Scopes.ApiApplications.Write)]
@@ -194,6 +195,9 @@ public sealed class ApiApplicationsController(
 
         var previous = application.Scopes;
         var regranted = request.RoleId != application.RoleId || !request.Scopes.ToHashSet().SetEquals(previous);
+        var downgraded = request.RoleId != application.RoleId || previous.Except(request.Scopes).Any();
+        if (downgraded && await PeerAdministratorRefusalAsync(application, "downgrade") is { } peer)
+            return peer;
         if (regranted && await GrantRefusalAsync(tenantId, application.Kind, request.RoleId, request.Scopes,
                 application.TokenEndpointAuthMethod, previous, cancellationToken) is { } grantRefused)
             return grantRefused;
@@ -231,12 +235,15 @@ public sealed class ApiApplicationsController(
     }
 
     /// <summary>
-    /// Removes an API application and its OAuth client. Its tokens stop working on its next request.
+    /// Removes an API application and its OAuth client. Its tokens stop working on its next request. An application
+    /// holding the Administrator role is a peer of the Administrators at its tenant, so only an Administrator above the
+    /// tenant (or a Superadministrator, or the application itself) can remove it (story 22, 403).
     /// </summary>
     [RequireScope(Scopes.ApiApplications.Write)]
     [HttpDelete("{apiApplicationId:guid}")]
     [OptimisticConcurrency]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(Guid tenantId, Guid apiApplicationId, CancellationToken cancellationToken)
     {
@@ -244,12 +251,22 @@ public sealed class ApiApplicationsController(
             return NotFound();
         if (this.Preconditions(ETag(application, await SubjectAsync(application, cancellationToken))) is { } refused)
             return refused;
+        if (await PeerAdministratorRefusalAsync(application, "remove") is { } peer)
+            return peer;
 
         db.ApiApplications.Remove(application);
         Audit(AuditActions.ApiApplicationDeleted, application);
         if (await applications.FindByClientIdAsync(application.ClientId, cancellationToken) is { } client)
+        {
+            // The manager deletes its tokens and authorizations in bulk; one this request has already read (its own
+            // token, when the application removes itself) mustn't then be deleted a second time by cascade.
+            foreach (var entry in db.ChangeTracker.Entries()
+                         .Where(e => e.Entity is OpenIddictEntityFrameworkCoreToken or OpenIddictEntityFrameworkCoreAuthorization)
+                         .ToList())
+                entry.State = EntityState.Detached;
             // Deletes its tokens and authorizations, then saves the removal and the audit entry.
             await applications.DeleteAsync(client, cancellationToken);
+        }
         else
             await db.SaveChangesAsync(cancellationToken);
         return NoContent();
@@ -470,6 +487,22 @@ public sealed class ApiApplicationsController(
             return null;
         var role = await db.Roles.AsNoTracking().SingleAsync(r => r.Id == application.RoleId, cancellationToken);
         return await BeyondCallerAsync(application.TenantId, role, "manage an application with", cancellationToken);
+    }
+
+    /// <summary>
+    /// A 403 when <paramref name="application"/> holds the Administrator role and the caller is a peer Administrator at
+    /// its tenant: like a person's Administrator assignment, it can be removed or downgraded only by an Administrator
+    /// above the tenant or a Superadministrator (#63 "Restrictions on Administrators at their own assigned tenant", story
+    /// 22). The application itself may give up its own authority, as a person may revoke their own assignment.
+    /// </summary>
+    private async Task<ActionResult?> PeerAdministratorRefusalAsync(ApiApplication application, string what)
+    {
+        if (application.RoleId != BuiltInRoles.Administrator.Id
+            || await AncestorAdministrator.AdmitsAsync(HttpContext, application.TenantId)
+            || access.Application?.Id == application.Id)
+            return null;
+        return Problem(statusCode: StatusCodes.Status403Forbidden, title: "Peer Administrator",
+            detail: $"Only an Administrator above this tenant can {what} an application holding the Administrator role at it.");
     }
 
     /// <summary>Answers with RFC 9470's step-up challenge.</summary>
