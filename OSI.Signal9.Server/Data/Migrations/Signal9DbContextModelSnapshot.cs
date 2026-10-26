@@ -55,7 +55,7 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.Property<bool>("AwaitingApproval")
                         .HasColumnType("boolean");
 
-                    b.Property<Guid>("DeviceId")
+                    b.Property<Guid?>("DeviceId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("EnrolledAt")
@@ -361,6 +361,10 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.Property<bool>("MaintenanceMode")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("Manufacturer")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
                     b.Property<string>("OperatingSystem")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -379,6 +383,13 @@ namespace OSI.Signal9.Server.Data.Migrations
 
                     b.Property<bool>("RequiresAgentApproval")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("SerialNumber")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<Guid?>("SmbiosUuid")
+                        .HasColumnType("uuid");
 
                     b.PrimitiveCollection<List<string>>("Tags")
                         .IsRequired()
@@ -400,6 +411,10 @@ namespace OSI.Signal9.Server.Data.Migrations
 
                     b.HasIndex("ActiveAgentId")
                         .IsUnique();
+
+                    b.HasIndex("SmbiosUuid");
+
+                    b.HasIndex("SerialNumber", "Manufacturer");
 
                     b.HasIndex("TenantId", "MachineName");
 
@@ -460,6 +475,72 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.HasIndex("TenantId");
 
                     b.ToTable("EnrollmentTokens");
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.PendingIdentification", b =>
+                {
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Architecture")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Domain")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)");
+
+                    b.Property<string>("MacAddress")
+                        .HasMaxLength(17)
+                        .HasColumnType("character varying(17)");
+
+                    b.Property<string>("MachineName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("Manufacturer")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("OperatingSystem")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("OsVersion")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("ProcessorCores")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ProcessorName")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("SerialNumber")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<Guid?>("SmbiosUuid")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("TotalMemoryMb")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("AgentId");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("PendingIdentifications");
                 });
 
             modelBuilder.Entity("OSI.Signal9.Server.Data.Role", b =>
@@ -971,8 +1052,7 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.HasOne("OSI.Signal9.Server.Data.Device", "Device")
                         .WithMany()
                         .HasForeignKey("DeviceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
 
                     b.HasOne("OSI.Signal9.Server.Data.EnrollmentToken", null)
                         .WithMany()
@@ -1030,6 +1110,21 @@ namespace OSI.Signal9.Server.Data.Migrations
                         .WithMany()
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.PendingIdentification", b =>
+                {
+                    b.HasOne("OSI.Signal9.Server.Data.Agent", null)
+                        .WithOne("PendingIdentification")
+                        .HasForeignKey("OSI.Signal9.Server.Data.PendingIdentification", "AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 
@@ -1151,6 +1246,11 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.Navigation("Application");
 
                     b.Navigation("Authorization");
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Agent", b =>
+                {
+                    b.Navigation("PendingIdentification");
                 });
 
             modelBuilder.Entity("OSI.Signal9.Server.Data.Tenant", b =>

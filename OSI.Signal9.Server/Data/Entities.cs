@@ -79,18 +79,35 @@ public sealed class Device : ITenantOwned
     public bool RequiresAgentApproval { get; set; }
     public DateTime CreatedAt { get; set; }
 
+    /// <summary>
+    /// The SMBIOS system UUID its latest agent reported, unless it was zeroed or a known placeholder. With
+    /// <see cref="Manufacturer"/> and <see cref="SerialNumber"/>, what identifies a reinstalled agent's device (#131).
+    /// </summary>
+    public Guid? SmbiosUuid { get; set; }
+
+    /// <summary>The system manufacturer its latest agent reported, normalized (trimmed, upper case), unless junk.</summary>
+    public string? Manufacturer { get; set; }
+
+    /// <summary>The system serial number its latest agent reported, normalized (trimmed, upper case), unless junk.</summary>
+    public string? SerialNumber { get; set; }
+
     public Tenant? Tenant { get; set; }
     public Agent? ActiveAgent { get; set; }
 }
 
-/// <summary>One installation of the agent software on a device.</summary>
-public sealed class Agent : IDeviceOwned
+/// <summary>
+/// One installation of the agent software. It belongs to a device, except while it awaits an identification decision
+/// (<see cref="PendingIdentification"/>).
+/// </summary>
+public sealed class Agent
 {
     public Guid Id { get; set; }
 
     /// <summary>Row version (PostgreSQL <c>xmin</c>): the concurrency token behind the resource's ETag.</summary>
     public uint Version { get; set; }
-    public Guid DeviceId { get; set; }
+
+    /// <summary>Its device, or none while it awaits an identification decision.</summary>
+    public Guid? DeviceId { get; set; }
 
     /// <summary>
     /// The enrollment token it enrolled with, while that token exists. The agent's credential is its own certificate,
@@ -111,6 +128,37 @@ public sealed class Agent : IDeviceOwned
     public bool AwaitingApproval { get; set; }
 
     public Device? Device { get; set; }
+
+    /// <summary>What it reported at enrollment, while a person decides which device it belongs to.</summary>
+    public PendingIdentification? PendingIdentification { get; set; }
+}
+
+/// <summary>
+/// An agent in the Needs-decision queue (story 105): its hardware matched devices it couldn't be matched to
+/// automatically, so it waits, with no device, until a person decides it's a reinstall of one of them or a new device.
+/// Holds what the agent reported at enrollment, to create or update its device from. Removed once decided.
+/// </summary>
+public sealed class PendingIdentification : ITenantOwned
+{
+    public Guid AgentId { get; set; }
+
+    /// <summary>The enrollment token's tenant: the subtree its device is looked for in, and where a new one goes.</summary>
+    public Guid TenantId { get; set; }
+    public required string MachineName { get; set; }
+    public string? Domain { get; set; }
+    public required string OperatingSystem { get; set; }
+    public string? OsVersion { get; set; }
+    public string? Architecture { get; set; }
+    public string? ProcessorName { get; set; }
+    public int ProcessorCores { get; set; }
+    public long TotalMemoryMb { get; set; }
+    public string? IpAddress { get; set; }
+    public string? MacAddress { get; set; }
+
+    /// <summary>The normalized hardware identifiers, as <see cref="Device"/> keeps them.</summary>
+    public Guid? SmbiosUuid { get; set; }
+    public string? Manufacturer { get; set; }
+    public string? SerialNumber { get; set; }
 }
 
 public sealed class Command : IDeviceOwned

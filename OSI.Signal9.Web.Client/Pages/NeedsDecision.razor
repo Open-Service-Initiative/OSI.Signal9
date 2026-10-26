@@ -1,0 +1,184 @@
+@page "/needs-decision"
+@attribute [Authorize]
+@inject Signal9ApiClient Api
+@inject IDialogService Dialogs
+
+<PageTitle>Needs decision - Signal9</PageTitle>
+
+<div class="page-header">
+    <FluentText As="TextTag.H1" Size="TextSize.Size800">Needs decision</FluentText>
+</div>
+<p>
+    These agents enrolled with hardware that matches existing devices, but not clearly enough to rejoin one on their own.
+    Choose <strong>Reinstalled</strong> to rebind an agent to its device, keeping the device's history, or
+    <strong>Keep both</strong> to give it a new device. Until then they send heartbeats but receive no commands.
+</p>
+
+<div class="filters">
+    <FluentSelect Id="decision-tenant" TOption="string" TValue="string" Label="Tenant" Value="@tenantId?.ToString()"
+                  ValueChanged="SelectTenantAsync">
+        @foreach (var tenant in tenants)
+        {
+            <FluentOption TValue="string" Value="@tenant.Id.ToString()">@tenant.Name</FluentOption>
+        }
+    </FluentSelect>
+</div>
+
+<ProblemBar Error="error" />
+@if (notice is not null)
+{
+    <FluentMessageBar Class="notice-bar" Intent="MessageBarIntent.Success">@notice</FluentMessageBar>
+}
+
+<FluentDataGrid Items="@agents.AsQueryable()" TGridItem="AgentDto" Loading="loading" ItemKey="@(a => a.Id)">
+    <PropertyColumn Title="Reported name" Property="@(a => a.MachineName)" />
+    <TemplateColumn Title="Tenant"><span id="@($"tenant-{context.Id}")">@TenantName(context.TenantId)</span></TemplateColumn>
+    <PropertyColumn Title="Agent version" Property="@(a => a.AgentVersion)" />
+    <TemplateColumn Title="Enrolled">@context.EnrolledAt.ToLocalTime().ToString("g")</TemplateColumn>
+    <TemplateColumn Title="Last seen">@context.LastSeenAt.ToLocalTime().ToString("g")</TemplateColumn>
+    <TemplateColumn Title="Actions" Align="DataGridCellAlignment.End">
+        <FluentButton Id="@($"review-{context.Id}")" Appearance="ButtonAppearance.Subtle"
+                      IconStart="@(new Icons.Regular.Size20.Search())" OnClick="@(() => ReviewAsync(context))">Review</FluentButton>
+    </TemplateColumn>
+</FluentDataGrid>
+<FluentPaginator State="pagination" CurrentPageIndexChanged="LoadAsync" />
+
+@if (reviewing is { } agent)
+{
+    <section id="candidates" class="candidates">
+        <FluentText As="TextTag.H2" Size="TextSize.Size600">Devices @agent.MachineName might be a reinstall of</FluentText>
+        <FluentDataGrid Items="@candidates.AsQueryable()" TGridItem="DeviceDto" Loading="loadingCandidates" ItemKey="@(d => d.Id)">
+            <PropertyColumn Title="Device" Property="@(d => d.MachineName)" />
+            <TemplateColumn Title="Tenant">@TenantName(context.TenantId)</TemplateColumn>
+            <PropertyColumn Title="Status" Property="@(d => d.Status)" />
+            <TemplateColumn Title="Agent">@(context.AgentStatus?.ToString() ?? "None")</TemplateColumn>
+            <TemplateColumn Title="Last seen">@context.LastSeenAt?.ToLocalTime().ToString("g")</TemplateColumn>
+            <TemplateColumn Title="Actions" Align="DataGridCellAlignment.End">
+                <FluentButton Id="@($"reinstalled-{context.Id}")" Appearance="ButtonAppearance.Subtle"
+                              IconStart="@(new Icons.Regular.Size20.ArrowSync())"
+                              OnClick="@(() => ReinstalledAsync(agent, context))">Reinstalled</FluentButton>
+            </TemplateColumn>
+        </FluentDataGrid>
+        <FluentButton Id="@($"keep-both-{agent.Id}")" Appearance="ButtonAppearance.Default"
+                      IconStart="@(new Icons.Regular.Size20.Add())" OnClick="@(() => KeepBothAsync(agent))">Keep both</FluentButton>
+    </section>
+}
+
+@code {
+    private const int PageSize = 25;
+
+    private readonly PaginationState pagination = new() { ItemsPerPage = PageSize };
+    private IReadOnlyList<TenantDto> tenants = [];
+    private Guid? tenantId;
+    private List<AgentDto> agents = [];
+    private bool loading = true;
+    private AgentDto? reviewing;
+    private IReadOnlyList<DeviceDto> candidates = [];
+    private bool loadingCandidates;
+    private ApiException? error;
+    private string? notice;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // TODO: a search picker once there can be more tenants than one page (the API's maximum is 100).
+            tenants = (await Api.ListTenantsAsync(1, 100)).Items;
+            tenantId = tenants.FirstOrDefault()?.Id;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+        await LoadAsync(0);
+    }
+
+    private async Task SelectTenantAsync(string? value)
+    {
+        tenantId = Guid.TryParse(value, out var id) ? id : null;
+        notice = null;
+        reviewing = null;
+        await pagination.SetCurrentPageIndexAsync(0);
+        await LoadAsync(0);
+    }
+
+    private async Task LoadAsync(int pageIndex)
+    {
+        if (tenantId is not { } id)
+        {
+            loading = false;
+            agents = [];
+            return;
+        }
+
+        loading = true;
+        try
+        {
+            var page = await Api.ListAgentsAsync(id, AgentStatus.NeedsDecision, pageIndex + 1, PageSize);
+            agents = [.. page.Items];
+            await pagination.SetTotalItemCountAsync(page.TotalCount);
+            error = null;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task ReviewAsync(AgentDto agent)
+    {
+        reviewing = agent;
+        candidates = [];
+        loadingCandidates = true;
+        try
+        {
+            candidates = (await Api.ListCandidateDevicesAsync(agent.Url)).Items;
+            error = null;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+        finally
+        {
+            loadingCandidates = false;
+        }
+    }
+
+    private Task ReinstalledAsync(AgentDto agent, DeviceDto device) => DecideAsync(agent,
+        new IdentifyAgentRequest { Decision = IdentificationDecision.Reinstalled, DeviceId = device.Id },
+        $"Rebind the agent reported as {agent.MachineName} to {device.MachineName}? The device keeps its history, and any agent still on it is revoked.",
+        "Reinstalled", $"Rebound {agent.MachineName} to {device.MachineName}.");
+
+    private Task KeepBothAsync(AgentDto agent) => DecideAsync(agent,
+        new IdentifyAgentRequest { Decision = IdentificationDecision.KeepBoth },
+        $"Give the agent reported as {agent.MachineName} a new device? The existing devices stay as they are.",
+        "Keep both", $"Kept both: {agent.MachineName} has a new device.");
+
+    private async Task DecideAsync(AgentDto agent, IdentifyAgentRequest request, string question, string action, string done)
+    {
+        var confirm = await Dialogs.ShowConfirmationAsync(question, action, action, "Cancel");
+        if (confirm.Cancelled)
+            return;
+
+        notice = null;
+        try
+        {
+            await Api.IdentifyAgentAsync(agent.Url, request);
+            agents.RemoveAll(a => a.Id == agent.Id);
+            reviewing = null;
+            notice = done;
+            error = null;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+    }
+
+    private string TenantName(Guid id) => tenants.FirstOrDefault(t => t.Id == id)?.Name ?? id.ToString();
+}

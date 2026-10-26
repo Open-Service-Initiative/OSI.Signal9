@@ -142,7 +142,7 @@ A revocable secret, issued for one tenant, that lets new agents enroll into it. 
 _Avoid_: Tenant code, install key, registration key
 
 **Agent status**:
-Whether an agent may receive commands: Active, or the first that applies of Revoked, Awaiting approval and Update required, all of which block commands.
+Whether an agent may receive commands: Active, or the first that applies of Revoked, Needs decision, Awaiting approval and Update required, all of which block commands. An agent that needs a decision is waiting for Identification and has no device yet.
 _Avoid_: Command block, health, agent state
 
 **Uninstall PIN**:

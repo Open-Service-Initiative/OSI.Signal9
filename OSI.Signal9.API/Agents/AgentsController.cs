@@ -16,6 +16,7 @@ using OSI.Signal9.API.Hubs;
 using OSI.Signal9.API.Infrastructure;
 using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Agents;
+using OSI.Signal9.Contracts.Devices;
 using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Hubs;
 using OSI.Signal9.Contracts.Tenants;
@@ -48,9 +49,9 @@ public sealed class AgentsController(
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<AgentDto>> GetAgent(Guid agentId, CancellationToken cancellationToken)
     {
-        var agent = await db.Agents.AsNoTracking().Include(a => a.Device)
+        var agent = await db.Agents.AsNoTracking().Include(a => a.Device).Include(a => a.PendingIdentification)
             .SingleOrDefaultAsync(a => a.Id == agentId, cancellationToken);
-        return agent is null ? NotFound() : this.Conditional(agent.ToDto(agent.Device!), agent.ETag(agent.Device!));
+        return agent is null ? NotFound() : this.Conditional(agent.ToDto(), agent.ETag());
     }
 
     /// <summary>
@@ -68,37 +69,45 @@ public sealed class AgentsController(
     [ProducesResponseType(StatusCodes.Status412PreconditionFailed)]
     public async Task<ActionResult<AgentDto>> Revoke(Guid agentId, CancellationToken cancellationToken)
     {
-        var agent = await db.Agents.Include(a => a.Device).SingleOrDefaultAsync(a => a.Id == agentId, cancellationToken);
+        var agent = await db.Agents.Include(a => a.Device).Include(a => a.PendingIdentification)
+            .SingleOrDefaultAsync(a => a.Id == agentId, cancellationToken);
         if (agent is null)
             return NotFound();
-        var device = agent.Device!;
-        if (this.Preconditions(agent.ETag(device)) is { } refused)
+        var device = agent.Device;
+        if (this.Preconditions(agent.ETag()) is { } refused)
             return refused;
         if (agent.RevokedAt is not null)
             return Problem(statusCode: StatusCodes.Status409Conflict, title: "Transition not allowed",
                 detail: "The agent is already revoked.");
 
+        // An agent awaiting identification has no device yet; it stays in the queue, revoked.
         agent.RevokedAt = time.GetUtcNow().UtcDateTime;
-        if (device.ActiveAgentId == agent.Id)
-            device.ActiveAgentId = null;
-        device.RequiresAgentApproval = true;
+        if (device is not null)
+        {
+            if (device.ActiveAgentId == agent.Id)
+                device.ActiveAgentId = null;
+            device.RequiresAgentApproval = true;
+        }
         audit.Record(new AuditEntry
         {
             Action = AuditActions.AgentRevoked,
-            TenantId = device.TenantId,
+            TenantId = agent.ToDto().TenantId,
             TargetType = "agent",
             TargetId = agent.Id,
-            DeviceId = device.Id,
+            DeviceId = device?.Id,
         });
         await db.SaveChangesAsync(cancellationToken);
         // Once saved, the agent is no longer active, which every agent request checks; its tokens and hub connection
         // go next, so nothing it already holds keeps working.
         await CutOffAsync(agent.Id, cancellationToken);
 
-        await db.Entry(device).Reference(d => d.ActiveAgent).LoadAsync(cancellationToken);
-        await dashboard.Clients.All.DeviceChanged(device.ToDto(presence));
-        this.SetETag(agent.ETag(device));
-        return agent.ToDto(device);
+        if (device is not null)
+        {
+            await db.Entry(device).Reference(d => d.ActiveAgent).LoadAsync(cancellationToken);
+            await dashboard.Clients.All.DeviceChanged(device.ToDto(presence));
+        }
+        this.SetETag(agent.ETag());
+        return agent.ToDto();
     }
 
     /// <summary>
@@ -115,15 +124,16 @@ public sealed class AgentsController(
     [ProducesResponseType(StatusCodes.Status412PreconditionFailed)]
     public async Task<ActionResult<AgentDto>> Approve(Guid agentId, CancellationToken cancellationToken)
     {
-        var agent = await db.Agents.Include(a => a.Device).SingleOrDefaultAsync(a => a.Id == agentId, cancellationToken);
+        var agent = await db.Agents.Include(a => a.Device).Include(a => a.PendingIdentification)
+            .SingleOrDefaultAsync(a => a.Id == agentId, cancellationToken);
         if (agent is null)
             return NotFound();
-        var device = agent.Device!;
-        if (this.Preconditions(agent.ETag(device)) is { } refused)
+        if (this.Preconditions(agent.ETag()) is { } refused)
             return refused;
         if (agent.Status() != AgentStatus.AwaitingApproval)
             return Problem(statusCode: StatusCodes.Status409Conflict, title: "Transition not allowed",
                 detail: $"The agent is {agent.Status()}, not awaiting approval.");
+        var device = agent.Device!;
 
         agent.AwaitingApproval = false;
         if (device.ActiveAgentId == agent.Id)
@@ -138,13 +148,147 @@ public sealed class AgentsController(
         });
         await db.SaveChangesAsync(cancellationToken);
 
-        if (device.ActiveAgentId == agent.Id && await db.Commands.AnyAsync(
-                c => c.DeviceId == device.Id && c.Status == CommandStatus.Pending, cancellationToken))
-            await agentHub.Clients.Group(AgentHub.GroupFor(agent.Id)).WorkAvailable();
+        await RingIfWorkWaitingAsync(agent, cancellationToken);
         await db.Entry(device).Reference(d => d.ActiveAgent).LoadAsync(cancellationToken);
         await dashboard.Clients.All.DeviceChanged(device.ToDto(presence));
-        this.SetETag(agent.ETag(device));
-        return agent.ToDto(device);
+        this.SetETag(agent.ETag());
+        return agent.ToDto();
+    }
+
+    /// <summary>Rings the agent's doorbell if it may receive work and its device has some waiting.</summary>
+    private async Task RingIfWorkWaitingAsync(Agent agent, CancellationToken cancellationToken)
+    {
+        if (agent.Status() == AgentStatus.Active && agent.Device!.ActiveAgentId == agent.Id && await db.Commands.AnyAsync(
+                c => c.DeviceId == agent.DeviceId && c.Status == CommandStatus.Pending, cancellationToken))
+            await agentHub.Clients.Group(AgentHub.GroupFor(agent.Id)).WorkAvailable();
+    }
+
+    /// <summary>
+    /// Decides an agent in the Needs-decision queue (story 105). <see cref="IdentificationDecision.Reinstalled"/>
+    /// rebinds it to one of its candidate devices, which keeps its telemetry and command history; that device's active
+    /// agent, if it still has one, is revoked, since the person says the machine was reinstalled.
+    /// <see cref="IdentificationDecision.KeepBoth"/> gives it a new device in its enrollment token's tenant. Either way
+    /// it then awaits approval if its device requires approval or its tenant holds new agents. Only an agent that needs
+    /// a decision can be decided (409).
+    /// </summary>
+    /// <response code="400">The decision is incomplete, or the device isn't one of the agent's candidates.</response>
+    /// <response code="409">The agent doesn't need a decision, or Keep both would exceed the tenant's device limit.</response>
+    [RequireScope(Scopes.Devices.Write)]
+    [HttpPost("{agentId:guid}:identify")]
+    [OptimisticConcurrency]
+    [Consumes("application/json")]
+    [ProducesResponseType<AgentDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status412PreconditionFailed)]
+    public async Task<ActionResult<AgentDto>> Identify(Guid agentId, IdentifyAgentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var agent = await db.Agents.Include(a => a.Device).Include(a => a.PendingIdentification)
+            .SingleOrDefaultAsync(a => a.Id == agentId, cancellationToken);
+        if (agent is null)
+            return NotFound();
+        if (this.Preconditions(agent.ETag()) is { } refused)
+            return refused;
+        if (agent.Status() != AgentStatus.NeedsDecision)
+            return Problem(statusCode: StatusCodes.Status409Conflict, title: "Transition not allowed",
+                detail: $"The agent is {agent.Status()}; it doesn't need an identification decision.");
+
+        var pending = agent.PendingIdentification!;
+        Device device;
+        Agent? replaced = null;
+        if (request.Decision == IdentificationDecision.Reinstalled)
+        {
+            var candidate = await CandidateDevices(db.Devices.Include(d => d.ActiveAgent), pending)
+                .SingleOrDefaultAsync(d => d.Id == request.DeviceId, cancellationToken);
+            if (candidate is null)
+            {
+                ModelState.AddModelError(nameof(request.DeviceId), "The device isn't one of the agent's candidate devices.");
+                return ValidationProblem(ModelState);
+            }
+            device = candidate;
+            if (device.ActiveAgent is { } previous)
+            {
+                previous.RevokedAt = time.GetUtcNow().UtcDateTime;
+                replaced = previous;
+                audit.Record(new AuditEntry
+                {
+                    Action = AuditActions.AgentRevoked,
+                    TenantId = device.TenantId,
+                    TargetType = "agent",
+                    TargetId = previous.Id,
+                    DeviceId = device.Id,
+                    Detail = $"replaced by agent {agent.Id}",
+                });
+            }
+        }
+        else
+        {
+            var tenant = await db.Tenants.SingleAsync(t => t.Id == pending.TenantId, cancellationToken);
+            if (await DeviceLimitReachedAsync(tenant, cancellationToken) is { } limit)
+                return limit;
+            device = NewDevice(pending);
+            db.Devices.Add(device);
+        }
+
+        await BindAsync(agent, device, pending, cancellationToken);
+        db.PendingIdentifications.Remove(pending);
+        audit.Record(new AuditEntry
+        {
+            Action = AuditActions.AgentIdentified,
+            TenantId = device.TenantId,
+            TargetType = "agent",
+            TargetId = agent.Id,
+            DeviceId = device.Id,
+            Detail = request.Decision == IdentificationDecision.Reinstalled ? "reinstalled" : "keep-both",
+        });
+        await db.SaveChangesAsync(cancellationToken);
+        if (replaced is not null)
+            await CutOffAsync(replaced.Id, cancellationToken);
+
+        await RingIfWorkWaitingAsync(agent, cancellationToken);
+        await dashboard.Clients.All.DeviceChanged(device.ToDto(presence));
+        this.SetETag(agent.ETag());
+        return agent.ToDto();
+    }
+
+    /// <summary>
+    /// The devices an agent in the Needs-decision queue might be a reinstall of (story 105): those in its enrollment
+    /// token's subtree, as far as the caller can see, sharing its SMBIOS UUID or its manufacturer and serial. Empty for
+    /// an agent that doesn't need a decision.
+    /// </summary>
+    [RequireScope(Scopes.Devices.Read)]
+    [HttpGet("{agentId:guid}/candidate-devices")]
+    [ProducesResponseType<PagedResult<DeviceDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<PagedResult<DeviceDto>>> ListCandidateDevices(Guid agentId,
+        [FromQuery] PageQuery paging, CancellationToken cancellationToken)
+    {
+        var agent = await db.Agents.AsNoTracking().Include(a => a.PendingIdentification)
+            .SingleOrDefaultAsync(a => a.Id == agentId, cancellationToken);
+        if (agent is null)
+            return NotFound();
+
+        var devices = db.Devices.AsNoTracking().Include(d => d.ActiveAgent);
+        var candidates = agent.Status() == AgentStatus.NeedsDecision
+            ? CandidateDevices(devices, agent.PendingIdentification!)
+            : devices.Where(_ => false);
+        return await candidates.OrderBy(d => d.CreatedAt).ThenBy(d => d.Id)
+            .ToPagedResultAsync(paging, d => d.ToDto(presence), cancellationToken);
+    }
+
+    /// <summary>
+    /// The devices in <paramref name="reported"/>'s tenant's subtree that share its normalized SMBIOS UUID, or its
+    /// manufacturer and serial (story 103). The subtree lies within one root tenant tree, so identification never
+    /// crosses root trees. Machine names play no part (story 106).
+    /// </summary>
+    private IQueryable<Device> CandidateDevices(IQueryable<Device> devices, PendingIdentification reported)
+    {
+        var (uuid, manufacturer, serial) = (reported.SmbiosUuid, reported.Manufacturer, reported.SerialNumber);
+        return devices.Where(d => db.TenantClosures.Any(c => c.AncestorId == reported.TenantId && c.DescendantId == d.TenantId)
+            && ((uuid != null && d.SmbiosUuid == uuid)
+                || (serial != null && manufacturer != null && d.SerialNumber == serial && d.Manufacturer == manufacturer)));
     }
 
     /// <summary>The certificate the agent authenticates with: its thumbprint and validity.</summary>
@@ -188,8 +332,8 @@ public sealed class AgentsController(
     public async Task<ActionResult<AgentCertificateDto>> PutCertificate(Guid agentId, AgentCertificateRequest request,
         CancellationToken cancellationToken)
     {
-        var (device, refusal) = await db.FindDeviceOfActiveAgentAsync(this, agentId, cancellationToken);
-        if (device is null)
+        var (agent, refusal) = await db.FindActiveAgentAsync(this, agentId, cancellationToken);
+        if (agent is null)
             return (ActionResult)refusal!;
         var client = await applications.FindByClientIdAsync(agentId.ToString(), cancellationToken)
             ?? throw new InvalidOperationException($"Agent {agentId} has no client.");
@@ -212,10 +356,10 @@ public sealed class AgentsController(
             audit.Record(new AuditEntry
             {
                 Action = AuditActions.AgentCertificateRotated,
-                TenantId = device.TenantId,
+                TenantId = agent.ToDto().TenantId,
                 TargetType = "agent",
                 TargetId = agentId,
-                DeviceId = device.Id,
+                DeviceId = agent.DeviceId,
                 Detail = $"{currentDto.Thumbprint} -> {dto.Thumbprint}",
             });
             // The client's key set becomes the new certificate alone; saving it saves the audit entry with it.
@@ -265,27 +409,34 @@ public sealed class AgentsController(
         if (!await db.Tenants.AnyAsync(t => t.Id == tenantId, cancellationToken))
             return NotFound();
 
-        var agents = db.Agents.AsNoTracking().Include(a => a.Device).AsQueryable();
+        var agents = db.Agents.AsNoTracking().Include(a => a.Device).Include(a => a.PendingIdentification).AsQueryable();
         agents = status switch
         {
             AgentStatus.Revoked => agents.Where(a => a.RevokedAt != null),
-            AgentStatus.AwaitingApproval => agents.Where(a => a.RevokedAt == null && a.AwaitingApproval),
-            AgentStatus.Active => agents.Where(a => a.RevokedAt == null && !a.AwaitingApproval),
+            AgentStatus.NeedsDecision => agents.Where(a => a.RevokedAt == null && a.DeviceId == null),
+            AgentStatus.AwaitingApproval => agents.Where(a => a.RevokedAt == null && a.DeviceId != null && a.AwaitingApproval),
+            AgentStatus.Active => agents.Where(a => a.RevokedAt == null && a.DeviceId != null && !a.AwaitingApproval),
             _ => agents,
         };
+        // An agent's tenant is its device's, or while it awaits identification, its pending identification's.
         var query = includeDescendants
-            ? agents.Where(a => db.TenantClosures.Any(c => c.AncestorId == tenantId && c.DescendantId == a.Device!.TenantId))
-            : agents.Where(a => a.Device!.TenantId == tenantId);
+            ? agents.Where(a => db.TenantClosures.Any(c => c.AncestorId == tenantId
+                && (c.DescendantId == a.Device!.TenantId || c.DescendantId == a.PendingIdentification!.TenantId)))
+            : agents.Where(a => a.Device!.TenantId == tenantId || a.PendingIdentification!.TenantId == tenantId);
         return await query.OrderByDescending(a => a.EnrolledAt).ThenByDescending(a => a.Id)
-            .ToPagedResultAsync(paging, a => a.ToDto(a.Device!), cancellationToken);
+            .ToPagedResultAsync(paging, a => a.ToDto(), cancellationToken);
     }
 
     /// <summary>
     /// Enrolls a new agent with an enrollment token and the self-signed certificate of its new non-exportable key
     /// (stories 95, 98). The certificate becomes the agent's credential: it then gets <c>agent</c> tokens with client
-    /// credentials at the mTLS token endpoint, its ID as client ID. The enrollment counts as one use of the token. An
-    /// enrollment that matches no existing device creates one in the token's tenant; devices are never matched by name.
-    /// The agent awaits approval if its tenant or an ancestor holds new agents, or its device requires approval.
+    /// credentials at the mTLS token endpoint, its ID as client ID. The enrollment counts as one use of the token.
+    /// Identification (stories 103-106): an enrollment whose hardware identifiers match no device in the token's subtree
+    /// creates one in the token's tenant; one matching exactly one device whose previous agent was revoked rejoins it,
+    /// keeping its history; any other match waits, with no device, in the Needs-decision queue
+    /// (<see cref="AgentStatus.NeedsDecision"/>). Zeroed and placeholder identifiers are ignored, and devices are never
+    /// matched by name. The agent awaits approval if its tenant or an ancestor holds new agents, or its device requires
+    /// approval.
     /// </summary>
     /// <response code="400">The certificate or machine facts aren't acceptable, or the enrollment token is unknown,
     /// revoked, expired or used up.</response>
@@ -340,15 +491,16 @@ public sealed class AgentsController(
                 await transaction.CommitAsync(cancellationToken);
             return result;
         });
-        if (enrolled.Value is not ({ } device, { } agent))
+        if (enrolled.Value is not (var device, { } agent))
             return enrolled.Problem!;
 
-        await dashboard.Clients.All.DeviceChanged(device.ToDto(presence));
-        this.SetETag(agent.ETag(device));
-        return CreatedAtRoute(nameof(GetAgent), new { agentId = agent.Id }, agent.ToDto(device));
+        if (device is not null)
+            await dashboard.Clients.All.DeviceChanged(device.ToDto(presence));
+        this.SetETag(agent.ETag());
+        return CreatedAtRoute(nameof(GetAgent), new { agentId = agent.Id }, agent.ToDto());
     }
 
-    private async Task<(ActionResult? Problem, (Device, Agent)? Value)> EnrollAsync(Tenant tenant, Guid tokenId,
+    private async Task<(ActionResult? Problem, (Device?, Agent)? Value)> EnrollAsync(Tenant tenant, Guid tokenId,
         System.Security.Cryptography.X509Certificates.X509Certificate2 certificate, EnrollAgentRequest request,
         DateTime now, CancellationToken cancellationToken)
     {
@@ -362,16 +514,88 @@ public sealed class AgentsController(
         if (used == 0)
             return (InvalidToken(), null);
 
-        var devices = await db.Devices.IgnoreTenantScope(TenantScopeBypass.Enrollment).CountAsync(d => d.TenantId == tenant.Id, cancellationToken);
-        if (devices >= tenant.MaxDevices)
-            return (Problem(statusCode: StatusCodes.Status409Conflict, title: "Device limit reached",
-                detail: $"Tenant '{tenant.Name}' allows at most {tenant.MaxDevices} devices."), null);
+        // Identification (stories 103-106): a new device when the hardware matches none in the token's subtree; the
+        // existing device when exactly one matches and its previous agent was revoked; otherwise a person decides.
+        var reported = Reported(request, tenant.Id);
+        var candidates = await CandidateDevices(db.Devices.IgnoreTenantScope(TenantScopeBypass.Enrollment), reported)
+            .Select(d => new
+            {
+                Device = d,
+                PreviousRevoked = d.ActiveAgentId == null
+                    && db.Agents.IgnoreTenantScope(TenantScopeBypass.Enrollment).Any(a => a.DeviceId == d.Id && a.RevokedAt != null),
+            })
+            .Take(2).ToListAsync(cancellationToken);
 
-        // Identification (matching an existing device) is #131; until then every enrollment is a new device.
-        var device = new Device
+        var agent = new Agent
         {
             Id = Guid.CreateVersion7(time.GetUtcNow()),
+            EnrollmentTokenId = tokenId,
+            AgentVersion = request.AgentVersion,
+            EnrolledAt = now,
+            LastSeenAt = now,
+        };
+        Device? device;
+        string identification;
+        if (candidates is [])
+        {
+            if (await DeviceLimitReachedAsync(tenant, cancellationToken) is { } limit)
+                return (limit, null);
+            device = NewDevice(reported);
+            db.Devices.Add(device);
+            await db.SaveChangesAsync(cancellationToken);
+            identification = "new-device";
+        }
+        else if (candidates is [{ PreviousRevoked: true, Device: var match }])
+        {
+            device = match;
+            identification = match.SmbiosUuid is not null && match.SmbiosUuid == reported.SmbiosUuid
+                ? "matched smbios-uuid"
+                : "matched manufacturer-serial";
+        }
+        else
+        {
+            device = null;
+            identification = "needs-decision";
+        }
+
+        db.Agents.Add(agent);
+        if (device is not null)
+            await BindAsync(agent, device, reported, cancellationToken);
+        else
+        {
+            agent.PendingIdentification = reported;
+            agent.AwaitingApproval = await db.HoldsNewAgentsAsync(tenant.Id, cancellationToken);
+        }
+        audit.Record(new AuditEntry
+        {
+            Action = AuditActions.AgentEnrolled,
             TenantId = tenant.Id,
+            TargetType = "agent",
+            TargetId = agent.Id,
+            DeviceId = device?.Id,
+            Detail = $"enrollment-token {tokenId}",
+        });
+        audit.Record(new AuditEntry
+        {
+            Action = device is null ? AuditActions.AgentIdentificationPending : AuditActions.AgentIdentified,
+            TenantId = device?.TenantId ?? tenant.Id,
+            TargetType = "agent",
+            TargetId = agent.Id,
+            DeviceId = device?.Id,
+            Detail = identification,
+        });
+        await db.SaveChangesAsync(cancellationToken);
+        await applications.CreateAsync(AgentCredentials.Client(agent.Id, certificate), cancellationToken);
+        return (null, (device, agent));
+    }
+
+    /// <summary>What an enrolling agent reported, with its hardware identifiers normalized (story 104).</summary>
+    private static PendingIdentification Reported(EnrollAgentRequest request, Guid tenantId)
+    {
+        var hardware = HardwareIdentifiers.From(request.SmbiosUuid, request.Manufacturer, request.SerialNumber);
+        return new PendingIdentification
+        {
+            TenantId = tenantId,
             MachineName = request.MachineName,
             Domain = request.Domain,
             OperatingSystem = request.OperatingSystem,
@@ -382,35 +606,53 @@ public sealed class AgentsController(
             TotalMemoryMb = request.TotalMemoryMb,
             IpAddress = request.IpAddress,
             MacAddress = request.MacAddress,
-            CreatedAt = now,
+            SmbiosUuid = hardware.SmbiosUuid,
+            Manufacturer = hardware.Manufacturer,
+            SerialNumber = hardware.SerialNumber,
         };
-        db.Devices.Add(device);
-        await db.SaveChangesAsync(cancellationToken);
+    }
 
-        var agent = new Agent
-        {
-            Id = Guid.CreateVersion7(time.GetUtcNow()),
-            DeviceId = device.Id,
-            EnrollmentTokenId = tokenId,
-            AgentVersion = request.AgentVersion,
-            EnrolledAt = now,
-            LastSeenAt = now,
-            AwaitingApproval = device.RequiresAgentApproval || await db.HoldsNewAgentsAsync(tenant.Id, cancellationToken),
-        };
-        db.Agents.Add(agent);
+    private Device NewDevice(PendingIdentification reported) => new()
+    {
+        Id = Guid.CreateVersion7(time.GetUtcNow()),
+        TenantId = reported.TenantId,
+        MachineName = reported.MachineName,
+        OperatingSystem = reported.OperatingSystem,
+        CreatedAt = time.GetUtcNow().UtcDateTime,
+    };
+
+    /// <summary>
+    /// Makes <paramref name="agent"/> <paramref name="device"/>'s active agent, bringing the device's facts up to date
+    /// with what the agent reported. Hardware identifiers it couldn't report keep their previous values. The agent
+    /// awaits approval if the device requires it or its tenant holds new agents (story 97).
+    /// </summary>
+    private async Task BindAsync(Agent agent, Device device, PendingIdentification reported, CancellationToken cancellationToken)
+    {
+        device.MachineName = reported.MachineName;
+        device.Domain = reported.Domain;
+        device.OperatingSystem = reported.OperatingSystem;
+        device.OsVersion = reported.OsVersion;
+        device.Architecture = reported.Architecture;
+        device.ProcessorName = reported.ProcessorName;
+        device.ProcessorCores = reported.ProcessorCores;
+        device.TotalMemoryMb = reported.TotalMemoryMb;
+        device.IpAddress = reported.IpAddress;
+        device.MacAddress = reported.MacAddress;
+        device.SmbiosUuid = reported.SmbiosUuid ?? device.SmbiosUuid;
+        if (reported.SerialNumber is not null)
+            (device.Manufacturer, device.SerialNumber) = (reported.Manufacturer, reported.SerialNumber);
+
+        agent.DeviceId = device.Id;
+        agent.Device = device;
         device.ActiveAgent = agent;
-        audit.Record(new AuditEntry
-        {
-            Action = AuditActions.AgentEnrolled,
-            TenantId = tenant.Id,
-            TargetType = "agent",
-            TargetId = agent.Id,
-            DeviceId = device.Id,
-            Detail = $"enrollment-token {tokenId}",
-        });
-        await db.SaveChangesAsync(cancellationToken);
-        await applications.CreateAsync(AgentCredentials.Client(agent.Id, certificate), cancellationToken);
-        return (null, (device, agent));
+        agent.AwaitingApproval = device.RequiresAgentApproval || await db.HoldsNewAgentsAsync(device.TenantId, cancellationToken);
+    }
+
+    private async Task<ActionResult?> DeviceLimitReachedAsync(Tenant tenant, CancellationToken cancellationToken)
+    {
+        var devices = await db.Devices.IgnoreTenantScope(TenantScopeBypass.Enrollment).CountAsync(d => d.TenantId == tenant.Id, cancellationToken);
+        return devices < tenant.MaxDevices ? null : Problem(statusCode: StatusCodes.Status409Conflict,
+            title: "Device limit reached", detail: $"Tenant '{tenant.Name}' allows at most {tenant.MaxDevices} devices.");
     }
 
     private ActionResult InvalidToken()
@@ -432,7 +674,7 @@ public sealed class AgentsController(
     /// Lists the pending commands of the agent's device, oldest first. The agent calls it when its doorbell rings, every
     /// time it (re)connects and when a heartbeat says work is waiting, then reports each result at the command's URL.
     /// Only the agent the access token names may call it (403 otherwise); a replaced agent gets 409. An agent awaiting
-    /// approval receives no work, so its list is empty.
+    /// approval or an identification decision receives no work, so its list is empty.
     /// </summary>
     [RequireScope(Scopes.Agent)]
     [HttpGet("{agentId:guid}/pending-commands")]
@@ -443,13 +685,14 @@ public sealed class AgentsController(
     public async Task<ActionResult<PagedResult<CommandDto>>> ListPendingCommands(
         Guid agentId, [FromQuery] PageQuery query, CancellationToken cancellationToken)
     {
-        var (device, refusal) = await db.FindDeviceOfActiveAgentAsync(this, agentId, cancellationToken);
-        if (device is null)
+        var (agent, refusal) = await db.FindActiveAgentAsync(this, agentId, cancellationToken);
+        if (agent is null)
             return (ActionResult)refusal!;
 
-        var mayReceiveWork = device.ActiveAgent!.Status() == AgentStatus.Active;
+        var deviceId = agent.DeviceId;
+        var mayReceiveWork = agent.Status() == AgentStatus.Active;
         return await db.Commands.AsNoTracking().IgnoreTenantScope(TenantScopeBypass.AgentSelfService)
-            .Where(c => mayReceiveWork && c.DeviceId == device.Id && c.Status == CommandStatus.Pending)
+            .Where(c => mayReceiveWork && c.DeviceId == deviceId && c.Status == CommandStatus.Pending)
             .OrderBy(c => c.CreatedAt).ThenBy(c => c.Id)
             .ToPagedResultAsync(query, c => c.ToDto(), cancellationToken);
     }
@@ -457,7 +700,7 @@ public sealed class AgentsController(
     /// <summary>
     /// Records that the agent is alive and tells it whether work is waiting. Sent by the agent on a fixed interval.
     /// Only the agent the access token names may send it (403 otherwise); a replaced agent gets 409. An agent awaiting
-    /// approval is accepted too, but never told work is waiting.
+    /// approval or an identification decision is accepted too, but never told work is waiting.
     /// </summary>
     [RequireScope(Scopes.Agent)]
     [HttpPut("{agentId:guid}/heartbeat")]
@@ -471,25 +714,27 @@ public sealed class AgentsController(
     public async Task<ActionResult<HeartbeatResponse>> Heartbeat(
         Guid agentId, HeartbeatRequest request, CancellationToken cancellationToken)
     {
-        var (device, refusal) = await db.FindDeviceOfActiveAgentAsync(this, agentId, cancellationToken);
-        if (device is null)
+        var (agent, refusal) = await db.FindActiveAgentAsync(this, agentId, cancellationToken);
+        if (agent is null)
             return (ActionResult)refusal!;
         // The heartbeat is write-only: it has no representation, so it has no entity tag for If-Match to match.
         if (this.Preconditions(current: null) is { } refused)
             return refused;
 
-        var agent = device.ActiveAgent!;
-        var wasOnline = presence.StatusOf(device) == Contracts.Devices.DeviceStatus.Online;
+        // An agent awaiting identification has no device to bring online yet.
+        var device = agent.Device;
+        var wasOnline = device is not null && presence.StatusOf(device) == Contracts.Devices.DeviceStatus.Online;
         agent.LastSeenAt = time.GetUtcNow().UtcDateTime;
         agent.AgentVersion = request.AgentVersion ?? agent.AgentVersion;
-        device.IpAddress = request.IpAddress ?? device.IpAddress;
+        if (device is not null)
+            device.IpAddress = request.IpAddress ?? device.IpAddress;
         await db.RecordCheckInAsync(agent.Id, agent.LastSeenAt, cancellationToken, request.AgentVersion, request.IpAddress);
 
-        if (!wasOnline)
+        if (device is not null && !wasOnline)
             await dashboard.Clients.All.DeviceChanged(device.ToDto(presence));
         var hasPendingWork = agent.Status() == AgentStatus.Active && await db.Commands
             .IgnoreTenantScope(TenantScopeBypass.AgentSelfService)
-            .AnyAsync(c => c.DeviceId == device.Id && c.Status == CommandStatus.Pending, cancellationToken);
+            .AnyAsync(c => c.DeviceId == agent.DeviceId && c.Status == CommandStatus.Pending, cancellationToken);
         return new HeartbeatResponse(hasPendingWork);
     }
 }

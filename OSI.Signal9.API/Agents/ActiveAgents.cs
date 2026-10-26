@@ -7,29 +7,31 @@ namespace OSI.Signal9.API.Agents;
 internal static class ActiveAgents
 {
     /// <summary>
-    /// Finds the device whose active agent is <paramref name="agentId"/>, for requests an agent sends about itself. The
-    /// agent is the one the access token names; a request naming any other agent is refused (story 100).
+    /// Finds the agent <paramref name="agentId"/>, for requests an agent sends about itself, if it may still make them:
+    /// it's its device's active agent, or it awaits an identification decision and has no device yet. The agent is the
+    /// one the access token names; a request naming any other agent is refused (story 100).
     /// </summary>
     /// <returns>
-    /// The tracked device with its active agent, or the 403 (not the caller, or revoked), 404 (unknown agent) or 409 (replaced
-    /// agent) to return.
+    /// The tracked agent with its device (and the device's active agent) or pending identification, or the 403 (not the
+    /// caller, or revoked), 404 (unknown agent) or 409 (replaced agent) to return.
     /// </returns>
-    public static async Task<(Device? Device, IActionResult? Refusal)> FindDeviceOfActiveAgentAsync(
+    public static async Task<(Agent? Agent, IActionResult? Refusal)> FindActiveAgentAsync(
         this Signal9DbContext db, ControllerBase controller, Guid agentId, CancellationToken cancellationToken)
     {
         if (controller.User.AgentId() != agentId)
             return (null, controller.Forbid());
 
-        var agent = await db.Agents.IgnoreTenantScope(TenantScopeBypass.AgentSelfService).Include(a => a.Device!).ThenInclude(d => d.ActiveAgent)
+        var agent = await db.Agents.IgnoreTenantScope(TenantScopeBypass.AgentSelfService)
+            .Include(a => a.Device!).ThenInclude(d => d.ActiveAgent).Include(a => a.PendingIdentification)
             .SingleOrDefaultAsync(a => a.Id == agentId, cancellationToken);
         if (agent is null)
             return (null, controller.NotFound());
         if (agent.RevokedAt is not null)
             return (null, controller.Forbid());
-        if (agent.Device!.ActiveAgentId != agent.Id)
+        if (agent.Device is { } device && device.ActiveAgentId != agent.Id)
             return (null, controller.Problem(statusCode: StatusCodes.Status409Conflict, title: "Agent replaced",
                 detail: "This agent is no longer its device's active agent."));
-        return (agent.Device, null);
+        return (agent, null);
     }
 
     /// <summary>

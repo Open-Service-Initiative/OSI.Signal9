@@ -81,6 +81,15 @@ public sealed class Signal9ApiClient(HttpClient http, BffAuthenticationStateProv
     public Task<AgentDto> ApproveAgentAsync(string url, CancellationToken cancellationToken = default) =>
         SendAsync<AgentDto>(HttpMethod.Post, $"{url.TrimStart('/')}:approve", null, cancellationToken);
 
+    /// <summary>The devices the agent at <paramref name="url"/>, which needs a decision, might be a reinstall of.</summary>
+    public Task<PagedResult<DeviceDto>> ListCandidateDevicesAsync(string url, CancellationToken cancellationToken = default) =>
+        SendAsync<PagedResult<DeviceDto>>(HttpMethod.Get, $"{url.TrimStart('/')}/candidate-devices?pageSize=100", null, cancellationToken);
+
+    /// <summary>Decides which device the agent at <paramref name="url"/> belongs to (story 105).</summary>
+    public Task<AgentDto> IdentifyAgentAsync(string url, IdentifyAgentRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<AgentDto>(HttpMethod.Post, $"{url.TrimStart('/')}:identify",
+            JsonContent.Create(request, options: Signal9Json.Options), cancellationToken);
+
     // Users and role assignments
 
     public Task<PagedResult<UserDto>> ListUsersAsync(int page, int pageSize, CancellationToken cancellationToken = default) =>

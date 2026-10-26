@@ -3,8 +3,8 @@ using System.ComponentModel.DataAnnotations;
 namespace OSI.Signal9.Contracts.Agents;
 
 /// <summary>
-/// Whether an agent may receive commands: Active, or the first that applies of Revoked and Awaiting approval, which both
-/// block commands.
+/// Whether an agent may receive commands: Active, or the first that applies of Revoked, Needs decision and Awaiting
+/// approval, which all block commands.
 /// </summary>
 public enum AgentStatus
 {
@@ -19,6 +19,45 @@ public enum AgentStatus
     /// heartbeats but receives no work until a person approves it (POST {url}:approve).
     /// </summary>
     AwaitingApproval = 2,
+
+    /// <summary>
+    /// Its hardware identifiers matched an existing device it couldn't be matched to automatically, so it has no device
+    /// yet: it waits in the Needs-decision queue until a person decides (POST {url}:identify) whether it's a reinstall
+    /// of an existing device or a new one (story 105). It sends heartbeats but receives no work.
+    /// </summary>
+    NeedsDecision = 3,
+}
+
+/// <summary>A person's identification decision for an agent in the Needs-decision queue (story 105).</summary>
+public enum IdentificationDecision
+{
+    /// <summary>It's a reinstall: rebind it to the existing device named, which keeps its history.</summary>
+    Reinstalled,
+
+    /// <summary>It's a different machine: give it a new device, leaving the existing ones as they are.</summary>
+    KeepBoth,
+}
+
+/// <summary>
+/// Body of POST /api/v1/agents/{agentId}:identify, which decides an agent in the Needs-decision queue (story 105).
+/// <see cref="DeviceId"/> names the device for <see cref="IdentificationDecision.Reinstalled"/>, one of the agent's
+/// candidate devices (GET /api/v1/agents/{agentId}/candidate-devices), and must be left out for
+/// <see cref="IdentificationDecision.KeepBoth"/>.
+/// </summary>
+public sealed record IdentifyAgentRequest : IValidatableObject
+{
+    [Required]
+    public IdentificationDecision? Decision { get; init; }
+
+    public Guid? DeviceId { get; init; }
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (Decision == IdentificationDecision.Reinstalled && DeviceId is null)
+            yield return new ValidationResult("Name the device the agent was reinstalled on.", [nameof(DeviceId)]);
+        if (Decision == IdentificationDecision.KeepBoth && DeviceId is not null)
+            yield return new ValidationResult("Keep both creates a new device; name no device.", [nameof(DeviceId)]);
+    }
 }
 
 /// <summary>
@@ -26,11 +65,13 @@ public enum AgentStatus
 /// instance per deployment and root tenant tree; each is a separate agent.
 /// </summary>
 /// <param name="Url">The agent's canonical URL.</param>
+/// <param name="DeviceId">Its device, or none while it awaits an identification decision.</param>
+/// <param name="TenantId">Its device's tenant, or while it awaits identification, its enrollment token's.</param>
 /// <param name="EnrollmentTokenId">The enrollment token it enrolled with, while that token exists.</param>
 /// <param name="IsActive">
 /// Whether this is its device's active agent. A replaced or revoked agent is no longer active.
 /// </param>
-/// <param name="MachineName">Its device's machine name.</param>
+/// <param name="MachineName">Its device's machine name, or while it awaits identification, the one it reported.</param>
 /// <param name="Status">Whether it may receive commands, apart from its device's online status.</param>
 /// <param name="RevokedAt">
 /// When a person revoked it (POST {url}:revoke), if they did. A revoked agent can't authenticate, and its device then
@@ -39,7 +80,7 @@ public enum AgentStatus
 public sealed record AgentDto(
     Guid Id,
     string Url,
-    Guid DeviceId,
+    Guid? DeviceId,
     Guid TenantId,
     string MachineName,
     Guid? EnrollmentTokenId,
@@ -53,8 +94,9 @@ public sealed record AgentDto(
 /// <summary>
 /// Sent by a new agent to enroll (POST /api/v1/agents), with no access token: the enrollment token is its authority
 /// (stories 95, 98). <see cref="Certificate"/> is the self-signed certificate of the agent's new non-exportable key,
-/// which it then authenticates with at the mTLS token endpoint (<c>self_signed_tls_client_auth</c>, RFC 8705 §2.2). An
-/// enrollment that matches no existing device creates a new one; devices are never matched by machine name.
+/// which it then authenticates with at the mTLS token endpoint (<c>self_signed_tls_client_auth</c>, RFC 8705 §2.2). The
+/// hardware identifiers identify a reinstalled agent's existing device (stories 103-106); an enrollment that matches no
+/// existing device creates a new one. Devices are never matched by machine name.
 /// </summary>
 public sealed record EnrollAgentRequest
 {
@@ -101,6 +143,21 @@ public sealed record EnrollAgentRequest
 
     [StringLength(50)]
     public string? AgentVersion { get; init; }
+
+    /// <summary>
+    /// The machine's SMBIOS system UUID (SMBIOS type 1), if it could be read. Used with <see cref="Manufacturer"/> and
+    /// <see cref="SerialNumber"/> to identify a reinstalled agent's existing device; zeroed and known placeholder
+    /// values are ignored.
+    /// </summary>
+    public Guid? SmbiosUuid { get; init; }
+
+    /// <summary>The system manufacturer (SMBIOS type 1), if it could be read.</summary>
+    [StringLength(255)]
+    public string? Manufacturer { get; init; }
+
+    /// <summary>The system serial number (SMBIOS type 1), if it could be read.</summary>
+    [StringLength(255)]
+    public string? SerialNumber { get; init; }
 }
 
 /// <summary>

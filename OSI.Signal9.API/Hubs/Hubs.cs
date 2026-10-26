@@ -28,11 +28,13 @@ public sealed class AgentHub(Signal9DbContext db, AgentHubConnections connection
             return;
         }
 
-        // Only an enrolled agent, still its device's active agent, hears a doorbell. The connection is recorded before
-        // that's checked, so a revocation committed meanwhile either fails the check or finds the connection to close.
+        // Only an enrolled agent, still its device's active agent or awaiting identification, hears a doorbell. The
+        // connection is recorded before that's checked, so a revocation committed meanwhile either fails the check or
+        // finds the connection to close.
         connections.Add(agentId, Context);
-        if (!await db.Devices.IgnoreTenantScope(TenantScopeBypass.AgentSelfService)
-                .AnyAsync(d => d.ActiveAgentId == agentId, Context.ConnectionAborted))
+        if (!await db.Agents.IgnoreTenantScope(TenantScopeBypass.AgentSelfService)
+                .AnyAsync(a => a.Id == agentId && a.RevokedAt == null
+                    && (a.DeviceId == null || a.Device!.ActiveAgentId == agentId), Context.ConnectionAborted))
         {
             connections.Remove(agentId, Context);
             Context.Abort();

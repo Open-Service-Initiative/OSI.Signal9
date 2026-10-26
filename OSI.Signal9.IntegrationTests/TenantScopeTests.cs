@@ -153,7 +153,7 @@ public sealed class TenantScopeTests : IDisposable
         var owned = TenantOwnedEntities(db.Model).Select(t => t.ClrType).ToList();
 
         CollectionAssert.AreEquivalent(
-            new[] { typeof(Tenant), typeof(Device), typeof(Server.Data.Agent), typeof(Command), typeof(TelemetrySample), typeof(User), typeof(RoleAssignment), typeof(EnrollmentToken), typeof(ApiApplication) }, owned);
+            new[] { typeof(Tenant), typeof(Device), typeof(Server.Data.Agent), typeof(PendingIdentification), typeof(Command), typeof(TelemetrySample), typeof(User), typeof(RoleAssignment), typeof(EnrollmentToken), typeof(ApiApplication) }, owned);
     }
 
     /// <summary>
@@ -321,7 +321,7 @@ public sealed class TenantScopeTests : IDisposable
         var sample = await enrolled.Client.PostAsJsonAsync($"api/v1/agents/{agent.Id}/telemetry",
             new CreateTelemetrySampleRequest { CollectedAt = _factory.Time.GetUtcNow() }, Signal9Json.Options, Ct);
         Assert.AreEqual(HttpStatusCode.Created, sample.StatusCode);
-        return new Branch(tenant.Id, agent.DeviceId, agent.Id,
+        return new Branch(tenant.Id, agent.DeviceId!.Value, agent.Id,
             (await command.Content.ReadFromJsonAsync<CommandDto>(Signal9Json.Options, Ct))!.Id,
             (await sample.Content.ReadFromJsonAsync<TelemetrySampleDto>(Signal9Json.Options, Ct))!.Id);
     }

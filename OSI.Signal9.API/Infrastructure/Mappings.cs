@@ -24,8 +24,9 @@ internal static class Mappings
     public static EntityTagHeaderValue ETag(this Device device, DevicePresence presence) =>
         ConditionalRequests.ETag(device.Version, device.ActiveAgent?.Version, presence.StatusOf(device));
 
-    public static EntityTagHeaderValue ETag(this Agent agent, Device device) =>
-        ConditionalRequests.ETag(agent.Version, device.Version);
+    /// <param name="agent">An agent loaded with its <see cref="Agent.Device"/>.</param>
+    public static EntityTagHeaderValue ETag(this Agent agent) =>
+        ConditionalRequests.ETag(agent.Version, agent.Device?.Version);
 
     public static EntityTagHeaderValue ETag(this Command command) => ConditionalRequests.ETag(command.Version);
 
@@ -114,21 +115,26 @@ internal static class Mappings
         device.RequiresAgentApproval,
         device.ActiveAgent?.Status());
 
-    /// <summary>The first that applies of Revoked and Awaiting approval, or else Active.</summary>
+    /// <summary>The first that applies of Revoked, Needs decision and Awaiting approval, or else Active.</summary>
     public static AgentStatus Status(this Agent agent) =>
         agent.RevokedAt is not null ? AgentStatus.Revoked
+        : agent.DeviceId is null ? AgentStatus.NeedsDecision
         : agent.AwaitingApproval ? AgentStatus.AwaitingApproval
         : AgentStatus.Active;
 
-    public static AgentDto ToDto(this Agent agent, Device device) => new(
+    /// <param name="agent">
+    /// An agent loaded with its <see cref="Agent.Device"/>, or with its <see cref="Agent.PendingIdentification"/> when it
+    /// has no device.
+    /// </param>
+    public static AgentDto ToDto(this Agent agent) => new(
         agent.Id,
         $"/api/v1/agents/{agent.Id}",
         agent.DeviceId,
-        device.TenantId,
-        device.MachineName,
+        agent.Device?.TenantId ?? agent.PendingIdentification!.TenantId,
+        agent.Device?.MachineName ?? agent.PendingIdentification!.MachineName,
         agent.EnrollmentTokenId,
         agent.AgentVersion,
-        device.ActiveAgentId == agent.Id,
+        agent.Device?.ActiveAgentId == agent.Id,
         agent.Status(),
         agent.EnrolledAt.AsUtcOffset(),
         agent.LastSeenAt.AsUtcOffset(),

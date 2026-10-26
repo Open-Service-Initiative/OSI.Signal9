@@ -9,8 +9,11 @@ namespace OSI.Signal9.Agent.Services;
 /// <summary>
 /// Facts about this machine that the agent reports when it enrolls.
 /// </summary>
-public sealed class SystemInfoProvider
+/// <param name="readHardware">Reads the machine's hardware identifiers; <see cref="HardwareIdentity.Read"/> by default.</param>
+public sealed class SystemInfoProvider(Func<HardwareIdentity>? readHardware = null)
 {
+    private readonly Func<HardwareIdentity> _readHardware = readHardware ?? HardwareIdentity.Read;
+
     public static string AgentVersion { get; } =
         typeof(SystemInfoProvider).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]
         ?? "0.0.0";
@@ -37,6 +40,7 @@ public sealed class SystemInfoProvider
     public EnrollAgentRequest GetEnrollment(string enrollmentToken, string certificatePem)
     {
         var facts = GetFacts();
+        var hardware = _readHardware();
         return new EnrollAgentRequest
         {
             EnrollmentToken = enrollmentToken,
@@ -52,8 +56,14 @@ public sealed class SystemInfoProvider
             IpAddress = facts.IpAddress,
             MacAddress = facts.MacAddress,
             AgentVersion = facts.AgentVersion,
+            SmbiosUuid = hardware.SmbiosUuid,
+            Manufacturer = Truncate(hardware.Manufacturer),
+            SerialNumber = Truncate(hardware.SerialNumber),
         };
     }
+
+    // The API takes at most 255 characters; firmware strings are never meaningfully longer.
+    private static string? Truncate(string? value) => value is { Length: > 255 } ? value[..255] : value;
 
     public static (string? IpAddress, string? MacAddress) GetPrimaryNetworkAddress()
     {

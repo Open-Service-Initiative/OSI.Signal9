@@ -22,6 +22,7 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
     public DbSet<TenantClosure> TenantClosures => Set<TenantClosure>();
     public DbSet<Device> Devices => Set<Device>();
     public DbSet<Agent> Agents => Set<Agent>();
+    public DbSet<PendingIdentification> PendingIdentifications => Set<PendingIdentification>();
     public DbSet<Command> Commands => Set<Command>();
     public DbSet<TelemetrySample> TelemetrySamples => Set<TelemetrySample>();
     public DbSet<StoredKey> StoredKeys => Set<StoredKey>();
@@ -87,6 +88,11 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
             device.Property(d => d.IpAddress).HasMaxLength(45);
             device.Property(d => d.MacAddress).HasMaxLength(17);
             device.Property(d => d.GroupName).HasMaxLength(100);
+            device.Property(d => d.Manufacturer).HasMaxLength(255);
+            device.Property(d => d.SerialNumber).HasMaxLength(255);
+            // Hardware identifiers aren't unique: a person may keep two devices that share them ("Keep both").
+            device.HasIndex(d => d.SmbiosUuid);
+            device.HasIndex(d => new { d.SerialNumber, d.Manufacturer });
             device.HasOne(d => d.Tenant)
                 .WithMany(t => t.Devices)
                 .HasForeignKey(d => d.TenantId)
@@ -110,6 +116,30 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
                 .HasForeignKey(a => a.EnrollmentTokenId)
                 .OnDelete(DeleteBehavior.SetNull);
             agent.HasIndex(a => a.EnrolledAt);
+            agent.HasOne(a => a.PendingIdentification)
+                .WithOne()
+                .HasForeignKey<PendingIdentification>(p => p.AgentId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PendingIdentification>(pending =>
+        {
+            pending.HasKey(p => p.AgentId);
+            pending.HasOne<Tenant>()
+                .WithMany()
+                .HasForeignKey(p => p.TenantId)
+                .OnDelete(DeleteBehavior.Restrict);
+            pending.HasIndex(p => p.TenantId);
+            pending.Property(p => p.MachineName).HasMaxLength(255);
+            pending.Property(p => p.Domain).HasMaxLength(255);
+            pending.Property(p => p.OperatingSystem).HasMaxLength(100);
+            pending.Property(p => p.OsVersion).HasMaxLength(100);
+            pending.Property(p => p.Architecture).HasMaxLength(20);
+            pending.Property(p => p.ProcessorName).HasMaxLength(255);
+            pending.Property(p => p.IpAddress).HasMaxLength(45);
+            pending.Property(p => p.MacAddress).HasMaxLength(17);
+            pending.Property(p => p.Manufacturer).HasMaxLength(255);
+            pending.Property(p => p.SerialNumber).HasMaxLength(255);
         });
 
         modelBuilder.Entity<Command>(command =>
@@ -236,6 +266,11 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
         // An entry is read at its tenant and above; a deployment-level entry (no tenant) only by a Superadministrator.
         modelBuilder.Entity<AuditEntry>().HasQueryFilter(TenantScope.Filter, e => SeesEveryTenant ||
             (e.TenantId != null && TenantClosures.Any(c => c.DescendantId == e.TenantId && AssignedTenantIds.Contains(c.AncestorId))));
+
+        // An agent is visible with its device, or, while it awaits identification and has none, with its pending
+        // identification, which its enrollment token's tenant owns.
+        modelBuilder.Entity<Agent>().HasQueryFilter(TenantScope.Filter, a =>
+            Devices.Any(d => d.Id == a.DeviceId) || PendingIdentifications.Any(p => p.AgentId == a.Id));
 
         foreach (var type in modelBuilder.Model.GetEntityTypes().Where(t => t.BaseType is null && !t.IsOwned()).ToList())
         {

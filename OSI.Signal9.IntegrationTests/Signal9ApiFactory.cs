@@ -489,11 +489,13 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
     /// enrollment token, and the agent enrolls with it and a new self-signed certificate. The returned agent's
     /// <see cref="TestAgent.Client"/> calls api as the agent, with a certificate-bound token from api's mTLS alias.
     /// </summary>
-    public async Task<TestAgent> EnrollAgentAsync(Guid tenantId, string machineName = "PC01")
+    /// <param name="hardware">Shapes the enrollment request, such as to report hardware identifiers.</param>
+    public async Task<TestAgent> EnrollAgentAsync(Guid tenantId, string machineName = "PC01",
+        Func<EnrollAgentRequest, EnrollAgentRequest>? hardware = null)
     {
         var token = await IssueEnrollmentTokenAsync(tenantId);
         var certificate = TestCertificates.AgentCertificate();
-        var response = await EnrollAsync(token.Secret!, certificate, machineName);
+        var response = await EnrollAsync(token.Secret!, certificate, machineName, hardware: hardware);
         if (response.StatusCode != HttpStatusCode.Created)
             throw new InvalidOperationException($"Enrollment failed: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync()}");
         var agent = (await response.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options))!;
@@ -517,12 +519,13 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
     /// given.
     /// </summary>
     public async Task<HttpResponseMessage> EnrollAsync(string enrollmentToken, X509Certificate2 certificate,
-        string machineName = "PC01", IPAddress? from = null)
+        string machineName = "PC01", IPAddress? from = null, Func<EnrollAgentRequest, EnrollAgentRequest>? hardware = null)
     {
         using var client = CreateAnonymousClient();
         if (from is not null)
             client.DefaultRequestHeaders.Add(ClientIpHeader, from.ToString());
-        return await client.PostAsJsonAsync("api/v1/agents", Enrollment(enrollmentToken, certificate, machineName),
+        var request = Enrollment(enrollmentToken, certificate, machineName);
+        return await client.PostAsJsonAsync("api/v1/agents", hardware is null ? request : hardware(request),
             Signal9Json.Options);
     }
 
@@ -607,7 +610,8 @@ public sealed class TestAgent(AgentDto agent, X509Certificate2 certificate, Http
 
     public Guid Id => Agent.Id;
 
-    public Guid DeviceId => Agent.DeviceId;
+    /// <summary>Its device; it has none while it awaits an identification decision.</summary>
+    public Guid DeviceId => Agent.DeviceId ?? throw new InvalidOperationException("The agent awaits identification.");
 
     public Guid TenantId => Agent.TenantId;
 

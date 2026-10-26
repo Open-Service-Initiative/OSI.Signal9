@@ -63,7 +63,8 @@ public sealed class TelemetryController(
 
     /// <summary>
     /// Stores a telemetry sample sent by an agent on its device. Also counts as a heartbeat. Only the agent the access
-    /// token names may send it (403 otherwise). The sample's canonical URL is under the device.
+    /// token names may send it (403 otherwise). An agent awaiting an identification decision has no device to send it
+    /// for (409). The sample's canonical URL is under the device.
     /// </summary>
     [RequireScope(Scopes.Agent)]
     [HttpPost("agents/{agentId:guid}/telemetry")]
@@ -77,11 +78,14 @@ public sealed class TelemetryController(
     public async Task<ActionResult<TelemetrySampleDto>> Create(
         Guid agentId, CreateTelemetrySampleRequest request, CancellationToken cancellationToken)
     {
-        var (device, refusal) = await db.FindDeviceOfActiveAgentAsync(this, agentId, cancellationToken);
-        if (device is null)
+        var (agent, refusal) = await db.FindActiveAgentAsync(this, agentId, cancellationToken);
+        if (agent is null)
             return (ActionResult)refusal!;
         if (this.Preconditions(current: null) is { } refused)
             return refused;
+        if (agent.Device is not { } device)
+            return Problem(statusCode: StatusCodes.Status409Conflict, title: "Awaiting identification",
+                detail: "The agent has no device until a person decides which device it belongs to; telemetry has nowhere to go.");
 
         var now = time.GetUtcNow().UtcDateTime;
         var sample = new TelemetrySample

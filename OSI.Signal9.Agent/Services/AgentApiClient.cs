@@ -22,10 +22,15 @@ public sealed class AgentApiClient(HttpClient http)
         return (await response.Content.ReadFromJsonAsync<HeartbeatResponse>(Signal9Json.Options, cancellationToken))!;
     }
 
+    /// <summary>
+    /// Sends a telemetry sample. A 409 drops it: the agent awaits an identification decision and has no device to file
+    /// it under yet (#131). A replaced agent gets 409 too, but its heartbeat fails and ends the session.
+    /// </summary>
     public async Task SendTelemetryAsync(Guid agentId, CreateTelemetrySampleRequest sample, CancellationToken cancellationToken)
     {
         using var response = await http.PostAsJsonAsync($"api/v1/agents/{agentId}/telemetry", sample, Signal9Json.Options, cancellationToken);
-        await EnsureSuccessAsync(response, cancellationToken);
+        if (response.StatusCode != HttpStatusCode.Conflict)
+            await EnsureSuccessAsync(response, cancellationToken);
     }
 
     /// <summary>Lists the agent's pending commands, oldest first, up to one page.</summary>

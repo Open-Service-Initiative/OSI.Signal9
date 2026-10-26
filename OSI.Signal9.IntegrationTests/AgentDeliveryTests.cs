@@ -275,7 +275,7 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
 
         public AgentDto Agent { get; set; } = null!;
 
-        public Guid DeviceId => Agent.DeviceId;
+        public Guid DeviceId => Agent.DeviceId!.Value;
 
         public async Task StopAsync()
         {

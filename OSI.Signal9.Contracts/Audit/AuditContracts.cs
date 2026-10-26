@@ -133,7 +133,20 @@ public static class AuditActions
     /// <summary>An agent enrolled with an enrollment token, which <see cref="AuditEntryDto.Detail"/> names by ID.</summary>
     public const string AgentEnrolled = "agent.enrolled";
 
-    /// <summary>A person revoked an agent.</summary>
+    /// <summary>
+    /// An agent was identified (stories 103-105): <see cref="AuditEntryDto.Detail"/> is <c>new-device</c>,
+    /// <c>matched smbios-uuid</c> or <c>matched manufacturer-serial</c> when it enrolled, or a person's decision,
+    /// <c>reinstalled</c> or <c>keep-both</c>. <see cref="AuditEntryDto.DeviceId"/> is the device it now belongs to.
+    /// </summary>
+    public const string AgentIdentified = "agent.identified";
+
+    /// <summary>
+    /// An enrolling agent's hardware matched devices it couldn't be matched to automatically, so it waits in the
+    /// Needs-decision queue for a person (story 105). Stored at its enrollment token's tenant.
+    /// </summary>
+    public const string AgentIdentificationPending = "agent.identification-pending";
+
+    /// <summary>A person revoked an agent, or decided it was replaced by a reinstall (<c>Detail</c> names the new one).</summary>
     public const string AgentRevoked = "agent.revoked";
 
     /// <summary>A person approved an agent that was awaiting approval, so it may now receive work (story 97).</summary>
