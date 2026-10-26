@@ -6,11 +6,18 @@ using OSI.Signal9.Contracts.Agents;
 
 namespace OSI.Signal9.Agent.Services;
 
+/// <summary>Where the agent's facts about its machine come from: the real machine, or a fake in unit tests.</summary>
+public interface IMachineFactsSource
+{
+    /// <summary>What this machine is: the facts the agent reports when it enrolls.</summary>
+    MachineFacts GetFacts();
+}
+
 /// <summary>
 /// Facts about this machine that the agent reports when it enrolls.
 /// </summary>
 /// <param name="readHardware">Reads the machine's hardware identifiers; <see cref="HardwareIdentity.Read"/> by default.</param>
-public sealed class SystemInfoProvider(Func<HardwareIdentity>? readHardware = null)
+public sealed class SystemInfoProvider(Func<HardwareIdentity>? readHardware = null) : IMachineFactsSource
 {
     private readonly Func<HardwareIdentity> _readHardware = readHardware ?? HardwareIdentity.Read;
 

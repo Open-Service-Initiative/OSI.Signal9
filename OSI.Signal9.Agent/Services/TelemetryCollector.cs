@@ -3,10 +3,17 @@ using OSI.Signal9.Contracts.Telemetry;
 
 namespace OSI.Signal9.Agent.Services;
 
+/// <summary>Where the agent's telemetry samples come from: the real machine, or a fake in unit tests.</summary>
+public interface ITelemetrySource
+{
+    /// <summary>Takes a machine-wide telemetry sample.</summary>
+    CreateTelemetrySampleRequest Collect();
+}
+
 /// <summary>
 /// Takes a machine-wide telemetry sample. CPU usage is averaged since the previous sample.
 /// </summary>
-public sealed class TelemetryCollector(TimeProvider time, ILogger<TelemetryCollector> logger)
+public sealed class TelemetryCollector(TimeProvider time, ILogger<TelemetryCollector> logger) : ITelemetrySource
 {
     private (ulong Idle, ulong Total)? _previousCpu = NativeMetrics.ReadCpuTimes();
 

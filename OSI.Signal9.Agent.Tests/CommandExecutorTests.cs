@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using OSI.Signal9.Agent.Services;
 using OSI.Signal9.Contracts.Commands;
+using OSI.Signal9.Contracts.Telemetry;
 
 namespace OSI.Signal9.Agent.Tests;
 
@@ -15,17 +16,16 @@ public sealed class CommandExecutorTests(TestContext testContext)
     private CancellationToken Ct => testContext.CancellationToken;
 
     [TestMethod]
-    public async Task Collecting_system_info_succeeds_with_this_machine_s_facts_as_output()
+    public async Task Collecting_system_info_succeeds_with_the_machine_s_facts_and_a_telemetry_sample_as_output()
     {
-        var executor = Executor(new CollectSystemInfoHandler(new SystemInfoProvider(),
-            new TelemetryCollector(_time, NullLogger<TelemetryCollector>.Instance)));
+        var executor = Executor(new CollectSystemInfoHandler(new FakeMachine(), new FakeTelemetry(_time)));
 
         var result = await executor.ExecuteAsync(Command(CommandType.CollectSystemInfo), Ct);
 
         Assert.IsTrue(result.Succeeded);
         using var output = JsonDocument.Parse(result.Output!);
-        var system = output.RootElement.GetProperty("system");
-        Assert.AreEqual(Environment.MachineName, system.GetProperty("machineName").GetString());
+        Assert.AreEqual("FAKE-PC", output.RootElement.GetProperty("system").GetProperty("machineName").GetString());
+        Assert.AreEqual(12.5, output.RootElement.GetProperty("telemetry").GetProperty("cpuPercent").GetDouble());
     }
 
     [TestMethod]
@@ -62,6 +62,17 @@ public sealed class CommandExecutorTests(TestContext testContext)
     private static CommandDto Command(CommandType type, int timeoutSeconds = 60) => new(
         Guid.NewGuid(), Guid.NewGuid(), "https://api.invalid/api/v1/devices/x/commands/y", type, null,
         CommandPriority.Normal, timeoutSeconds, CommandStatus.Pending, DateTimeOffset.UnixEpoch, null, null, null);
+
+    private sealed class FakeMachine : IMachineFactsSource
+    {
+        public MachineFacts GetFacts() => new("FAKE-PC", null, "Windows 11 Pro", "10.0.26100", "X64", "Fake CPU", 8, 16384,
+            "10.0.0.2", "00:11:22:33:44:55", "1.0.0");
+    }
+
+    private sealed class FakeTelemetry(TimeProvider time) : ITelemetrySource
+    {
+        public CreateTelemetrySampleRequest Collect() => new() { CollectedAt = time.GetUtcNow(), CpuPercent = 12.5 };
+    }
 
     /// <summary>Runs until it's cancelled, like a long script.</summary>
     private sealed class NeverFinishingHandler(CommandType type) : ICommandHandler

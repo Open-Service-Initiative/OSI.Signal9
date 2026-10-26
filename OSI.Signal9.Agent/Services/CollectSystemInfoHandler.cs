@@ -5,7 +5,7 @@ using OSI.Signal9.Contracts.Serialization;
 namespace OSI.Signal9.Agent.Services;
 
 /// <summary>Reports this machine's facts and a telemetry sample.</summary>
-public sealed class CollectSystemInfoHandler(SystemInfoProvider systemInfo, TelemetryCollector telemetry) : ICommandHandler
+public sealed class CollectSystemInfoHandler(IMachineFactsSource systemInfo, ITelemetrySource telemetry) : ICommandHandler
 {
     public CommandType Type => CommandType.CollectSystemInfo;
 
