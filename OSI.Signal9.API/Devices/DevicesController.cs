@@ -8,6 +8,7 @@ using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Server.Identity;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using OpenIddict.Abstractions;
 using OSI.Signal9.Server.Data;
 using OSI.Signal9.API.Hubs;
 using OSI.Signal9.API.Infrastructure;
@@ -26,7 +27,9 @@ public sealed class DevicesController(
     Signal9DbContext db,
     DevicePresence presence,
     CallerAudit audit,
-    DashboardEvents dashboard) : ControllerBase
+    DashboardEvents dashboard,
+    IOpenIddictApplicationManager applications,
+    AgentHubConnections hubConnections) : ControllerBase
 {
     /// <summary>Lists devices across tenants, with optional filters.</summary>
     [RequireScope(Scopes.Devices.Read)]
@@ -224,7 +227,10 @@ public sealed class DevicesController(
     private ObjectResult Conflict(string title, string detail) =>
         Problem(statusCode: StatusCodes.Status409Conflict, title: title, detail: detail);
 
-    /// <summary>Deletes a device along with its agents, commands and telemetry.</summary>
+    /// <summary>
+    /// Deletes a device along with its agents, commands and telemetry. Each agent's OAuth client goes too, with its
+    /// tokens, and its hub connection closes.
+    /// </summary>
     // TODO(#89): deletion becomes anonymised erasure that keeps an anonymous record for alerts and history.
     [RequireScope(Scopes.Devices.Delete)]
     [HttpDelete("{deviceId:guid}")]
@@ -240,9 +246,17 @@ public sealed class DevicesController(
         if (this.Preconditions(device.ETag(presence)) is { } refused)
             return refused;
 
+        // Binding another agent changes the device's version, so none joins between this read and the delete.
+        var agentIds = await db.Agents.Where(a => a.DeviceId == deviceId).Select(a => a.Id).ToListAsync(cancellationToken);
         var deleted = await db.Devices.Where(d => d.Id == deviceId && d.Version == device.Version).ExecuteDeleteAsync(cancellationToken);
         if (deleted == 0)
             throw new DbUpdateConcurrencyException("The device changed or was deleted after it was read.");
+        foreach (var agentId in agentIds)
+        {
+            if (await applications.FindByClientIdAsync(agentId.ToString(), cancellationToken) is { } client)
+                await applications.DeleteAsync(client, cancellationToken);
+            hubConnections.Close(agentId);
+        }
 
         await dashboard.DeviceDeletedAsync(device.TenantId, deviceId, cancellationToken);
         return NoContent();

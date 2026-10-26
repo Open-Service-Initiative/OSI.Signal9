@@ -75,6 +75,29 @@ public sealed class AgentRevocationTests : IDisposable
     }
 
     [TestMethod]
+    public async Task Deleting_a_device_deletes_its_agents_clients_and_closes_their_hub_connections()
+    {
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
+        using var agent = await _factory.EnrollAgentAsync(tenant.Id);
+        await using var hub = await ConnectAsync(agent);
+        var closed = new TaskCompletionSource();
+        hub.Closed += _ =>
+        {
+            closed.TrySetResult();
+            return Task.CompletedTask;
+        };
+
+        var deleted = await _client.DeleteAsync($"api/v1/devices/{agent.DeviceId}", Ct);
+
+        Assert.AreEqual(HttpStatusCode.NoContent, deleted.StatusCode, await deleted.Content.ReadAsStringAsync(Ct));
+        await closed.Task.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        var heartbeat = await agent.Client.PutAsJsonAsync($"api/v1/agents/{agent.Id}/heartbeat", new HeartbeatRequest(), Signal9Json.Options, Ct);
+        Assert.AreEqual(HttpStatusCode.Unauthorized, heartbeat.StatusCode);
+        var token = await _factory.RequestAgentTokenAsync(agent.Id, agent.Certificate);
+        Assert.AreEqual("invalid_client", (await token.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("error").GetString());
+    }
+
+    [TestMethod]
     public async Task After_revocation_the_device_has_no_active_agent_and_requires_approval_for_its_next()
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
