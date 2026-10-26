@@ -25,7 +25,7 @@ builder.Services.AddOptions<AgentOptions>()
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(platform);
 builder.Services.AddSingleton<IAgentKeyStore>(sp => OperatingSystem.IsWindows()
-    ? new CngAgentKeyStore(sp.GetRequiredService<ILogger<CngAgentKeyStore>>())
+    ? new CngAgentKeyStore(new CngMachineKeys(), sp.GetRequiredService<ILogger<CngAgentKeyStore>>())
     : new UnsupportedAgentKeyStore());
 builder.Services.AddSingleton<AgentIdentityStore>();
 builder.Services.AddSingleton<IAgentTransport, MutualTlsTransport>();

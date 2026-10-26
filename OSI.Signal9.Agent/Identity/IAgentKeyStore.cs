@@ -19,28 +19,48 @@ public interface IAgentKeyStore
     void Delete(string name);
 }
 
-/// <summary>
-/// Windows CNG machine keys: in the TPM through the Microsoft Platform Crypto Provider where one is available, otherwise
-/// in the Microsoft Software Key Storage Provider, which protects them with DPAPI. Either way the export policy is
-/// none, so the private key never leaves the provider.
-/// </summary>
-[SupportedOSPlatform("windows")]
-public sealed class CngAgentKeyStore(ILogger<CngAgentKeyStore> logger) : IAgentKeyStore
+/// <summary>The machine key providers a Windows key can live in, in order of preference.</summary>
+public enum MachineKeyProvider
 {
-    private static readonly CngProvider[] Providers =
-        [CngProvider.MicrosoftPlatformCryptoProvider, CngProvider.MicrosoftSoftwareKeyStorageProvider];
+    /// <summary>The TPM, through the Microsoft Platform Crypto Provider.</summary>
+    Tpm,
+
+    /// <summary>The Microsoft Software Key Storage Provider, which protects keys with DPAPI.</summary>
+    Software,
+}
+
+/// <summary>Machine-wide, non-exportable ECDSA P-256 keys in a <see cref="MachineKeyProvider"/>: CNG, or a fake in tests.</summary>
+public interface IMachineKeyProviders
+{
+    bool Exists(string name, MachineKeyProvider provider);
+
+    /// <exception cref="CryptographicException">The provider can't create the key.</exception>
+    ECDsa Create(string name, MachineKeyProvider provider);
+
+    ECDsa Open(string name, MachineKeyProvider provider);
+
+    void Delete(string name, MachineKeyProvider provider);
+}
+
+/// <summary>
+/// Windows machine keys: in the TPM where one can hold them, otherwise in the software provider. Either way the export
+/// policy is none, so the private key never leaves the provider.
+/// </summary>
+public sealed class CngAgentKeyStore(IMachineKeyProviders providers, ILogger<CngAgentKeyStore> logger) : IAgentKeyStore
+{
+    private static readonly MachineKeyProvider[] Providers = [MachineKeyProvider.Tpm, MachineKeyProvider.Software];
 
     public ECDsa Create(string name)
     {
         Delete(name);
         try
         {
-            return Create(name, CngProvider.MicrosoftPlatformCryptoProvider);
+            return providers.Create(name, MachineKeyProvider.Tpm);
         }
         catch (CryptographicException exception)
         {
             logger.LogWarning(exception, "No TPM key could be created; the agent key is protected with DPAPI instead");
-            return Create(name, CngProvider.MicrosoftSoftwareKeyStorageProvider);
+            return providers.Create(name, MachineKeyProvider.Software);
         }
     }
 
@@ -48,29 +68,49 @@ public sealed class CngAgentKeyStore(ILogger<CngAgentKeyStore> logger) : IAgentK
     {
         foreach (var provider in Providers)
         {
-            if (CngKey.Exists(name, provider, CngKeyOpenOptions.MachineKey))
-                return new ECDsaCng(CngKey.Open(name, provider, CngKeyOpenOptions.MachineKey));
+            if (providers.Exists(name, provider))
+                return providers.Open(name, provider);
         }
         return null;
     }
-
-    private static ECDsaCng Create(string name, CngProvider provider) =>
-        new(CngKey.Create(CngAlgorithm.ECDsaP256, name, new CngKeyCreationParameters
-        {
-            Provider = provider,
-            ExportPolicy = CngExportPolicies.None,
-            KeyCreationOptions = CngKeyCreationOptions.MachineKey | CngKeyCreationOptions.OverwriteExistingKey,
-            KeyUsage = CngKeyUsages.Signing,
-        }));
 
     public void Delete(string name)
     {
         foreach (var provider in Providers)
         {
-            if (CngKey.Exists(name, provider, CngKeyOpenOptions.MachineKey))
-                CngKey.Open(name, provider, CngKeyOpenOptions.MachineKey).Delete();
+            if (providers.Exists(name, provider))
+                providers.Delete(name, provider);
         }
     }
+}
+
+/// <summary>CNG machine keys.</summary>
+[SupportedOSPlatform("windows")]
+public sealed class CngMachineKeys : IMachineKeyProviders
+{
+    private static CngProvider Cng(MachineKeyProvider provider) => provider switch
+    {
+        MachineKeyProvider.Tpm => CngProvider.MicrosoftPlatformCryptoProvider,
+        _ => CngProvider.MicrosoftSoftwareKeyStorageProvider,
+    };
+
+    public bool Exists(string name, MachineKeyProvider provider) =>
+        CngKey.Exists(name, Cng(provider), CngKeyOpenOptions.MachineKey);
+
+    public ECDsa Create(string name, MachineKeyProvider provider) =>
+        new ECDsaCng(CngKey.Create(CngAlgorithm.ECDsaP256, name, new CngKeyCreationParameters
+        {
+            Provider = Cng(provider),
+            ExportPolicy = CngExportPolicies.None,
+            KeyCreationOptions = CngKeyCreationOptions.MachineKey | CngKeyCreationOptions.OverwriteExistingKey,
+            KeyUsage = CngKeyUsages.Signing,
+        }));
+
+    public ECDsa Open(string name, MachineKeyProvider provider) =>
+        new ECDsaCng(CngKey.Open(name, Cng(provider), CngKeyOpenOptions.MachineKey));
+
+    public void Delete(string name, MachineKeyProvider provider) =>
+        CngKey.Open(name, Cng(provider), CngKeyOpenOptions.MachineKey).Delete();
 }
 
 /// <summary>
