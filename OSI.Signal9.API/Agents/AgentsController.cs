@@ -498,6 +498,9 @@ public sealed class AgentsController(
         byte[] secretHash, System.Security.Cryptography.X509Certificates.X509Certificate2 certificate, EnrollAgentRequest request,
         DateTime now, CancellationToken cancellationToken)
     {
+        var reported = Reported(request, tenant.Id);
+        await SerializeIdentificationAsync(reported, cancellationToken);
+
         // One use, unless a concurrent enrollment took the last one or the token changed since it was read: a rotation
         // retires the presented secret (story 94).
         var used = await db.EnrollmentTokens.IgnoreTenantScope(TenantScopeBypass.Enrollment)
@@ -511,7 +514,6 @@ public sealed class AgentsController(
 
         // Identification (stories 103-106): a new device when the hardware matches none in the token's subtree; the
         // existing device when exactly one matches and its previous agent was revoked; otherwise a person decides.
-        var reported = Reported(request, tenant.Id);
         var candidates = await CandidateDevices(db.Devices.IgnoreTenantScope(TenantScopeBypass.Enrollment), reported)
             .Select(d => new
             {
@@ -582,6 +584,23 @@ public sealed class AgentsController(
         await db.SaveChangesAsync(cancellationToken);
         await applications.CreateAsync(AgentCredentials.Client(agent.Id, certificate), cancellationToken);
         return (null, (device, agent));
+    }
+
+    /// <summary>
+    /// Makes enrollments of one machine into one root tenant tree take turns, so each sees the device the one before
+    /// it made, whichever enrollment tokens they use (one device per machine per root tree, #131). Tenant and device
+    /// transfers, which hold the tree lock exclusively, can't change the root tree or move a device into it meanwhile.
+    /// Held until the enrollment's transaction ends.
+    /// </summary>
+    private async Task SerializeIdentificationAsync(PendingIdentification reported, CancellationToken cancellationToken)
+    {
+        await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock_shared({TenantTree.LockKey})", cancellationToken);
+        var hardware = new HardwareIdentifiers(reported.SmbiosUuid, reported.Manufacturer, reported.SerialNumber);
+        if (hardware.IsEmpty)
+            return;
+        var root = await TenantTree.RootOfAsync(db, reported.TenantId, cancellationToken);
+        foreach (var key in hardware.LockKeys(root))
+            await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({key})", cancellationToken);
     }
 
     /// <summary>What an enrolling agent reported, with its hardware identifiers normalized (story 104).</summary>

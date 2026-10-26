@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Http.Connections;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,6 +15,7 @@ using OSI.Signal9.Contracts.Devices;
 using OSI.Signal9.Contracts.Hubs;
 using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Contracts.Telemetry;
+using OSI.Signal9.Server.Data;
 using Scopes = OSI.Signal9.Server.Identity.Scopes;
 
 namespace OSI.Signal9.IntegrationTests;
@@ -429,6 +432,33 @@ public sealed class AgentIdentificationTests : IDisposable
         var queue = await _client.GetFromJsonAsync<PagedResult<AgentDto>>(
             $"api/v1/tenants/{msp.Id}/agents?status=NeedsDecision", Signal9Json.Options, Ct);
         Assert.AreEqual(fromMsp.Id, Assert.ContainsSingle(queue!.Items).Id);
+    }
+
+    [TestMethod]
+    public async Task Concurrent_enrollments_of_one_machine_with_different_tokens_make_one_device_and_a_decision()
+    {
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
+        var (first, second) = (await _factory.IssueEnrollmentTokenAsync(tenant.Id), await _factory.IssueEnrollmentTokenAsync(tenant.Id));
+        // Both enrollments look for matching devices together, unless enrollment serializes them first.
+        using var racing = _factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.ConfigureDbContext<Signal9DbContext>(options =>
+                options.AddInterceptors(new Rendezvous("FROM \"Devices\"", parties: 2, TimeSpan.FromSeconds(2))))));
+        async Task<AgentDto> EnrollAsync(string secret)
+        {
+            using var anonymous = racing.Server.CreateClient();
+            anonymous.BaseAddress = Signal9ApiFactory.HttpsLocalhost;
+            using var certificate = TestCertificates.AgentCertificate();
+            var response = await anonymous.PostAsJsonAsync("api/v1/agents",
+                Hardware(Uuid)(Signal9ApiFactory.Enrollment(secret, certificate)), Signal9Json.Options, Ct);
+            Assert.AreEqual(HttpStatusCode.Created, response.StatusCode, await response.Content.ReadAsStringAsync(Ct));
+            return (await response.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options, Ct))!;
+        }
+
+        var agents = await Task.WhenAll(EnrollAsync(first.Secret!), EnrollAsync(second.Secret!));
+
+        CollectionAssert.AreEquivalent(new[] { AgentStatus.Active, AgentStatus.NeedsDecision }, agents.Select(a => a.Status).ToArray());
+        var devices = await _client.GetFromJsonAsync<PagedResult<DeviceDto>>($"api/v1/devices?tenantId={tenant.Id}", Signal9Json.Options, Ct);
+        Assert.ContainsSingle(devices!.Items);
     }
 
     private async Task<AgentDto> IdentifyAsync(Guid agentId, IdentificationDecision decision, Guid? deviceId = null)

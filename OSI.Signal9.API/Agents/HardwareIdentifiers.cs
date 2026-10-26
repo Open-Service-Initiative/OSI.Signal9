@@ -1,3 +1,6 @@
+using System.Buffers.Binary;
+using System.Security.Cryptography;
+using System.Text;
 using System.Linq.Expressions;
 using OSI.Signal9.Server.Data;
 
@@ -49,6 +52,23 @@ internal sealed record HardwareIdentifiers(Guid? SmbiosUuid, string? Manufacture
         var (uuid, manufacturer, serial) = (SmbiosUuid, Manufacturer, SerialNumber);
         return d => (uuid != null && d.SmbiosUuid == uuid)
             || (serial != null && manufacturer != null && d.SerialNumber == serial && d.Manufacturer == manufacturer);
+    }
+
+    /// <summary>
+    /// Advisory-lock keys for these identifiers within the root tenant tree <paramref name="rootTenantId"/>, one per
+    /// identifier a match could be made on, in a fixed order so that those taking several never deadlock.
+    /// </summary>
+    public IEnumerable<long> LockKeys(Guid rootTenantId)
+    {
+        List<string> identifiers = [];
+        if (SmbiosUuid is { } uuid)
+            identifiers.Add($"smbios-uuid {uuid:N}");
+        if (Manufacturer is not null && SerialNumber is not null)
+            identifiers.Add($"manufacturer-serial {Manufacturer}\n{SerialNumber}");
+        return identifiers
+            .Select(identifier => BinaryPrimitives.ReadInt64BigEndian(
+                SHA256.HashData(Encoding.UTF8.GetBytes($"signal9 identification\n{rootTenantId:N}\n{identifier}"))))
+            .Order();
     }
 
     public static HardwareIdentifiers From(Guid? smbiosUuid, string? manufacturer, string? serialNumber)
