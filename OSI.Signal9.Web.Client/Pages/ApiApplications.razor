@@ -36,6 +36,7 @@
 <FluentDataGrid Items="@applications.AsQueryable()" TGridItem="ApiApplicationDto" Loading="loading" ItemKey="@(a => a.Id)">
     <TemplateColumn Title="Name">@context.DisplayName</TemplateColumn>
     <TemplateColumn Title="Client ID"><code>@context.ClientId</code></TemplateColumn>
+    <TemplateColumn Title="Acts as">@(context.Kind == ApiApplicationKinds.Delegated ? "Signed-in people" : "Itself")</TemplateColumn>
     <TemplateColumn Title="Role">@RoleName(context.RoleId)</TemplateColumn>
     <TemplateColumn Title="Authenticates with">@MethodName(context.TokenEndpointAuthMethod)</TemplateColumn>
     <TemplateColumn Title="Scopes">@string.Join(" ", context.Scopes)</TemplateColumn>
@@ -59,6 +60,18 @@
                 <FluentButton Id="add-credential" IconStart="@(new Icons.Regular.Size20.Add())" OnClick="AddCredentialAsync">Add credential</FluentButton>
             }
         </div>
+        @if (application.Kind == ApiApplicationKinds.Delegated)
+        {
+            <div id="application-delegation">
+                <p>Acts for people who sign in to it and consent, protected by @ReplayProtection(application). Redirect URIs:</p>
+                <ul>
+                    @foreach (var uri in application.RedirectUris)
+                    {
+                        <li><code>@uri</code></li>
+                    }
+                </ul>
+            </div>
+        }
         @if (application.TlsClientAuthSubject is { } subject)
         {
             <p>Authenticates with a certificate from a trusted authority whose <code>@subject.Parameter</code> is <code>@subject.Value</code>.</p>
@@ -270,6 +283,14 @@
 
     // Names come from the first page of each list; the rest show as an id.
     private string TenantName(Guid id) => tenants.FirstOrDefault(t => t.Id == id)?.Name ?? id.ToString();
+
+    // How a delegated application's authorization requests are protected against replay (story 86).
+    private static string ReplayProtection(ApiApplicationDto application) => (application.RequirePkce, application.RequireNonce) switch
+    {
+        (true, true) => "PKCE and an OpenID Connect nonce",
+        (true, false) => "PKCE",
+        _ => "a mandatory OpenID Connect nonce (PKCE off)",
+    };
 
     // A delegated application has no role: it acts with the signed-in person's access.
     private string RoleName(Guid? id) => id is not { } roleId ? "Signed-in person's"

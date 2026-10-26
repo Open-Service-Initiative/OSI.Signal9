@@ -121,6 +121,117 @@ public sealed class ApiApplicationsPageTests : DashboardTestContext
         app.WaitForAssertion(() => Assert.Contains("Removed Reporting.", app.Find(".notice-bar").TextContent));
     }
 
+    [TestMethod]
+    public void Register_a_delegated_application_with_its_redirect_uris_and_scopes_and_no_role()
+    {
+        Http.SignedInAs("Ada", Directory(request => request.Method == HttpMethod.Post
+            ? FakeHttp.Json(HttpStatusCode.Created, Delegated("CRM", ContosoId))
+            : null));
+        var app = RenderApp("/api-applications");
+
+        app.WaitForElement("#register-application").Click();
+        app.WaitForElement("fluent-dialog");
+        Choose(app, "application-kind", ApiApplicationKinds.Delegated);
+        app.WaitForElement("#application-redirect-uris");
+        Assert.IsEmpty(app.FindAll("#application-role"), "A delegated application has no role.");
+        app.Find("#application-name").Change("CRM");
+        app.Find("#application-redirect-uris").Change("https://crm.example.com/callback\n\n https://crm.example.com/alt ");
+        Choose(app, "application-method", TokenEndpointAuthMethods.PrivateKeyJwt);
+        app.Find("[id='scope-openid']").Change(true);
+        app.Find("[id='scope-tenants.read']").Change(true);
+        app.Find("fluent-dialog fluent-button[appearance=primary]").Click();
+
+        app.WaitForAssertion(() => Assert.IsTrue(Http.Requests.Any(r => r.Method == HttpMethod.Post)));
+        var request = JsonSerializer.Deserialize<CreateApiApplicationRequest>(
+            Http.Requests.Single(r => r.Method == HttpMethod.Post).Body!, Signal9Json.Options)!;
+        Assert.AreEqual(ApiApplicationKinds.Delegated, request.Kind);
+        Assert.AreEqual("CRM", request.DisplayName);
+        Assert.IsNull(request.RoleId);
+        CollectionAssert.AreEqual(new[] { "https://crm.example.com/callback", "https://crm.example.com/alt" }, request.RedirectUris.ToArray());
+        CollectionAssert.AreEquivalent(new[] { "openid", "tenants.read" }, request.Scopes.ToArray());
+        Assert.IsTrue(request.RequirePkce, "PKCE is on by default.");
+        Assert.IsFalse(request.RequireNonce);
+    }
+
+    [TestMethod]
+    [DataRow("pkce-and-nonce", true, true)]
+    [DataRow("nonce", false, true)]
+    public void Turning_pkce_off_makes_nonce_mandatory(string protection, bool requirePkce, bool requireNonce)
+    {
+        Http.SignedInAs("Ada", Directory(request => request.Method == HttpMethod.Post
+            ? FakeHttp.Json(HttpStatusCode.Created, Delegated("CRM", ContosoId))
+            : null));
+        var app = RenderApp("/api-applications");
+
+        app.WaitForElement("#register-application").Click();
+        app.WaitForElement("fluent-dialog");
+        Choose(app, "application-kind", ApiApplicationKinds.Delegated);
+        app.WaitForElement("#application-name").Change("CRM");
+        app.Find("#application-redirect-uris").Change("https://crm.example.com/callback");
+        // There's no choice that turns both off.
+        Assert.IsEmpty(app.FindAll("#application-replay-protection fluent-option").Where(o => o.GetAttribute("value") == "none"));
+        Choose(app, "application-replay-protection", protection);
+        app.Find("fluent-dialog fluent-button[appearance=primary]").Click();
+
+        app.WaitForAssertion(() => Assert.IsTrue(Http.Requests.Any(r => r.Method == HttpMethod.Post)));
+        var request = JsonSerializer.Deserialize<CreateApiApplicationRequest>(
+            Http.Requests.Single(r => r.Method == HttpMethod.Post).Body!, Signal9Json.Options)!;
+        Assert.AreEqual(requirePkce, request.RequirePkce);
+        Assert.AreEqual(requireNonce, request.RequireNonce);
+    }
+
+    [TestMethod]
+    [DataRow("")]
+    [DataRow("http://crm.example.com/callback")]
+    [DataRow("https://crm.example.com/callback#fragment")]
+    [DataRow("https://user@crm.example.com/callback")]
+    [DataRow("/callback")]
+    public void A_delegated_application_needs_absolute_https_redirect_uris(string redirectUris)
+    {
+        Http.SignedInAs("Ada", Directory());
+        var app = RenderApp("/api-applications");
+
+        app.WaitForElement("#register-application").Click();
+        app.WaitForElement("fluent-dialog");
+        Choose(app, "application-kind", ApiApplicationKinds.Delegated);
+        app.WaitForElement("#application-name").Change("CRM");
+        app.Find("#application-redirect-uris").Change(redirectUris);
+        app.Find("fluent-dialog fluent-button[appearance=primary]").Click();
+
+        app.WaitForElement("#application-redirect-uris-error");
+        Assert.IsFalse(Http.Requests.Any(r => r.Method == HttpMethod.Post), "Nothing is registered with an unusable redirect URI.");
+        Assert.HasCount(1, app.FindAll("fluent-dialog"));
+    }
+
+    [TestMethod]
+    public void A_delegated_applications_redirect_uris_and_replay_protection_are_shown()
+    {
+        var crm = Delegated("CRM", ContosoId) with { RequirePkce = false, RequireNonce = true };
+        Http.SignedInAs("Ada", Directory(request => (request.Method.Method, request.RequestUri!.AbsolutePath) switch
+        {
+            ("GET", var path) when path == ApplicationsPath(ContosoId) => FakeHttp.Json(HttpStatusCode.OK, Page(crm)),
+            ("GET", var path) when path == $"{ApplicationsPath(ContosoId)}/{crm.Id}/credentials" => FakeHttp.Json(HttpStatusCode.OK,
+                Page<ApiApplicationCredentialDto>()),
+            _ => null,
+        }));
+        var app = RenderApp("/api-applications");
+
+        app.WaitForAssertion(() => Assert.Contains("CRM", Grid(app)));
+        var row = app.FindAll("tr").Select(r => r.TextContent).Single(t => t.Contains("CRM"));
+        Assert.Contains("Signed-in people", row);
+
+        app.Find($"#credentials-{crm.Id}").Click();
+
+        var details = app.WaitForElement("#application-delegation").TextContent;
+        Assert.Contains("https://crm.example.com/callback", details);
+        Assert.Contains("nonce", details);
+        Assert.Contains("PKCE off", details);
+    }
+
+    private static ApiApplicationDto Delegated(string name, Guid tenantId) => new(Guid.NewGuid(), tenantId, Guid.NewGuid().ToString(),
+        name, ApiApplicationKinds.Delegated, null, ["openid", "tenants.read"], TokenEndpointAuthMethods.PrivateKeyJwt, null,
+        ["https://crm.example.com/callback"], true, false, Now);
+
     private static string Grid(IRenderedComponent<OSI.Signal9.Web.Client.Routes> app) =>
         app.Find("fluent-data-grid, table, [role=grid]").TextContent;
 

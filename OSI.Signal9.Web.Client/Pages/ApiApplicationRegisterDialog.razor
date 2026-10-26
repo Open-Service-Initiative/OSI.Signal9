@@ -2,15 +2,23 @@
 
 <FluentDialogBody>
     <div class="dialog-form">
-        <FluentTextInput Id="application-name" Label="Name" Required="true" MaxLength="200" @bind-Value="name" />
-        <FluentSelect Id="application-role" TOption="string" TValue="string" Label="Role" Required="true"
-                      Value="@roleId" ValueChanged="@((string? value) => ChooseRole(value))">
-            <FluentOption TValue="string" Value="@string.Empty">Choose a role</FluentOption>
-            @foreach (var role in Roles)
-            {
-                <FluentOption TValue="string" Value="@role.Id.ToString()">@role.Name</FluentOption>
-            }
+        <FluentSelect Id="application-kind" TOption="string" TValue="string" Label="Acts as" Required="true"
+                      Value="@kind" ValueChanged="@((string? value) => ChooseKind(value))">
+            <FluentOption TValue="string" Value="@ApiApplicationKinds.AppOnly">Itself, with its own role</FluentOption>
+            <FluentOption TValue="string" Value="@ApiApplicationKinds.Delegated">People who sign in to it</FluentOption>
         </FluentSelect>
+        <FluentTextInput Id="application-name" Label="Name" Required="true" MaxLength="200" @bind-Value="name" />
+        @if (!Delegated)
+        {
+            <FluentSelect Id="application-role" TOption="string" TValue="string" Label="Role" Required="true"
+                          Value="@roleId" ValueChanged="@((string? value) => ChooseRole(value))">
+                <FluentOption TValue="string" Value="@string.Empty">Choose a role</FluentOption>
+                @foreach (var role in Roles)
+                {
+                    <FluentOption TValue="string" Value="@role.Id.ToString()">@role.Name</FluentOption>
+                }
+            </FluentSelect>
+        }
         <FluentSelect Id="application-method" TOption="string" TValue="string" Label="Authenticates with" Required="true" @bind-Value="method">
             @foreach (var option in TokenEndpointAuthMethods.All)
             {
@@ -28,39 +36,92 @@
             </FluentSelect>
             <FluentTextInput Id="application-subject-value" Label="Subject value" Required="true" @bind-Value="subjectValue" />
         }
-        @if (SelectedRole is { } selected)
+        @if (Delegated)
+        {
+            <FluentTextArea Id="application-redirect-uris" Label="Redirect URIs (one per line)" Required="true" @bind-Value="redirectUris" />
+            @if (redirectUrisProblem is not null)
+            {
+                <FluentText Id="application-redirect-uris-error" Class="field-error">@redirectUrisProblem</FluentText>
+            }
+            <FluentSelect Id="application-replay-protection" TOption="string" TValue="string" Label="Replay protection" Required="true"
+                          @bind-Value="replayProtection">
+                <FluentOption TValue="string" Value="@Pkce">PKCE (recommended)</FluentOption>
+                <FluentOption TValue="string" Value="@PkceAndNonce">PKCE and OpenID Connect nonce</FluentOption>
+                <FluentOption TValue="string" Value="@NonceOnly">Nonce only: PKCE off</FluentOption>
+            </FluentSelect>
+        }
+        @if (OfferedScopes.Count > 0)
         {
             <fieldset class="scope-list">
                 <legend>Scopes</legend>
-                @foreach (var scope in selected.Scopes)
+                @foreach (var scope in OfferedScopes)
                 {
-                    var gated = RecentMfaScopes.All.Contains(scope);
+                    var gated = !Delegated && RecentMfaScopes.All.Contains(scope);
                     <FluentCheckbox Id="@($"scope-{scope}")" Label="@(gated ? $"{scope} (needs your recent MFA)" : scope)"
                                     Disabled="@(gated && method == TokenEndpointAuthMethods.ClientSecret)"
                                     Value="@scopes.Contains(scope)" ValueChanged="@((bool on) => Toggle(scope, on))" />
                 }
             </fieldset>
         }
-        <FluentText>The application acts as itself, only at this tenant and the tenants beneath it, with a role no higher than yours. Add its credentials after registering it. A client secret is the last resort, and can never hold scopes that need a recent MFA.</FluentText>
+        @if (Delegated)
+        {
+            <FluentText>The application acts for people who sign in to it and consent, with only what each of them can do, its scopes and this tenant and the tenants beneath it. Turning PKCE off makes an OpenID Connect nonce mandatory instead. Add its credentials after registering it.</FluentText>
+        }
+        else
+        {
+            <FluentText>The application acts as itself, only at this tenant and the tenants beneath it, with a role no higher than yours. Add its credentials after registering it. A client secret is the last resort, and can never hold scopes that need a recent MFA.</FluentText>
+        }
     </div>
 </FluentDialogBody>
 
 @code {
+    // How a delegated application's authorization requests are protected against replay (story 86): PKCE can be turned
+    // off only by making nonce mandatory, so there's no choice without either.
+    private const string Pkce = "pkce";
+    private const string PkceAndNonce = "pkce-and-nonce";
+    private const string NonceOnly = "nonce";
+
+    // The API takes at most this many redirect URIs.
+    private const int MaxRedirectUris = 10;
+
+    // OpenID Connect's scopes, which only a delegated application can hold.
+    private static readonly string[] OpenIdConnectScopes = ["openid", "profile", "offline_access"];
+
     [Parameter] public IReadOnlyList<RoleDto> Roles { get; set; } = [];
 
+    private string? kind = ApiApplicationKinds.AppOnly;
     private string? name = string.Empty;
     private string? roleId = string.Empty;
     private string? method = TokenEndpointAuthMethods.PrivateKeyJwt;
     private string? subjectParameter = "tls_client_auth_subject_dn";
     private string? subjectValue = string.Empty;
+    private string? redirectUris = string.Empty;
+    private string? redirectUrisProblem;
+    private string? replayProtection = Pkce;
     private readonly HashSet<string> scopes = [];
 
+    private bool Delegated => kind == ApiApplicationKinds.Delegated;
+
     private RoleDto? SelectedRole => Roles.FirstOrDefault(r => r.Id.ToString() == roleId);
+
+    // An app-only application's scopes are within its role's. A delegated one's can be any a person can hold (the
+    // dashboard offers those the roles grant, and OpenID Connect's); the person's own access still applies to each.
+    private IReadOnlyList<string> OfferedScopes => Delegated
+        ? [.. OpenIdConnectScopes, .. Roles.SelectMany(r => r.Scopes).Distinct().Where(s => !OpenIdConnectScopes.Contains(s))]
+        : SelectedRole?.Scopes ?? [];
 
     protected override void OnInitializeDialog(DialogOptionsHeader header, DialogOptionsFooter footer)
     {
         footer.PrimaryAction.Label = "Register";
         footer.SecondaryAction.Label = "Cancel";
+    }
+
+    private void ChooseKind(string? value)
+    {
+        kind = value;
+        roleId = string.Empty;
+        redirectUrisProblem = null;
+        scopes.Clear();
     }
 
     // A role starts with all its scopes except those needing a recent MFA, which are opted into one by one.
@@ -81,17 +142,56 @@
             scopes.Remove(scope);
     }
 
-    protected override Task OnActionClickedAsync(bool primary) => primary
-        ? DialogInstance.CloseAsync(new CreateApiApplicationRequest
+    /// <summary>
+    /// The redirect URIs, one per line, or why they can't be used: like the API, at least one, at most ten, each an
+    /// absolute HTTPS URI without a fragment or user information (RFC 6749 §3.1.2, RFC 9700 §2.1).
+    /// </summary>
+    private (IReadOnlyList<string> Uris, string? Problem) ParseRedirectUris()
+    {
+        var uris = (redirectUris ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.Ordinal).ToList();
+        if (uris.Count == 0)
+            return (uris, "Enter at least one redirect URI.");
+        if (uris.Count > MaxRedirectUris)
+            return (uris, $"Enter at most {MaxRedirectUris} redirect URIs.");
+        foreach (var uri in uris)
+        {
+            if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsed) || parsed.Scheme != Uri.UriSchemeHttps
+                || !string.IsNullOrEmpty(parsed.Fragment) || !string.IsNullOrEmpty(parsed.UserInfo))
+                return (uris, $"'{uri}' isn't an absolute HTTPS URI without a fragment or user information.");
+        }
+        return (uris, null);
+    }
+
+    protected override async Task OnActionClickedAsync(bool primary)
+    {
+        if (!primary)
+        {
+            await DialogInstance.CancelAsync();
+            return;
+        }
+
+        IReadOnlyList<string> uris = [];
+        if (Delegated)
+        {
+            (uris, redirectUrisProblem) = ParseRedirectUris();
+            if (redirectUrisProblem is not null)
+                return;
+        }
+        await DialogInstance.CloseAsync(new CreateApiApplicationRequest
         {
             DisplayName = name ?? "",
-            RoleId = Guid.TryParse(roleId, out var role) ? role : null,
+            Kind = kind ?? ApiApplicationKinds.AppOnly,
+            RoleId = !Delegated && Guid.TryParse(roleId, out var role) ? role : null,
             TokenEndpointAuthMethod = method ?? "",
-            Scopes = [.. SelectedRole?.Scopes.Where(s => scopes.Contains(s)
-                && !(method == TokenEndpointAuthMethods.ClientSecret && RecentMfaScopes.All.Contains(s))) ?? []],
+            Scopes = [.. OfferedScopes.Where(s => scopes.Contains(s)
+                && !(!Delegated && method == TokenEndpointAuthMethods.ClientSecret && RecentMfaScopes.All.Contains(s)))],
+            RedirectUris = uris,
+            RequirePkce = !Delegated || replayProtection != NonceOnly,
+            RequireNonce = Delegated && replayProtection != Pkce,
             TlsClientAuthSubject = method == TokenEndpointAuthMethods.TlsClientAuth
                 ? new TlsClientAuthSubject(subjectParameter ?? "", subjectValue ?? "")
                 : null,
-        })
-        : DialogInstance.CancelAsync();
+        });
+    }
 }
