@@ -123,14 +123,10 @@ public sealed class DashboardSessions(Signal9DbContext db, IDataProtectionProvid
         return await RefreshAsync(id, rejected);
     }
 
-    private async Task<SessionToken> RefreshAsync(Guid id, string? rejected)
-    {
-        var strategy = db.Database.CreateExecutionStrategy();
-        // A retry after auth already rotated the token presents the old one again, which the reuse leeway allows.
-        return await strategy.ExecuteAsync(async () =>
+    // A retry after auth already rotated the token presents the old one again, which the reuse leeway allows.
+    private Task<SessionToken> RefreshAsync(Guid id, string? rejected) =>
+        db.InTransactionAsync(async () =>
         {
-            db.ChangeTracker.Clear();
-            await using var transaction = await db.Database.BeginTransactionAsync();
             // The row lock serializes refreshes of this session across every replica sharing the database.
             var session = await db.DashboardSessions
                 .FromSql($"""SELECT * FROM "DashboardSessions" WHERE "Id" = {id} AND "EndedAt" IS NULL FOR UPDATE""")
@@ -151,8 +147,6 @@ public sealed class DashboardSessions(Signal9DbContext db, IDataProtectionProvid
             {
                 // The grant is already gone at auth, so there's nothing left to revoke.
                 db.DashboardSessions.Remove(session);
-                await db.SaveChangesAsync();
-                await transaction.CommitAsync();
                 return new SessionToken(SessionTokenStatus.Ended);
             }
 
@@ -166,11 +160,8 @@ public sealed class DashboardSessions(Signal9DbContext db, IDataProtectionProvid
             }
 
             Store(session, response, tokens);
-            await db.SaveChangesAsync();
-            await transaction.CommitAsync();
             return new SessionToken(SessionTokenStatus.Current, response.AccessToken);
-        });
-    }
+        }, _ => true, CancellationToken.None);
 
     /// <summary>The session's access token, unless it needs refreshing.</summary>
     private string? Usable(DashboardSession session, string? rejected)

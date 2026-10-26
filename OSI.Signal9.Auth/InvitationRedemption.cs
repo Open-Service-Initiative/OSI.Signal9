@@ -1,10 +1,10 @@
 using System.Security.Claims;
-using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using OSI.Signal9.Auth.Pages;
 using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Server.Data;
 using OSI.Signal9.Server.Identity;
@@ -16,7 +16,8 @@ namespace OSI.Signal9.Auth;
 /// Entra, then shows what the invitation offers. Accepting it (a POST, so link previewers and scanners that fetch the
 /// link can't use it up) creates the person's user if they have none, grants the role assignment and marks the
 /// invitation redeemed, in one transaction. The invitation is found only by its reference and the person only by their
-/// Entra identity (<c>tid</c>, <c>oid</c>), never by an email claim.
+/// Entra identity (<c>tid</c>, <c>oid</c>), never by an email claim. Every page's URL holds the reference, so the pages
+/// (<see cref="AuthPages"/>) can't be framed, cached or scripted, and never send a referrer.
 /// </summary>
 public static class InvitationRedemption
 {
@@ -49,23 +50,22 @@ public static class InvitationRedemption
             return unavailable;
 
         if (Enum.TryParse<EntraSignIn.Rejection>(context.Request.Query[EntraSignIn.RejectionParameter], out var rejection))
-            return Page(StatusCodes.Status403Forbidden, "Sign-in refused", EntraSignIn.Describe(rejection));
+            return AuthPages.Message(StatusCodes.Status403Forbidden, "Sign-in refused", EntraSignIn.Describe(rejection));
 
         if (await SignedInAsync(context, sessions) is not { } signIn)
             return SignInFirst(reference);
         if (await RefuseAsync(context, db, audit, offer!, signIn) is { } refused)
             return refused;
 
-        var tokens = antiforgery.GetAndStoreTokens(context);
-        var html = HtmlEncoder.Default;
-        return Markup(StatusCodes.Status200OK, $"Join {offer!.TenantName}?", $"""
-            <p>You've been invited to <strong>{html.Encode(offer.TenantName)}</strong> as a <strong>{html.Encode(offer.RoleName)}</strong>: {html.Encode(offer.RoleDescription)}</p>
-            <p>You're signed in as {html.Encode(signIn.Principal.FindFirst("name")?.Value ?? signIn.Person.Subject)}. Accepting gives this account the role; the invitation then can't be used again.</p>
-            <form method="post" action="{html.Encode(ReturnPath + reference)}">
-            <input type="hidden" name="{html.Encode(tokens.FormFieldName)}" value="{html.Encode(tokens.RequestToken ?? "")}">
-            <button type="submit">Accept</button>
-            </form>
-            """);
+        return AuthPages.Render<InvitationPage>(StatusCodes.Status200OK, new
+        {
+            Tenant = offer!.TenantName,
+            Role = offer.RoleName,
+            offer.RoleDescription,
+            SignedInAs = signIn.Principal.FindFirst("name")?.Value ?? signIn.Person.Subject,
+            Action = ReturnPath + reference,
+            Antiforgery = antiforgery.GetAndStoreTokens(context),
+        });
     }
 
     private static async Task<IResult> RedeemAsync(string reference, HttpContext context, Signal9DbContext db,
@@ -79,7 +79,7 @@ public static class InvitationRedemption
         }
         catch (AntiforgeryValidationException)
         {
-            return Page(StatusCodes.Status400BadRequest, "Invitation not confirmed",
+            return AuthPages.Message(StatusCodes.Status400BadRequest, "Invitation not confirmed",
                 "Accept the invitation on the page its link opens.");
         }
 
@@ -120,7 +120,7 @@ public static class InvitationRedemption
         else if (await db.RoleAssignments.IgnoreTenantScope(TenantScopeBypass.InvitationRedemption).AnyAsync(a =>
                      a.UserId == user.Id && a.TenantId == invitation.TenantId && a.RoleId == invitation.RoleId, cancellationToken))
         {
-            return Page(StatusCodes.Status409Conflict, "You already have this role",
+            return AuthPages.Message(StatusCodes.Status409Conflict, "You already have this role",
                 $"You're already a {offer.RoleName} at {offer.TenantName}, so the invitation is still unused.");
         }
 
@@ -149,20 +149,17 @@ public static class InvitationRedemption
         }
         catch (DbUpdateConcurrencyException)
         {
-            return Page(StatusCodes.Status410Gone, "Invitation already used",
+            return AuthPages.Message(StatusCodes.Status410Gone, "Invitation already used",
                 "This invitation was just used or revoked. Ask whoever invited you for a new one.");
         }
         catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
         {
-            return Page(StatusCodes.Status409Conflict, "Try again",
+            return AuthPages.Message(StatusCodes.Status409Conflict, "Try again",
                 "Another invitation was being redeemed for you at the same time. Open this invitation's link again.");
         }
 
-        var dashboard = identity.WebUri is { } web
-            ? $"""<p><a href="{HtmlEncoder.Default.Encode(web.ToString())}">Open the Signal9 dashboard</a></p>"""
-            : "";
-        return Page(StatusCodes.Status200OK, "Invitation accepted",
-            $"You're now a {offer.RoleName} at {offer.TenantName}.", dashboard);
+        return AuthPages.Message(StatusCodes.Status200OK, "Invitation accepted",
+            $"You're now a {offer.RoleName} at {offer.TenantName}.", identity.WebUri, "Open the Signal9 dashboard");
     }
 
     /// <summary>Sends the person to Entra to sign in, then back to the invitation's page.</summary>
@@ -191,7 +188,7 @@ public static class InvitationRedemption
     private static IResult? Unavailable(Offer? offer, TimeProvider time)
     {
         if (offer is null)
-            return Page(StatusCodes.Status404NotFound, "Invitation not found",
+            return AuthPages.Message(StatusCodes.Status404NotFound, "Invitation not found",
                 "This link doesn't match any invitation. Check you copied all of it.");
 
         var invitation = offer.Invitation;
@@ -200,7 +197,7 @@ public static class InvitationRedemption
             : invitation.ExpiresAt <= time.GetUtcNow().UtcDateTime ? "has expired"
             : null;
         // Gone for good (RFC 9110 §15.5.11): an invitation never becomes usable again.
-        return reason is null ? null : Page(StatusCodes.Status410Gone, "Invitation no longer valid",
+        return reason is null ? null : AuthPages.Message(StatusCodes.Status410Gone, "Invitation no longer valid",
             $"This invitation {reason}. Ask whoever invited you for a new one.");
     }
 
@@ -244,7 +241,7 @@ public static class InvitationRedemption
         var entry = Entry(context, signIn, invitation, AuditActions.InvitationRedeemed, AuditOutcome.Failed, userId: null);
         entry.Detail = refusal.ToString();
         await audit.WriteAsync(entry, context.RequestAborted);
-        return Page(StatusCodes.Status403Forbidden, "This invitation isn't for you", refusal switch
+        return AuthPages.Message(StatusCodes.Status403Forbidden, "This invitation isn't for you", refusal switch
         {
             Refusal.OtherDirectory => "It can only be accepted by someone signing in from another Entra directory.",
             _ => "It was sent to someone else. Ask whoever invited you to invite you.",
@@ -269,38 +266,4 @@ public static class InvitationRedemption
     /// <summary>The person's name as Entra gives it, for the dashboard to show; their identity is never taken from it.</summary>
     private static string DisplayName(ClaimsPrincipal signIn, EntraPerson person) =>
         signIn.FindFirst("name")?.Value is { Length: > 0 } name ? name[..Math.Min(name.Length, 200)] : person.Subject;
-
-    /// <summary>
-    /// One of the invitation's pages. Its URL holds the reference, so it can't be framed, cached or scripted, and never
-    /// sends a referrer.
-    /// </summary>
-    private static IResult Page(int status, string title, string message, string extraHtml = "") =>
-        new InvitationPage(status, title, $"<p>{HtmlEncoder.Default.Encode(message)}</p>\n{extraHtml}");
-
-    private static IResult Markup(int status, string title, string bodyHtml) => new InvitationPage(status, title, bodyHtml);
-
-    private sealed class InvitationPage(int status, string title, string bodyHtml) : IResult
-    {
-        public Task ExecuteAsync(HttpContext context)
-        {
-            var html = HtmlEncoder.Default;
-            var headers = context.Response.Headers;
-            headers.ContentSecurityPolicy = "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
-            headers.XFrameOptions = "DENY";
-            headers.CacheControl = "no-store";
-            headers["Referrer-Policy"] = "no-referrer";
-            return Results.Content($"""
-                <!doctype html>
-                <html lang="en">
-                <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{html.Encode(title)} - Signal9</title></head>
-                <body>
-                <main>
-                <h1>{html.Encode(title)}</h1>
-                {bodyHtml}
-                </main>
-                </body>
-                </html>
-                """, "text/html; charset=utf-8", statusCode: status).ExecuteAsync(context);
-        }
-    }
 }

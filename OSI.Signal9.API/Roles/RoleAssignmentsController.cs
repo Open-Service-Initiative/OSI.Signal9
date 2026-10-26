@@ -155,13 +155,10 @@ public sealed class RoleAssignmentsController(
             return Problem(statusCode: StatusCodes.Status403Forbidden, title: "Peer Administrator",
                 detail: "Only an Administrator above this tenant can revoke another Administrator at it.");
 
-        var lockedOut = await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        // The tree lock: tenant moves and other revocations change who administers the tenant.
+        var lockedOut = await db.InLockedTransactionAsync(TenantTree.LockKey, async () =>
         {
-            db.ChangeTracker.Clear();
-            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-            // The tree lock: tenant moves and other revocations change who administers the tenant.
-            await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({TenantTree.LockKey})", cancellationToken);
-            if (administrator && !caller.IsSuperadministrator && !await OtherAdministratorRemainsAsync(assignment, cancellationToken))
+            if (administrator && !caller.IsSuperadministrator && !await AdministratorCoverage.RemainsAsync(db, assignment.TenantId, [assignment.Id], cancellationToken))
                 return true;
 
             db.RoleAssignments.Attach(assignment);
@@ -175,10 +172,8 @@ public sealed class RoleAssignmentsController(
                 UserId = assignment.UserId,
                 RoleId = assignment.RoleId,
             });
-            await db.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
             return false;
-        });
+        }, refused => !refused, cancellationToken);
         if (lockedOut)
             return Problem(statusCode: StatusCodes.Status409Conflict, title: "Last Administrator",
                 detail: "This is the last Administrator at this tenant or above it; grant another Administrator first.");
@@ -196,12 +191,4 @@ public sealed class RoleAssignmentsController(
         await dashboard.RecheckAsync(person, cancellationToken);
         return NoContent();
     }
-
-    // Whether another Administrator assignment covers the tenant: at it or at an ancestor, which may lie outside the
-    // caller's reach.
-    private Task<bool> OtherAdministratorRemainsAsync(RoleAssignment revoked, CancellationToken cancellationToken) =>
-        db.RoleAssignments.AsNoTracking()
-            .IgnoreTenantScope(TenantScopeBypass.AdministratorLockoutGuard)
-            .AnyAsync(a => a.Id != revoked.Id && a.RoleId == BuiltInRoles.Administrator.Id
-                && db.TenantClosures.Any(c => c.DescendantId == revoked.TenantId && c.AncestorId == a.TenantId), cancellationToken);
 }

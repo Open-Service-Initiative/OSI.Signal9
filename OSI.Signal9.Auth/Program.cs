@@ -18,17 +18,19 @@ builder.AddSignal9EntraSignIn();
 builder.Services.AddScoped<Consent>();
 builder.Services.AddScoped<FreshSignIns>();
 // The hourly session check against Entra (#119, story 52).
-builder.Services.AddScoped<IEntraRefresh, EntraRefresh>();
+builder.Services.AddScoped<EntraRefresh>();
 builder.Services.AddScoped<EntraSessionChecker>();
 builder.Services.AddHostedService<EntraSessionCheck>();
-// The consent screen's antiforgery cookie: host-only, HTTPS-only and never sent cross-site (RFC 6265bis).
+// The consent, invitation and front-channel logout pages: Razor components rendered on the server (static SSR).
+builder.Services.AddRazorComponents();
+// The consent and invitation pages' antiforgery cookie: host-only, HTTPS-only and never sent cross-site (RFC 6265bis).
 builder.Services.AddAntiforgery(options =>
 {
     options.Cookie.Name = "__Host-Signal9.Antiforgery";
     options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
     options.Cookie.SameSite = SameSiteMode.Strict;
     options.FormFieldName = Consent.AntiforgeryField;
-    // The consent screen sends X-Frame-Options: DENY itself, stricter than antiforgery's SAMEORIGIN.
+    // The pages send X-Frame-Options: DENY themselves, stricter than antiforgery's SAMEORIGIN.
     options.SuppressXFrameOptionsHeader = true;
 });
 

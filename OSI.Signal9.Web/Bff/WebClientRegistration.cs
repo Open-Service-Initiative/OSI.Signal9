@@ -72,17 +72,12 @@ public sealed class WebClientRegistration(IServiceScopeFactory scopes, IConfigur
         var applications = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
 
         // Replicas may start together: one at a time, inside the execution strategy so a transient failure retries it.
-        db.Database.CreateExecutionStrategy().Execute(() =>
+        db.InLockedTransactionAsync(LockKey, async () =>
         {
-            db.ChangeTracker.Clear();
-            using var transaction = db.Database.BeginTransaction();
-            db.Database.ExecuteSql($"SELECT pg_advisory_xact_lock({LockKey})");
-            var application = applications.FindByClientIdAsync(ClientId).AsTask().GetAwaiter().GetResult();
-            if (application is null)
-                applications.CreateAsync(descriptor).AsTask().GetAwaiter().GetResult();
+            if (await applications.FindByClientIdAsync(ClientId) is { } application)
+                await applications.UpdateAsync(application, descriptor);
             else
-                applications.UpdateAsync(application, descriptor).AsTask().GetAwaiter().GetResult();
-            transaction.Commit();
-        });
+                await applications.CreateAsync(descriptor);
+        }, CancellationToken.None).GetAwaiter().GetResult();
     }
 }

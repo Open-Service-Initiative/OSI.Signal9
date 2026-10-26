@@ -1,0 +1,27 @@
+@* The frame of every page auth renders: no scripts, styles or other resources, so its CSP can be default-src 'none'. *@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>@Title - Signal9</title>
+</head>
+<body>
+<main>
+<h1>@(Heading ?? Title)</h1>
+@ChildContent
+</main>
+</body>
+</html>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = "";
+
+    /// <summary>The page's heading, when it isn't its title.</summary>
+    [Parameter]
+    public string? Heading { get; set; }
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+}

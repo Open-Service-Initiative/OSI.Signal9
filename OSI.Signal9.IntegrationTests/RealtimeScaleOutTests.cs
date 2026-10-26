@@ -104,7 +104,7 @@ public sealed class RealtimeScaleOutTests : IAsyncDisposable
         var revoked = await _client.PostAsync($"api/v1/agents/{agent.Id}:revoke", null, Ct);
         Assert.AreEqual(HttpStatusCode.OK, revoked.StatusCode, await revoked.Content.ReadAsStringAsync(Ct));
 
-        await AdvanceUntilAsync(closed.Task, new AgentHubOptions().AccessCheckInterval);
+        await AdvanceUntilAsync(closed.Task, new HubAccessOptions().AccessCheckInterval);
     }
 
     [TestMethod]
@@ -118,7 +118,7 @@ public sealed class RealtimeScaleOutTests : IAsyncDisposable
         var removed = await _client.DeleteAsync(person.Assignment, Ct);
         Assert.AreEqual(HttpStatusCode.NoContent, removed.StatusCode, await removed.Content.ReadAsStringAsync(Ct));
 
-        await AdvanceUntilAsync(dashboard.Closed, new DashboardHubOptions().AccessCheckInterval);
+        await AdvanceUntilAsync(dashboard.Closed, new HubAccessOptions().AccessCheckInterval);
     }
 
     /// <summary>Moves the shared clock on an access check at a time until <paramref name="done"/> completes.</summary>

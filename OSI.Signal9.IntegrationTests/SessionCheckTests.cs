@@ -427,7 +427,7 @@ public sealed class SessionCheckTests : IDisposable
 
         Assert.AreEqual(HttpStatusCode.OK, logout.StatusCode, await logout.Content.ReadAsStringAsync(Ct));
         Assert.Contains("no-store", logout.Headers.CacheControl!.ToString());
-        Assert.AreEqual("default-src 'none'; frame-ancestors https://login.microsoftonline.com",
+        Assert.AreEqual("default-src 'none'; form-action 'none'; frame-ancestors https://login.microsoftonline.com; base-uri 'none'",
             string.Join("", logout.Headers.GetValues("Content-Security-Policy")));
         Assert.IsFalse(logout.Headers.Contains("X-Frame-Options"), "Entra must be able to frame the page.");
         Assert.AreEqual(HttpStatusCode.Unauthorized, (await browser.GetAsync("api/v1/tenants")).StatusCode);

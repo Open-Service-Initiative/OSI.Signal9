@@ -109,20 +109,16 @@ public sealed class StoredKeys(IServiceScopeFactory scopes, KeyEncryptionKey kek
         public bool Any => Generate.Count > 0 || Remove.Count > 0;
     }
 
+    // Options are configured synchronously, so this waits for the transaction.
     private void UpdateDue(Signal9DbContext db) =>
-        // A user-initiated transaction runs inside the execution strategy, so transient failures retry it whole.
-        db.Database.CreateExecutionStrategy().Execute(() =>
+        db.InLockedTransactionAsync(LockKey, () =>
         {
-            db.ChangeTracker.Clear();
-            using var transaction = db.Database.BeginTransaction();
-            db.Database.ExecuteSql($"SELECT pg_advisory_xact_lock({LockKey})");
             // Another host may have done it while this one waited for the lock.
             var due = Due(db);
             db.StoredKeys.AddRange(due.Generate.Select(key => Generate(key.Use, key.ActivatesAt)));
             db.StoredKeys.RemoveRange(due.Remove);
-            db.SaveChanges();
-            transaction.Commit();
-        });
+            return Task.CompletedTask;
+        }, CancellationToken.None).GetAwaiter().GetResult();
 
     /// <summary>
     /// The next instant after <paramref name="now"/> at which a key is published, activates, retires or is removed.

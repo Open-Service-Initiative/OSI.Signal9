@@ -33,6 +33,7 @@ builder.Services.AddOptions<TenantTreeOptions>().BindConfiguration(TenantTreeOpt
     .ValidateDataAnnotations().ValidateOnStart();
 builder.Services.AddScoped<TenantTree>();
 builder.Services.AddScoped<TenantDeletion>();
+builder.Services.AddScoped<OSI.Signal9.API.Agents.AgentEnrollment>();
 builder.Services.AddSignal9Audit();
 builder.Services.AddScoped<CallerAudit>();
 
@@ -57,17 +58,13 @@ builder.Services.AddOpenApi(options => options
     .AddOperationTransformer<RecentMfaResponses>()
     .AddOperationTransformer<AgentVersionOperationTransformer>()
     .AddOperationTransformer<ConditionalOperationTransformer>());
-builder.Services.AddSingleton<AgentHubConnections>();
-builder.Services.AddOptions<AgentHubOptions>().BindConfiguration(AgentHubOptions.SectionName)
-    .ValidateDataAnnotations().ValidateOnStart();
+builder.Services.AddSingleton(typeof(HubConnections<>));
 builder.Services.AddScoped<AgentHubAccess>();
-builder.Services.AddHostedService<AgentHubAccessSweeper>();
-builder.Services.AddOptions<DashboardHubOptions>().BindConfiguration(DashboardHubOptions.SectionName)
-    .ValidateDataAnnotations().ValidateOnStart();
-builder.Services.AddSingleton<DashboardConnections>();
 builder.Services.AddScoped<DashboardAccess>();
 builder.Services.AddScoped<DashboardEvents>();
-builder.Services.AddHostedService<DashboardAccessSweeper>();
+builder.Services.AddOptions<HubAccessOptions>().BindConfiguration(HubAccessOptions.SectionName)
+    .ValidateDataAnnotations().ValidateOnStart();
+builder.Services.AddHostedService<HubAccessSweeper>();
 // In api, or on Azure SignalR Service; on a Redis backplane once api scales out (ADR-0009).
 builder.AddSignal9Realtime();
 

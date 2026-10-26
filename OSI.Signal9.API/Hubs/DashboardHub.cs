@@ -1,10 +1,6 @@
-using System.Collections.Concurrent;
-using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using OpenIddict.Abstractions;
-using OpenIddict.EntityFrameworkCore.Models;
 using OSI.Signal9.API.Authorization;
 using OSI.Signal9.Contracts.Hubs;
 using OSI.Signal9.Server.Data;
@@ -43,51 +39,6 @@ public sealed class DashboardHub(DashboardAccess access) : Hub<IDashboardHubClie
     }
 }
 
-/// <summary>How often api re-checks every open dashboard hub connection against its caller's live access.</summary>
-public sealed class DashboardHubOptions
-{
-    public const string SectionName = "DashboardHub";
-
-    /// <summary>
-    /// The longest a connection outlives a session ended elsewhere (sign-out at web, front-channel logout at auth).
-    /// Changes made through this api instance apply at once.
-    /// </summary>
-    [Range(typeof(TimeSpan), "00:00:01", "00:05:00")]
-    public TimeSpan AccessCheckInterval { get; set; } = TimeSpan.FromSeconds(10);
-}
-
-/// <summary>An open dashboard hub connection, and the groups it's in.</summary>
-public sealed class DashboardConnection(HubCallerContext context)
-{
-    public HubCallerContext Context { get; } = context;
-
-    /// <summary>The token's subject: a person, or an API application acting as itself.</summary>
-    public string? Subject { get; } = context.User?.GetClaim(OpenIddictConstants.Claims.Subject);
-
-    internal HashSet<string> Groups { get; } = [];
-
-    /// <summary>One check at a time, so the last to run applies what it read last.</summary>
-    internal SemaphoreSlim Checking { get; } = new(1, 1);
-
-    internal bool Closed { get; set; }
-}
-
-/// <summary>
-/// The dashboard hub connections this api instance holds. SignalR can't close a connection from outside its hub, or
-/// say which groups it's in, so the hub records each one here.
-/// </summary>
-public sealed class DashboardConnections
-{
-    private readonly ConcurrentDictionary<string, DashboardConnection> _open = new();
-
-    internal void Add(DashboardConnection connection) => _open[connection.Context.ConnectionId] = connection;
-
-    internal void Remove(string connectionId) => _open.TryRemove(connectionId, out _);
-
-    internal IReadOnlyList<DashboardConnection> Where(Func<DashboardConnection, bool> match) =>
-        [.. _open.Values.Where(match)];
-}
-
 /// <summary>
 /// Keeps each dashboard hub connection to its caller's live access: it joins the groups of the tenants the caller's
 /// role assignments grant a hub scope at, follows changes to them, and closes once the token is revoked or expires
@@ -95,20 +46,17 @@ public sealed class DashboardConnections
 /// </summary>
 public sealed class DashboardAccess(
     Signal9DbContext db,
-    DashboardConnections connections,
+    HubConnections<DashboardHub> connections,
     IHubContext<DashboardHub, IDashboardHubClient> hub,
     TimeProvider time)
 {
-    /// <summary>Records a new connection and puts it in its groups; false when it was closed instead.</summary>
-    internal async Task<bool> OpenAsync(HubCallerContext context)
-    {
-        // Recorded before its access is read, so a change committed meanwhile is either read here or re-checked there.
-        var connection = new DashboardConnection(context);
-        connections.Add(connection);
-        return await CheckAsync(connection, context.ConnectionAborted);
-    }
+    /// <summary>
+    /// Records a new connection and puts it in its groups; false when it was closed instead. It's recorded before its
+    /// access is read, so a change committed meanwhile is either read here or re-checked there.
+    /// </summary>
+    internal Task<bool> OpenAsync(HubCallerContext context) => CheckAsync(connections.Add(context), context.ConnectionAborted);
 
-    internal void Forget(HubCallerContext context) => connections.Remove(context.ConnectionId);
+    internal void Forget(HubCallerContext context) => connections.Remove(context);
 
     /// <summary>Re-checks the connections of <paramref name="subject"/>, such as after their role assignments change.</summary>
     public Task RecheckAsync(string subject, CancellationToken cancellationToken) =>
@@ -118,13 +66,13 @@ public sealed class DashboardAccess(
     public Task RecheckAllAsync(CancellationToken cancellationToken) =>
         RecheckAsync(connections.Where(_ => true), cancellationToken);
 
-    private async Task RecheckAsync(IReadOnlyList<DashboardConnection> open, CancellationToken cancellationToken)
+    private async Task RecheckAsync(IReadOnlyList<OpenHubConnection> open, CancellationToken cancellationToken)
     {
         foreach (var connection in open)
             await CheckAsync(connection, cancellationToken);
     }
 
-    private async Task<bool> CheckAsync(DashboardConnection connection, CancellationToken cancellationToken)
+    private async Task<bool> CheckAsync(OpenHubConnection connection, CancellationToken cancellationToken)
     {
         await connection.Checking.WaitAsync(cancellationToken);
         try
@@ -136,9 +84,7 @@ public sealed class DashboardAccess(
                 : new HashSet<string>();
             if (groups.Count == 0)
             {
-                connection.Closed = true;
-                connections.Remove(connection.Context.ConnectionId);
-                connection.Context.Abort();
+                connections.Close(connection);
                 return false;
             }
 
@@ -182,59 +128,6 @@ public sealed class DashboardAccess(
             .Select(c => c.DescendantId)
             .ToListAsync(cancellationToken);
         return tenants.Except(beneath).Select(DashboardHub.GroupFor).ToHashSet();
-    }
-}
-
-/// <summary>Whether the access token a hub connection was opened with is still good.</summary>
-internal static class HubTokens
-{
-    /// <summary>
-    /// Not revoked, by itself or with its authorization (sign-out, front-channel logout, a revoked connection, role or
-    /// agent), and not expired.
-    /// </summary>
-    public static Task<bool> IsLiveAsync(Signal9DbContext db, System.Security.Claims.ClaimsPrincipal user, TimeProvider time,
-        CancellationToken cancellationToken)
-    {
-        if (user.GetTokenId() is not { } tokenId)
-            return Task.FromResult(false);
-        var now = time.GetUtcNow().UtcDateTime;
-        return db.Set<OpenIddictEntityFrameworkCoreToken>().AsNoTracking()
-            .AnyAsync(t => t.Id == tokenId && t.Status == OpenIddictConstants.Statuses.Valid && t.ExpirationDate > now
-                && (t.Authorization == null || t.Authorization.Status == OpenIddictConstants.Statuses.Valid), cancellationToken);
-    }
-}
-
-/// <summary>
-/// Re-checks every open dashboard hub connection on an interval, so a session ended at another host (web's sign-out,
-/// auth's front-channel logout) or a change on another api instance closes or narrows it here too.
-/// </summary>
-public sealed class DashboardAccessSweeper(
-    IServiceScopeFactory scopes,
-    IOptions<DashboardHubOptions> options,
-    TimeProvider time,
-    ILogger<DashboardAccessSweeper> logger) : BackgroundService
-{
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        using var timer = new PeriodicTimer(options.Value.AccessCheckInterval, time);
-        try
-        {
-            while (await timer.WaitForNextTickAsync(stoppingToken))
-            {
-                try
-                {
-                    await using var scope = scopes.CreateAsyncScope();
-                    await scope.ServiceProvider.GetRequiredService<DashboardAccess>().RecheckAllAsync(stoppingToken);
-                }
-                catch (Exception exception) when (exception is not OperationCanceledException)
-                {
-                    logger.LogWarning(exception, "Re-checking dashboard hub connections failed; trying again next time.");
-                }
-            }
-        }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-        {
-        }
     }
 }
 

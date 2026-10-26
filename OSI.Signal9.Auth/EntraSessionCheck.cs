@@ -6,6 +6,7 @@ using Microsoft.Identity.Web;
 using Microsoft.IdentityModel.JsonWebTokens;
 using OpenIddict.EntityFrameworkCore.Models;
 using OSI.Signal9.Server.Data;
+using OSI.Signal9.Server.Hosting;
 using OSI.Signal9.Server.Identity;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
@@ -24,19 +25,14 @@ public abstract record EntraVerdict
     public sealed record Unavailable : EntraVerdict;
 }
 
-/// <summary>Forces a refresh of a person's tokens at Entra, bypassing every cached token (#119, story 52).</summary>
-public interface IEntraRefresh
-{
-    Task<EntraVerdict> ForceAsync(string accountId, Guid entraTenantId, CancellationToken cancellationToken);
-}
-
 /// <summary>
-/// Asks Entra through MSAL, with the registration's own credential and the refresh token in <see cref="EntraTokenCache"/>.
-/// Only Entra's <c>invalid_grant</c> and <c>interaction_required</c> end the person's sessions (#63); MSAL reports both,
-/// and a cache with no refresh token for the person, as <see cref="MsalUiRequiredException"/>: only the person signing
-/// in again can fix any of them. Everything else, from network errors to Entra's 5xx and throttling, is transient.
+/// Forces a refresh of a person's tokens at Entra, bypassing every cached token (#119, story 52). It asks through MSAL,
+/// with the registration's own credential and the refresh token in <see cref="EntraTokenCache"/>. Only Entra's
+/// <c>invalid_grant</c> and <c>interaction_required</c> end the person's sessions (#63); MSAL reports both, and a cache
+/// with no refresh token for the person, as <see cref="MsalUiRequiredException"/>: only the person signing in again can
+/// fix any of them. Everything else, from network errors to Entra's 5xx and throttling, is transient.
 /// </summary>
-public sealed class EntraRefresh(ITokenAcquisition tokenAcquisition, ILogger<EntraRefresh> logger) : IEntraRefresh
+public sealed class EntraRefresh(ITokenAcquisition tokenAcquisition, ILogger<EntraRefresh> logger)
 {
     /// <summary>
     /// What the refresh asks Entra for: only the sign-in's own OpenID Connect scopes, so it needs no API permission
@@ -101,7 +97,7 @@ public sealed class EntraRefresh(ITokenAcquisition tokenAcquisition, ILogger<Ent
 /// each session is claimed by one.
 /// </summary>
 public sealed class EntraSessionCheck(IServiceScopeFactory scopes, TimeProvider time, ILogger<EntraSessionCheck> logger)
-    : BackgroundService
+    : PeriodicJob(Interval, scopes, time, logger)
 {
     /// <summary>How often due sessions are looked for.</summary>
     public static readonly TimeSpan Interval = TimeSpan.FromMinutes(5);
@@ -109,26 +105,12 @@ public sealed class EntraSessionCheck(IServiceScopeFactory scopes, TimeProvider 
     /// <summary>The longest Entra goes without being asked about a person with a live session.</summary>
     public static readonly TimeSpan Every = TimeSpan.FromHours(1);
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        using var timer = new PeriodicTimer(Interval, time);
-        while (await timer.WaitForNextTickAsync(stoppingToken))
-        {
-            try
-            {
-                await using var scope = scopes.CreateAsyncScope();
-                await scope.ServiceProvider.GetRequiredService<EntraSessionChecker>().RunAsync(stoppingToken);
-            }
-            catch (Exception exception) when (!stoppingToken.IsCancellationRequested)
-            {
-                logger.LogWarning(exception, "Checking sessions at Entra failed; the next run tries again.");
-            }
-        }
-    }
+    protected override Task RunAsync(IServiceProvider services, CancellationToken cancellationToken) =>
+        services.GetRequiredService<EntraSessionChecker>().RunAsync(cancellationToken);
 }
 
 /// <summary>One run of <see cref="EntraSessionCheck"/>.</summary>
-public sealed class EntraSessionChecker(Signal9DbContext db, SignInSessions sessions, IEntraRefresh entra,
+public sealed class EntraSessionChecker(Signal9DbContext db, SignInSessions sessions, EntraRefresh entra,
     DeployingDirectory deploying, TimeProvider time, ILogger<EntraSessionChecker> logger)
 {
     /// <summary>How long an ended Entra session is remembered: as long as any token from it could have lasted.</summary>

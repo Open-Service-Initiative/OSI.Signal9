@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using OSI.Signal9.Auth.Pages;
 using OSI.Signal9.Server.Identity;
 
 namespace OSI.Signal9.Auth;
@@ -21,12 +22,6 @@ public static partial class FrontChannelLogout
             IConfiguration configuration, ILogger<SignInSessions> logger) =>
         {
             var instance = new Uri(configuration[$"{EntraSignIn.SectionName}:Instance"] ?? EntraSignIn.DefaultInstance);
-            // The frame is Entra's, on its own origin; nothing of it may be cached (Front-Channel Logout §4).
-            var headers = context.Response.Headers;
-            headers.CacheControl = "no-cache, no-store";
-            headers.Pragma = "no-cache";
-            headers.ContentSecurityPolicy = $"default-src 'none'; frame-ancestors {instance.GetLeftPart(UriPartial.Authority)}";
-
             // iss is Entra's v2.0 issuer for the person's directory: {instance}{tid}/v2.0.
             if (string.IsNullOrEmpty(sid) || sid.Length > 200 || !TryParseDirectory(iss, instance, out var entraTenantId))
             {
@@ -39,9 +34,10 @@ public static partial class FrontChannelLogout
             await sessions.EndEntraSessionAsync(entraTenantId, sid,
                 new SessionEnd("Front-channel logout from Entra", ClientIp: context.Connection.RemoteIpAddress?.ToString()),
                 context.RequestAborted);
-            // The same answer whether or not a session was found, so the page tells nobody which sessions exist.
-            return Results.Content("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Signed out</title></head><body></body></html>",
-                "text/html; charset=utf-8");
+            // The same answer whether or not a session was found, so the page tells nobody which sessions exist. The frame
+            // is Entra's, on its own origin, and nothing of it may be cached (Front-Channel Logout §4).
+            return AuthPages.Message(StatusCodes.Status200OK, "Signed out", "You're signed out of Signal9.",
+                formAction: "'none'", frameAncestors: instance.GetLeftPart(UriPartial.Authority));
         })
         .AllowAnonymous()
         // Entra's endpoint to call, not part of the API.

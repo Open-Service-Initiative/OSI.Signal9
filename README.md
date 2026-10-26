@@ -162,7 +162,7 @@ A device is the managed machine; an agent is one enrolled installation on it. Te
 
 Hubs: `/hubs/agents` and `/hubs/dashboard` (live updates for the dashboard, reached through web). The agent hub is a doorbell (ADR-0009): it rings a device's active agent when a command is queued, carries no command content and accepts no calls. The agent fetches its pending commands over REST when the doorbell rings, every time it (re)connects and when a heartbeat response says work is waiting.
 
-The dashboard hub needs `devices.read` or `telemetry.read`, and any API application holding one can listen too. A connection hears changes from the tenants its caller's role assignments reach (every tenant tree for a Superadministrator), as small notices: `DeviceChanged`/`DeviceDeleted` (`deviceId`, `url`), `CommandChanged` (`deviceId`, `commandId`, `url`) and `TelemetryReceived` (`deviceId`, `sampleId`, `url`). Fetch the details from `url` over REST. A connection closes when its token expires or is revoked (sign-out, front-channel logout) or its caller loses their last role assignment; reconnect with a fresh token. Losing or gaining one of several role assignments, or a tenant transfer, changes what it hears at once. api re-checks open connections every `DashboardHub:AccessCheckInterval` (default 10 seconds) for changes made elsewhere.
+The dashboard hub needs `devices.read` or `telemetry.read`, and any API application holding one can listen too. A connection hears changes from the tenants its caller's role assignments reach (every tenant tree for a Superadministrator), as small notices: `DeviceChanged`/`DeviceDeleted` (`deviceId`, `url`), `CommandChanged` (`deviceId`, `commandId`, `url`) and `TelemetryReceived` (`deviceId`, `sampleId`, `url`). Fetch the details from `url` over REST. A connection closes when its token expires or is revoked (sign-out, front-channel logout) or its caller loses their last role assignment; reconnect with a fresh token. Losing or gaining one of several role assignments, or a tenant transfer, changes what it hears at once. api re-checks open connections every `Hubs:AccessCheckInterval` (default 10 seconds) for changes made elsewhere.
 
 ## Operations
 
@@ -195,7 +195,7 @@ The agent and dashboard hubs (ADR-0009) are hosted as the AppHost's `Realtime:Ho
 - `AzureSignalR` (the default when published): both hubs run on Azure SignalR Service. api negotiates and hands the client a token for the service that carries only what the hubs read and lasts `Realtime:ServiceTokenLifetime` (default two minutes). The dashboard reaches the service through web, at `/hubs/dashboard/service/`, so browsers stay on web's origin; agents connect to it directly. Clients can't connect to api's hubs directly.
 - `SelfHosted` (the default locally): both hubs run in api. With `Realtime:ApiReplicas` above 1, the AppHost adds a Redis container and api's replicas share it as their backplane (`Realtime:BackplaneChannelPrefix`, default `signal9`); the hubs then take WebSockets only and answer negotiation without keeping state, so no sticky sessions are needed. A single replica needs no Redis.
 
-Each replica re-checks its hub connections every `AgentHub:AccessCheckInterval` and `DashboardHub:AccessCheckInterval` (default 10 seconds), so a revocation made on another replica closes a connection within that time.
+Each replica re-checks its hub connections every `Hubs:AccessCheckInterval` (default 10 seconds), so a revocation made on another replica closes a connection within that time.
 
 ## Development
 

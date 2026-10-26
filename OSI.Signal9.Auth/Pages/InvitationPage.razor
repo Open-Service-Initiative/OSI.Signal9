@@ -1,0 +1,30 @@
+@* What an invitation offers the signed-in person, accepted with a POST (#121). *@
+<AuthPage Title="@($"Join {Tenant}?")">
+<p>You've been invited to <strong>@Tenant</strong> as a <strong>@Role</strong>: @RoleDescription</p>
+<p>You're signed in as @SignedInAs. Accepting gives this account the role; the invitation then can't be used again.</p>
+<form method="post" action="@Action">
+<input type="hidden" name="@Antiforgery.FormFieldName" value="@(Antiforgery.RequestToken ?? "")">
+<button type="submit">Accept</button>
+</form>
+</AuthPage>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Tenant { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public string Role { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public string RoleDescription { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public string SignedInAs { get; set; } = "";
+
+    /// <summary>Where the acceptance is posted: the invitation's own page.</summary>
+    [Parameter, EditorRequired]
+    public string Action { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public AntiforgeryTokenSet Antiforgery { get; set; } = null!;
+}

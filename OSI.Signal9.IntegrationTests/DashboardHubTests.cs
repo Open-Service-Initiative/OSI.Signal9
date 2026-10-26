@@ -299,7 +299,7 @@ public sealed class DashboardHubTests : IDisposable
         await using var dashboard = await ConnectThroughWebAsync(browser);
 
         Assert.AreEqual(HttpStatusCode.NoContent, (await browser.FetchAsync(HttpMethod.Post, BffRoutes.Logout)).StatusCode);
-        _factory.Time.Advance(new DashboardHubOptions().AccessCheckInterval);
+        _factory.Time.Advance(new HubAccessOptions().AccessCheckInterval);
 
         await dashboard.Closed.WaitAsync(TimeSpan.FromSeconds(15), Ct);
     }
@@ -316,7 +316,7 @@ public sealed class DashboardHubTests : IDisposable
         var logout = await entra.GetAsync($"{OSI.Signal9.Auth.FrontChannelLogout.Path}" +
             $"?iss={Uri.EscapeDataString($"{FakeEntra.Instance}{user.TenantId}/v2.0")}&sid={Uri.EscapeDataString(user.SessionId!)}", Ct);
         Assert.AreEqual(HttpStatusCode.OK, logout.StatusCode);
-        _factory.Time.Advance(new DashboardHubOptions().AccessCheckInterval);
+        _factory.Time.Advance(new HubAccessOptions().AccessCheckInterval);
 
         await dashboard.Closed.WaitAsync(TimeSpan.FromSeconds(15), Ct);
     }

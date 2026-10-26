@@ -165,6 +165,28 @@ public sealed partial class DelegatedApiApplicationTests : IDisposable
     }
 
     [TestMethod]
+    public async Task The_consent_screen_shows_the_applications_name_as_text_and_loads_nothing()
+    {
+        var tree = await TreeAsync();
+        var person = await PersonAsync(tree.Msp, ("Viewer", tree.Msp));
+        var (application, _) = await RegisterDelegatedAsync(tree.Msp, Delegated("openid", "tenants.read") with
+        {
+            DisplayName = "<script>alert(1)</script>",
+        });
+
+        var page = await ConsentPageAsync(application, person, "openid tenants.read");
+
+        var html = await page.Content.ReadAsStringAsync(Ct);
+        Assert.DoesNotContain("<script", html);
+        Assert.Contains("&lt;script&gt;alert(1)&lt;/script&gt;", html);
+        Assert.AreEqual("text/html", page.Content.Headers.ContentType?.MediaType);
+        Assert.AreEqual($"default-src 'none'; form-action 'self' {new Uri(CodeFlow.RedirectUri).GetLeftPart(UriPartial.Authority)}; frame-ancestors 'none'; base-uri 'none'",
+            page.Headers.GetValues("Content-Security-Policy").Single());
+        Assert.AreEqual("DENY", page.Headers.GetValues("X-Frame-Options").Single());
+        Assert.IsTrue(page.Headers.CacheControl?.NoStore);
+    }
+
+    [TestMethod]
     public async Task Consent_is_asked_on_first_use_and_again_for_more_scopes_and_is_kept()
     {
         var tree = await TreeAsync();

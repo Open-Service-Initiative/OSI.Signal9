@@ -1,9 +1,8 @@
 using System.Security.Claims;
-using System.Text;
-using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.Extensions.Primitives;
 using OpenIddict.Abstractions;
+using OSI.Signal9.Auth.Pages;
 using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Server.Data;
 using OSI.Signal9.Server.Identity;
@@ -145,55 +144,21 @@ public sealed class Consent(
 
     /// <summary>
     /// The consent screen: what the application asks for, posted back to the authorization endpoint with the request's
-    /// own parameters and an antiforgery token. It can't be framed, cached or scripted.
+    /// own parameters and an antiforgery token.
     /// </summary>
     private IResult Page(HttpContext context, OpenIddictRequest request, string displayName, IEnumerable<string> scopes,
         IEnumerable<KeyValuePair<string, StringValues>> parameters)
     {
         var tokens = antiforgery.GetAndStoreTokens(context);
-        var html = HtmlEncoder.Default;
-        var name = html.Encode(displayName);
-        var page = new StringBuilder($"""
-            <!doctype html>
-            <html lang="en">
-            <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Allow {name}? - Signal9</title></head>
-            <body>
-            <main>
-            <h1>Allow {name} to act for you?</h1>
-            <p>{name} is asking to use Signal9 as you. It can do only what you can do yourself, within the tenant it's registered at, and only the following:</p>
-            <ul>
-
-            """);
-        foreach (var scope in scopes)
-            page.Append($"<li><code>{html.Encode(scope)}</code>: {html.Encode(OSI.Signal9.Server.Identity.Scopes.All.GetValueOrDefault(scope, scope))}</li>\n");
-        page.Append($"""
-            </ul>
-            <form method="post" action="/{AuthorizationServer.AuthorizationEndpoint}">
-
-            """);
-        foreach (var (key, values) in parameters)
-            foreach (var value in values)
-                page.Append($"<input type=\"hidden\" name=\"{html.Encode(key)}\" value=\"{html.Encode(value ?? "")}\">\n");
-        page.Append($"""
-            <input type="hidden" name="{html.Encode(tokens.FormFieldName)}" value="{html.Encode(tokens.RequestToken ?? "")}">
-            <button type="submit" name="{DecisionField}" value="accept">Allow</button>
-            <button type="submit" name="{DecisionField}" value="deny">Don't allow</button>
-            </form>
-            <p>Your answer is kept until you revoke it. You'll be asked again if {name} wants more.</p>
-            </main>
-            </body>
-            </html>
-            """);
-
-        var headers = context.Response.Headers;
         // The answer returns to the application's redirect URI, which form-action must allow (CSP Level 3 §6.4.2).
         var redirect = request.RedirectUri is { } uri && Uri.TryCreate(uri, UriKind.Absolute, out var parsed)
             ? $" {parsed.GetLeftPart(UriPartial.Authority)}" : "";
-        headers.ContentSecurityPolicy =
-            $"default-src 'none'; form-action 'self'{redirect}; frame-ancestors 'none'; base-uri 'none'";
-        headers.XFrameOptions = "DENY";
-        headers.CacheControl = "no-store";
-        headers["Referrer-Policy"] = "no-referrer";
-        return Results.Content(page.ToString(), "text/html; charset=utf-8");
+        return AuthPages.Render<ConsentPage>(StatusCodes.Status200OK, new
+        {
+            Application = displayName,
+            Scopes = scopes,
+            Parameters = parameters,
+            Antiforgery = tokens,
+        }, formAction: $"'self'{redirect}");
     }
 }

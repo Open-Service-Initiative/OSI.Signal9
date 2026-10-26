@@ -3,6 +3,7 @@ using OpenIddict.Abstractions;
 using OSI.Signal9.API.Audit;
 using OSI.Signal9.API.Hubs;
 using OSI.Signal9.API.Infrastructure;
+using OSI.Signal9.API.Roles;
 using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Tenants;
 using OSI.Signal9.Server.Data;
@@ -33,7 +34,7 @@ public enum TenantDeletionResult
 public sealed class TenantDeletion(
     Signal9DbContext db, TenantTree tree, CallerAudit audit, IAssignedTenants caller,
     IOpenIddictApplicationManager applications, IOpenIddictAuthorizationManager authorizations, SignInSessions sessions,
-    AgentHubConnections hubConnections)
+    HubConnections<AgentHub> hubConnections)
 {
     /// <summary>The detail of every audit entry the cascade records.</summary>
     public const string Detail = "tenant-deleted";
@@ -127,21 +128,18 @@ public sealed class TenantDeletion(
     }
 
     // Tenants outside the deleted one where an Administrator assignment goes with its user, and no other Administrator
-    // assignment remains at the tenant or above it, which may lie outside the caller's reach.
+    // assignment remains at the tenant or above it.
     private async Task<List<Guid>> TenantsLeftWithoutAdministratorAsync(Guid tenantId, List<Assignment> removed,
         CancellationToken cancellationToken)
     {
         var subtree = await db.TenantClosures.AsNoTracking().Where(c => c.AncestorId == tenantId)
             .Select(c => c.DescendantId).ToListAsync(cancellationToken);
-        var removedIds = removed.Select(a => a.Row.Id).ToList();
+        Guid[] removedIds = [.. removed.Select(a => a.Row.Id)];
         List<Guid> left = [];
         foreach (var at in removed.Where(a => a.Row.RoleId == BuiltInRoles.Administrator.Id && !subtree.Contains(a.Row.TenantId))
                      .Select(a => a.Row.TenantId).Distinct())
         {
-            var remains = await db.RoleAssignments.AsNoTracking().IgnoreTenantScope(TenantScopeBypass.TenantDeletion)
-                .AnyAsync(a => !removedIds.Contains(a.Id) && a.RoleId == BuiltInRoles.Administrator.Id
-                    && db.TenantClosures.Any(c => c.DescendantId == at && c.AncestorId == a.TenantId), cancellationToken);
-            if (!remains)
+            if (!await AdministratorCoverage.RemainsAsync(db, at, removedIds, cancellationToken))
                 left.Add(at);
         }
         return [.. left.Order()];

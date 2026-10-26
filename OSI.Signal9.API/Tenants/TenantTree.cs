@@ -165,29 +165,7 @@ public sealed class TenantTree(Signal9DbContext db, CallerAudit audit, IOptions<
     private void Audit(string action, Guid? at, Guid tenantId, string? detail = null) =>
         audit.Record(new AuditEntry { Action = action, TenantId = at, TargetType = "tenant", TargetId = tenantId, Detail = detail });
 
-    // Runs inside the execution strategy, because Aspire's retrying strategy refuses a user-started transaction
-    // outside it. A retry starts from a clean change tracker, so it doesn't carry entities from the failed attempt.
-    private Task<TenantTreeError> ChangeAsync(Func<Task<TenantTreeError>> change, CancellationToken cancellationToken)
-    {
-        var attempt = 0;
-        return db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
-        {
-            if (attempt++ > 0)
-                db.ChangeTracker.Clear();
-            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-            await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({LockKey})", cancellationToken);
-
-            var error = await change();
-            if (error != TenantTreeError.None)
-            {
-                // Nothing the refused change tracked may be saved later in the request.
-                db.ChangeTracker.Clear();
-                return error;
-            }
-
-            await db.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            return TenantTreeError.None;
-        });
-    }
+    // A refused change leaves nothing tracked, so nothing it tracked is saved later in the request.
+    private Task<TenantTreeError> ChangeAsync(Func<Task<TenantTreeError>> change, CancellationToken cancellationToken) =>
+        db.InLockedTransactionAsync(LockKey, change, error => error == TenantTreeError.None, cancellationToken);
 }

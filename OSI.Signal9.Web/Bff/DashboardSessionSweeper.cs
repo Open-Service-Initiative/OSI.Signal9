@@ -1,3 +1,5 @@
+using OSI.Signal9.Server.Hosting;
+
 namespace OSI.Signal9.Web.Bff;
 
 /// <summary>
@@ -6,26 +8,14 @@ namespace OSI.Signal9.Web.Bff;
 /// session, or claims its retry, revokes it.
 /// </summary>
 public sealed class DashboardSessionSweeper(IServiceScopeFactory scopes, TimeProvider time,
-    ILogger<DashboardSessionSweeper> logger) : BackgroundService
+    ILogger<DashboardSessionSweeper> logger) : PeriodicJob(Interval, scopes, time, logger)
 {
     public static readonly TimeSpan Interval = TimeSpan.FromMinutes(1);
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task RunAsync(IServiceProvider services, CancellationToken cancellationToken)
     {
-        using var timer = new PeriodicTimer(Interval, time);
-        while (await timer.WaitForNextTickAsync(stoppingToken))
-        {
-            try
-            {
-                await using var scope = scopes.CreateAsyncScope();
-                var sessions = scope.ServiceProvider.GetRequiredService<DashboardSessions>();
-                await sessions.EndExpiredAsync(stoppingToken);
-                await sessions.RetryRevocationsAsync(stoppingToken);
-            }
-            catch (Exception exception) when (!stoppingToken.IsCancellationRequested)
-            {
-                logger.LogWarning(exception, "Sweeping dashboard sessions failed; the next sweep tries again.");
-            }
-        }
+        var sessions = services.GetRequiredService<DashboardSessions>();
+        await sessions.EndExpiredAsync(cancellationToken);
+        await sessions.RetryRevocationsAsync(cancellationToken);
     }
 }

@@ -29,7 +29,7 @@ public sealed class DevicesController(
     CallerAudit audit,
     DashboardEvents dashboard,
     IOpenIddictApplicationManager applications,
-    AgentHubConnections hubConnections) : ControllerBase
+    HubConnections<AgentHub> hubConnections) : ControllerBase
 {
     /// <summary>Lists devices across tenants, with optional filters.</summary>
     [RequireScope(Scopes.Devices.Read)]
@@ -136,21 +136,9 @@ public sealed class DevicesController(
     public async Task<ActionResult<DeviceDto>> Transfer(Guid deviceId, TransferDeviceRequest request, CancellationToken cancellationToken)
     {
         // Under the tenant tree's lock, so neither a tree change nor another transfer can alter the destination's root
-        // tree between the hardware check and the move. Inside the execution strategy, as every explicit transaction is.
-        var attempt = 0;
-        var result = await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
-        {
-            if (attempt++ > 0)
-                db.ChangeTracker.Clear();
-            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-            await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({TenantTree.LockKey})", cancellationToken);
-            var (refused, device, from) = await MoveAsync(deviceId, request.TenantId!.Value, cancellationToken);
-            if (refused is not null)
-                return (refused, device, from);
-            await db.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            return (refused, device, from);
-        });
+        // tree between the hardware check and the move.
+        var result = await db.InLockedTransactionAsync(TenantTree.LockKey,
+            () => MoveAsync(deviceId, request.TenantId!.Value, cancellationToken), outcome => outcome.refused is null, cancellationToken);
         if (result.refused is not null)
             return result.refused;
 

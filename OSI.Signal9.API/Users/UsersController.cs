@@ -105,10 +105,8 @@ public sealed class UsersController(
     [ProducesResponseType(StatusCodes.Status412PreconditionFailed)]
     [ProducesResponseType(StatusCodes.Status415UnsupportedMediaType)]
     public Task<ActionResult<UserDto>> Update(Guid userId, [FromBody] JsonElement patch, CancellationToken cancellationToken) =>
-        db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        db.InTransactionAsync(async () =>
         {
-            db.ChangeTracker.Clear();
-            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
             var user = await db.Users.SingleOrDefaultAsync(u => u.Id == userId, cancellationToken);
             if (user is null)
                 return (ActionResult<UserDto>)NotFound();
@@ -139,12 +137,12 @@ public sealed class UsersController(
             {
                 user.DisplayName = request.DisplayName;
                 audit.Record(UserEntry(AuditActions.UserUpdated, user));
+                // Saved here, so the ETag and the representation carry the new version.
                 await db.SaveChangesAsync(cancellationToken);
             }
-            await transaction.CommitAsync(cancellationToken);
             this.SetETag(user.ETag());
-            return user.ToDto();
-        });
+            return (ActionResult<UserDto>)user.ToDto();
+        }, edited => edited.Value is not null, cancellationToken);
 
     /// <summary>
     /// Whether the caller may edit the user: they hold no role assignments, or the caller can assign roles at every
