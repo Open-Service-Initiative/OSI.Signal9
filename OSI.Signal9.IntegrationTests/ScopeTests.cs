@@ -229,7 +229,8 @@ public sealed class ScopeTests : IDisposable
         var commands = $"api/v1/devices/{agent.DeviceId}/commands";
         using var commandsOnly = await _factory.CreateClientAsync("commands.execute");
         using var terminalOnly = await _factory.CreateClientAsync("terminal.execute");
-        using var both = await _factory.CreateClientAsync("commands.execute", "terminal.execute");
+        // Running code also needs a person's recent MFA (RecentMfaTests).
+        using var both = await _factory.CreatePersonClientAsync(_factory.Superadministrator(), "commands.execute", "terminal.execute");
 
         var predefined = await commandsOnly.PostAsJsonAsync(commands, new CreateCommandRequest { Type = CommandType.RestartService }, Signal9Json.Options, Ct);
         var scriptWithoutTerminal = await commandsOnly.PostAsJsonAsync(commands, new CreateCommandRequest { Type = CommandType.RunScript }, Signal9Json.Options, Ct);

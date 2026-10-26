@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.OpenApi;
 using OpenIddict.Abstractions;
@@ -41,6 +42,18 @@ public sealed class RequireRecentMfaAttribute : Attribute, IAuthorizationRequire
 }
 
 /// <summary>
+/// Documents that an action needs a recent MFA only for some requests (<paramref name="when"/>), which it checks itself
+/// with <see cref="RecentMfa.RequireAsync"/>, by the same rule as <see cref="RequireRecentMfaAttribute"/>.
+/// </summary>
+[AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
+public sealed class RequiresRecentMfaWhenAttribute(string when) : Attribute, IDocumentedRequirement
+{
+    public string Name => "recent-mfa";
+
+    public string Description => $"{when}: {new RequireRecentMfaAttribute().Description}";
+}
+
+/// <summary>
 /// Succeeds for a person whose token says they performed MFA (<c>amr</c>) at most 15 minutes ago (<c>auth_time</c>).
 /// An API application acting as itself has no person to step up; it succeeds only when its live grant holds the
 /// endpoint's MFA-gated scope, which an Administrator can grant only with a recent MFA, and it doesn't authenticate with
@@ -52,23 +65,11 @@ internal sealed class RequireRecentMfaHandler(TimeProvider time) : Authorization
     {
         if (RecentMfa.IsPerson(context.User)
             ? RecentMfa.IsRecent(context.User, time)
-            : context.Resource is HttpContext http && await ApplicationGrantedAsync(http))
+            : context.Resource is HttpContext http && await RecentMfa.ApplicationGrantedAsync(http,
+                http.GetEndpoint()?.Metadata.GetOrderedMetadata<RequireScopeAttribute>().SelectMany(r => r.Scopes) ?? []))
         {
             context.Succeed(requirement);
         }
-    }
-
-    private static async Task<bool> ApplicationGrantedAsync(HttpContext http)
-    {
-        var services = http.RequestServices;
-        var access = services.GetRequiredService<CallerAccess>();
-        await access.LoadAsync(services.GetRequiredService<Server.Data.Signal9DbContext>(), http.User, http.RequestAborted);
-        if (access.Application is not { } application
-            || application.TokenEndpointAuthMethod == Contracts.ApiApplications.TokenEndpointAuthMethods.ClientSecret)
-            return false;
-        var required = http.GetEndpoint()?.Metadata.GetOrderedMetadata<RequireScopeAttribute>().SelectMany(r => r.Scopes) ?? [];
-        return required.Any(scope => Server.Identity.Scopes.RequiringRecentMfa.Contains(scope) && application.Scopes.Contains(scope)
-            && http.User.HasScope(scope));
     }
 }
 
@@ -90,6 +91,43 @@ internal static class RecentMfa
     public static bool IsPerson(ClaimsPrincipal caller) => PersonSubject.TryParse(caller, out _, out _);
 
     /// <summary>
+    /// Whether an application acting as itself may use one of <paramref name="required"/>'s MFA-gated scopes: its live
+    /// grant holds it, which an Administrator can grant only with a recent MFA, and it doesn't authenticate with a client
+    /// secret (#63, #124).
+    /// </summary>
+    public static async Task<bool> ApplicationGrantedAsync(HttpContext http, IEnumerable<string> required)
+    {
+        var services = http.RequestServices;
+        var access = services.GetRequiredService<CallerAccess>();
+        await access.LoadAsync(services.GetRequiredService<Server.Data.Signal9DbContext>(), http.User, http.RequestAborted);
+        if (access.Application is not { } application
+            || application.TokenEndpointAuthMethod == Contracts.ApiApplications.TokenEndpointAuthMethods.ClientSecret)
+            return false;
+        return required.Any(scope => Server.Identity.Scopes.RequiringRecentMfa.Contains(scope) && application.Scopes.Contains(scope)
+            && http.User.HasScope(scope));
+    }
+
+    /// <summary>
+    /// <see cref="RequireRecentMfaAttribute"/>'s rule, for an action that needs it only for some requests, using
+    /// <paramref name="scope"/>: <see langword="null"/> when it's met; otherwise the step-up challenge for a person, or a
+    /// plain 403 for an application acting as itself. Declare it with <see cref="RequiresRecentMfaWhenAttribute"/>.
+    /// </summary>
+    public static async Task<ActionResult?> RequireAsync(HttpContext http, string scope)
+    {
+        var time = http.RequestServices.GetRequiredService<TimeProvider>();
+        if (IsPerson(http.User))
+            return IsRecent(http.User, time) ? null : new StepUpResult();
+        return await ApplicationGrantedAsync(http, [scope])
+            ? null
+            : new ForbidResult(OpenIddict.Validation.AspNetCore.OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
+    }
+
+    private sealed class StepUpResult : ActionResult
+    {
+        public override Task ExecuteResultAsync(ActionContext context) => ChallengeAsync(context.HttpContext);
+    }
+
+    /// <summary>
     /// Answers 401 with <c>WWW-Authenticate: Bearer error="insufficient_user_authentication", max_age=900</c> and a
     /// problem details body.
     /// </summary>
@@ -109,7 +147,8 @@ internal sealed class RecentMfaResponses : IOpenApiOperationTransformer
     public Task TransformAsync(OpenApiOperation operation, OpenApiOperationTransformerContext context,
         CancellationToken cancellationToken)
     {
-        if (!context.Description.ActionDescriptor.EndpointMetadata.OfType<RequireRecentMfaAttribute>().Any())
+        var metadata = context.Description.ActionDescriptor.EndpointMetadata;
+        if (!metadata.OfType<RequireRecentMfaAttribute>().Any() && !metadata.OfType<RequiresRecentMfaWhenAttribute>().Any())
             return Task.CompletedTask;
 
         operation.Responses ??= new OpenApiResponses();

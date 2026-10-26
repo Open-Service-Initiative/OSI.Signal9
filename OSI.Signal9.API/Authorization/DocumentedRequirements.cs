@@ -8,7 +8,8 @@ namespace OSI.Signal9.API.Authorization;
 /// <summary>
 /// An authorization requirement beyond scopes that the OpenAPI document shows on every operation needing it (story 65),
 /// such as <c>[RequireRecentMfa]</c> (#120) and <see cref="RequireAncestorAdministratorAttribute"/>. Implement it on the
-/// requirement an <see cref="IAuthorizationRequirementData"/> attribute returns, and the attribute is documented.
+/// requirement an <see cref="IAuthorizationRequirementData"/> attribute returns, and the attribute is documented; or on
+/// an attribute of its own when the action checks the requirement itself, only for some requests.
 /// </summary>
 public interface IDocumentedRequirement
 {
@@ -30,8 +31,10 @@ internal sealed class DocumentedRequirements : IOpenApiOperationTransformer
     public Task TransformAsync(OpenApiOperation operation, OpenApiOperationTransformerContext context,
         CancellationToken cancellationToken)
     {
-        var requirements = context.Description.ActionDescriptor.EndpointMetadata.OfType<IAuthorizationRequirementData>()
+        var metadata = context.Description.ActionDescriptor.EndpointMetadata;
+        var requirements = metadata.OfType<IAuthorizationRequirementData>()
             .SelectMany(data => data.GetRequirements()).OfType<IDocumentedRequirement>()
+            .Concat(metadata.OfType<IDocumentedRequirement>())
             .DistinctBy(requirement => requirement.Name).ToList();
         if (requirements.Count == 0)
             return Task.CompletedTask;

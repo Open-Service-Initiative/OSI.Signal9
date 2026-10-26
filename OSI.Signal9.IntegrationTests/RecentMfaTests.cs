@@ -4,6 +4,9 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.WebUtilities;
 using Npgsql;
+using OSI.Signal9.Contracts;
+using OSI.Signal9.Contracts.Commands;
+using OSI.Signal9.Contracts.Serialization;
 
 namespace OSI.Signal9.IntegrationTests;
 
@@ -231,6 +234,51 @@ public sealed class RecentMfaTests : IDisposable
 
         Assert.AreEqual(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.IsFalse(response.Headers.WwwAuthenticate.ToString().Contains("insufficient_user_authentication", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task Running_a_script_needs_a_recent_mfa_but_predefined_commands_dont()
+    {
+        using var fixture = _factory.CreateClient();
+        var tenant = await _factory.CreateTenantAsync(fixture, "Contoso");
+        using var agent = await _factory.EnrollAgentAsync(tenant.Id, "PC01");
+        var commands = $"api/v1/devices/{agent.DeviceId}/commands";
+        var script = new CreateCommandRequest { Type = CommandType.RunScript, Parameters = "Get-Date" };
+        using var stale = await _factory.CreatePersonClientAsync(
+            Superadministrator(authenticatedAt: _factory.Time.GetUtcNow().AddMinutes(-16)), "commands.execute", "terminal.execute");
+        using var recent = await _factory.CreatePersonClientAsync(
+            Superadministrator(authenticatedAt: _factory.Time.GetUtcNow().AddMinutes(-1)), "commands.execute", "terminal.execute");
+        using var application = await _factory.CreateClientAsync("commands.execute", "terminal.execute");
+
+        var staleScript = await stale.PostAsJsonAsync(commands, script, Signal9Json.Options, Ct);
+        var predefined = await stale.PostAsJsonAsync(commands,
+            new CreateCommandRequest { Type = CommandType.RestartService }, Signal9Json.Options, Ct);
+        var recentScript = await recent.PostAsJsonAsync(commands, script, Signal9Json.Options, Ct);
+        var applicationScript = await application.PostAsJsonAsync(commands, script, Signal9Json.Options, Ct);
+
+        AssertStepUpChallenge(staleScript);
+        Assert.AreEqual(HttpStatusCode.Created, predefined.StatusCode, await predefined.Content.ReadAsStringAsync(Ct));
+        Assert.AreEqual(HttpStatusCode.Created, recentScript.StatusCode, await recentScript.Content.ReadAsStringAsync(Ct));
+        // An application acting as itself without an MFA-approved grant of terminal.execute fails closed.
+        Assert.AreEqual(HttpStatusCode.Forbidden, applicationScript.StatusCode);
+        Assert.IsFalse(applicationScript.Headers.WwwAuthenticate.ToString().Contains("insufficient_user_authentication", StringComparison.Ordinal));
+        var queued = await fixture.GetFromJsonAsync<PagedResult<CommandDto>>(commands, Signal9Json.Options, Ct);
+        Assert.AreEqual(1, queued!.Items.Count(c => c.Type == CommandType.RunScript));
+    }
+
+    [TestMethod]
+    public async Task The_api_reference_shows_that_running_a_script_needs_a_recent_mfa()
+    {
+        using var client = _factory.CreateAnonymousClient();
+        var document = await client.GetFromJsonAsync<JsonElement>("docs/openapi/v1.json", Ct);
+
+        var create = document.GetProperty("paths").GetProperty("/api/v1/devices/{deviceId}/commands").GetProperty("post");
+        var requirement = create.GetProperty("x-signal9-requirements").EnumerateArray()
+            .Single(r => r.GetProperty("name").GetString() == "recent-mfa");
+        StringAssert.Contains(requirement.GetProperty("description").GetString(), "RunScript");
+        StringAssert.Contains(create.GetProperty("description").GetString(), "15 minutes");
+        StringAssert.Contains(create.GetProperty("responses").GetProperty("401").GetProperty("description").GetString(),
+            "insufficient_user_authentication");
     }
 
     [TestMethod]

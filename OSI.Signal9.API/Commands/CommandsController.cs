@@ -72,6 +72,7 @@ public sealed class CommandsController(
     /// </summary>
     [RequireScope(Scopes.Commands.Execute)]
     [EndpointDescription($"{nameof(CommandType.RunScript)} runs ad-hoc code, so it also requires {Scopes.Terminal.Execute}.")]
+    [RequiresRecentMfaWhen($"For `{nameof(CommandType.RunScript)}`")]
     [HttpPost]
     [OptimisticConcurrency]
     [Consumes("application/json")]
@@ -90,6 +91,9 @@ public sealed class CommandsController(
                 return InsufficientScope.Forbid(Scopes.Terminal.Execute);
             // The role must grant it at the device's tenant too.
             access.Require(Scopes.Terminal.Execute);
+            // Running code needs a recent MFA from a person (ADR-0010).
+            if (await RecentMfa.RequireAsync(HttpContext, Scopes.Terminal.Execute) is { } stepUp)
+                return stepUp;
         }
 
         var device = await db.Devices.AsNoTracking().Include(d => d.ActiveAgent)
