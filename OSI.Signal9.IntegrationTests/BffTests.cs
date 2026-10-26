@@ -235,6 +235,19 @@ public sealed partial class BffTests : IDisposable
         Assert.AreEqual(HttpStatusCode.Unauthorized, user.StatusCode);
         Assert.AreEqual(HttpStatusCode.Unauthorized, tenants.StatusCode);
         Assert.IsEmpty(_factory.Web.ApiRequests);
+        AssertSignInChallenge(user);
+        AssertSignInChallenge(tenants);
+    }
+
+    /// <summary>
+    /// A 401 MUST carry a challenge (RFC 9110 §15.5.2). web's names its session cookie scheme and where to sign in.
+    /// </summary>
+    internal static void AssertSignInChallenge(HttpResponseMessage response)
+    {
+        var challenge = response.Headers.WwwAuthenticate.SingleOrDefault();
+        Assert.IsNotNull(challenge, "web answered 401 without a WWW-Authenticate challenge.");
+        Assert.AreEqual("Cookie", challenge.Scheme);
+        Assert.AreEqual("realm=\"signal9\", login=\"/bff/login\"", challenge.Parameter);
     }
 
     [TestMethod]

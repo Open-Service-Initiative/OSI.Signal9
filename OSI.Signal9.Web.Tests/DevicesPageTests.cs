@@ -62,7 +62,7 @@ public sealed class DevicesPageTests : DashboardTestContext
         Http.Respond = request => request.RequestUri!.AbsolutePath switch
         {
             "/bff/user" when signedIn => FakeHttp.Json(HttpStatusCode.OK, new Contracts.Bff.BffUser("s", "Ada")),
-            _ => new HttpResponseMessage(HttpStatusCode.Unauthorized),
+            _ => FakeHttp.NoSession(),
         };
         var app = RenderApp("/");
         signedIn = false;

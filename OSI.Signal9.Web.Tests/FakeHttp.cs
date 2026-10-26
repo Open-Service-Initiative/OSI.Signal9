@@ -27,7 +27,15 @@ internal sealed class FakeHttp : HttpMessageHandler
             : api?.Invoke(request) ?? new HttpResponseMessage(HttpStatusCode.NotFound);
 
     public void SignedOut() =>
-        Respond = _ => new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        Respond = _ => NoSession();
+
+    /// <summary>web's 401 when the person has no session, or it ended, with its challenge.</summary>
+    public static HttpResponseMessage NoSession()
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        response.Headers.TryAddWithoutValidation("WWW-Authenticate", "Cookie realm=\"signal9\", login=\"/bff/login\"");
+        return response;
+    }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {

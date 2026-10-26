@@ -78,7 +78,7 @@ public sealed class InvitationsController(
     {
         if (!await db.Tenants.AnyAsync(t => t.Id == tenantId, cancellationToken))
             return NotFound();
-        if (this.Preconditions(current: null) is { } refused)
+        if (this.CollectionPreconditions() is { } refused)
             return refused;
         var role = await db.Roles.AsNoTracking().SingleOrDefaultAsync(r => r.Id == request.RoleId, cancellationToken);
         if (role is null)

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
+using OSI.Signal9.Contracts.Bff;
 using OSI.Signal9.Server.Identity;
 
 namespace OSI.Signal9.Web.Bff;
@@ -24,6 +25,20 @@ public static class BffAuthentication
     /// with Path=/ and no Domain, from web itself.
     /// </summary>
     public const string CookieName = "__Host-Http-signal9";
+
+    /// <summary>
+    /// web's challenge on every 401 (RFC 9110 §15.5.2 requires one): its session cookie scheme, and where to sign in.
+    /// The scheme and realm follow the syntax of RFC 9110 §11.3; <c>Cookie</c> is the name the cookie-based HTTP
+    /// authentication draft (draft-broyer-http-cookie-auth) used. It is unregistered, so only the dashboard acts on it.
+    /// </summary>
+    public const string Challenge = $"Cookie realm=\"signal9\", login=\"/{BffRoutes.Login}\"";
+
+    /// <summary>Answers 401 with <see cref="Challenge"/>: the person has no session, or it has ended.</summary>
+    public static void Unauthorized(HttpResponse response)
+    {
+        response.StatusCode = StatusCodes.Status401Unauthorized;
+        response.Headers.WWWAuthenticate = Challenge;
+    }
 
     public static WebApplicationBuilder AddSignal9Bff(this WebApplicationBuilder builder)
     {
@@ -49,7 +64,7 @@ public static class BffAuthentication
                     // The dashboard calls web with fetch, so a missing session is a status code, never a redirect.
                     OnRedirectToLogin = context =>
                     {
-                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        Unauthorized(context.Response);
                         return Task.CompletedTask;
                     },
                     OnRedirectToAccessDenied = context =>

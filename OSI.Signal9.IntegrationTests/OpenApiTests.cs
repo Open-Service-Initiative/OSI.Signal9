@@ -106,6 +106,22 @@ public sealed class OpenApiTests : IDisposable
             Assert.IsFalse(schemas[schema].Properties!.ContainsKey(property), $"{schema}.{property}");
     }
 
+    [TestMethod]
+    public async Task Enums_are_documented_as_the_strings_the_api_sends()
+    {
+        // Fetched as a client would, from a host with its database (its first request loads the stored keys).
+        using var host = new Signal9ApiFactory();
+        using var client = host.CreateAnonymousClient();
+        var document = await client.GetFromJsonAsync<JsonElement>("docs/openapi/v1.json", TestContext.CancellationToken);
+
+        var commandType = document.GetProperty("components").GetProperty("schemas").GetProperty("CommandType");
+        Assert.IsTrue(commandType.TryGetProperty("enum", out var values), commandType.ToString());
+        Assert.IsTrue(values.EnumerateArray().All(v => v.ValueKind == JsonValueKind.String), commandType.ToString());
+        CollectionAssert.Contains(values.EnumerateArray().Select(v => v.GetString()).ToList(), "CollectSystemInfo");
+        if (commandType.TryGetProperty("type", out var type))
+            Assert.AreEqual("string", type.GetString(), commandType.ToString());
+    }
+
     private Task<OpenApiDocument> DocumentAsync() =>
         _factory.Services.GetRequiredKeyedService<IOpenApiDocumentProvider>("v1").GetOpenApiDocumentAsync(TestContext.CancellationToken);
 

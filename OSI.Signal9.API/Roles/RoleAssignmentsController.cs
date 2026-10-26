@@ -71,7 +71,7 @@ public sealed class RoleAssignmentsController(
     {
         if (!await db.Tenants.AnyAsync(t => t.Id == tenantId, cancellationToken))
             return NotFound();
-        if (this.Preconditions(current: null) is { } refused)
+        if (this.CollectionPreconditions() is { } refused)
             return refused;
         if (!await db.Users.AnyAsync(u => u.Id == request.UserId, cancellationToken))
             ModelState.AddModelError(nameof(request.UserId), "User does not exist.");

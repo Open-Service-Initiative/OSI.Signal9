@@ -83,7 +83,7 @@ public sealed class TelemetryController(
         var (agent, refusal) = await db.FindActiveAgentAsync(this, agentId, cancellationToken);
         if (agent is null)
             return (ActionResult)refusal!;
-        if (this.Preconditions(current: null) is { } refused)
+        if (this.CollectionPreconditions() is { } refused)
             return refused;
         if (agent.Device is not { } device)
             return Problem(statusCode: StatusCodes.Status409Conflict, title: "Awaiting identification",

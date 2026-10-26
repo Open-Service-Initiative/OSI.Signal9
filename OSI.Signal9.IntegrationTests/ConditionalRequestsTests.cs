@@ -169,14 +169,43 @@ public sealed class ConditionalRequestsTests : IDisposable
         Assert.AreEqual(HttpStatusCode.BadRequest, ifNoneMatch.StatusCode);
     }
 
+    // A create's preconditions apply to the request target, the collection, not to the child it hasn't allocated yet
+    // (RFC 9110 §13.1: preconditions are evaluated against "the target resource"; §9.3.3: POST asks the target to
+    // process the enclosed content). The collection exists, so `If-Match: *` is true and `If-None-Match: *` is false
+    // (§13.1.1, §13.1.2). Collections carry no entity tag, so a listed tag never matches: If-Match with tags fails and
+    // If-None-Match with tags passes.
     [TestMethod]
-    public async Task If_match_on_a_create_fails_because_the_new_resource_has_no_current_representation()
+    public async Task Create_preconditions_are_evaluated_against_the_collection()
     {
-        var response = await SendAsync(HttpMethod.Post, "api/v1/tenants", ifMatch: "*",
-            content: JsonContent.Create(new CreateTenantRequest { Name = "Contoso", ContactEmail = "it@contoso.example" }, options: Signal9Json.Options));
+        var anyMatch = await SendAsync(HttpMethod.Post, "api/v1/tenants", ifMatch: "*", content: NewTenant("Contoso"));
+        var anyNoneMatch = await SendAsync(HttpMethod.Post, "api/v1/tenants", ifNoneMatch: "*", content: NewTenant("Fabrikam"));
+        var tagMatch = await SendAsync(HttpMethod.Post, "api/v1/tenants", ifMatch: "\"tag\"", content: NewTenant("Northwind"));
+        var tagNoneMatch = await SendAsync(HttpMethod.Post, "api/v1/tenants", ifNoneMatch: "\"tag\"", content: NewTenant("Tailspin"));
 
-        await AssertPreconditionFailedAsync(response);
+        Assert.AreEqual(HttpStatusCode.Created, anyMatch.StatusCode);
+        await AssertPreconditionFailedAsync(anyNoneMatch);
+        await AssertPreconditionFailedAsync(tagMatch);
+        Assert.AreEqual(HttpStatusCode.Created, tagNoneMatch.StatusCode);
     }
+
+    [TestMethod]
+    public async Task Create_preconditions_in_a_nested_collection_are_evaluated_against_that_collection()
+    {
+        var agent = await RegisterAsync("PC01");
+        var url = $"api/v1/devices/{agent.DeviceId}/commands";
+
+        var anyMatch = await SendAsync(HttpMethod.Post, url, ifMatch: "*", content: NewCommand());
+        var anyNoneMatch = await SendAsync(HttpMethod.Post, url, ifNoneMatch: "*", content: NewCommand());
+
+        Assert.AreEqual(HttpStatusCode.Created, anyMatch.StatusCode);
+        await AssertPreconditionFailedAsync(anyNoneMatch);
+    }
+
+    private static JsonContent NewTenant(string name) =>
+        JsonContent.Create(new CreateTenantRequest { Name = name, ContactEmail = "it@contoso.example" }, options: Signal9Json.Options);
+
+    private static JsonContent NewCommand() =>
+        JsonContent.Create(new CreateCommandRequest { Type = CommandType.CollectSystemInfo }, options: Signal9Json.Options);
 
     // Devices
 

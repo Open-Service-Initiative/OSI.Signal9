@@ -97,7 +97,7 @@ public sealed class ApiApplicationsController(
     {
         if (!await db.Tenants.AnyAsync(t => t.Id == tenantId, cancellationToken))
             return NotFound();
-        if (this.Preconditions(current: null) is { } refused)
+        if (this.CollectionPreconditions() is { } refused)
             return refused;
         ValidateSubject(request.TokenEndpointAuthMethod, request.TlsClientAuthSubject);
         ValidateKind(request.Kind, request.RoleId, request.RedirectUris, request.RequirePkce, request.RequireNonce);
@@ -327,7 +327,7 @@ public sealed class ApiApplicationsController(
     {
         if (await FindAsync(tenantId, apiApplicationId, tracking: false, cancellationToken) is not { } application)
             return NotFound();
-        if (this.Preconditions(current: null) is { } refused)
+        if (this.CollectionPreconditions() is { } refused)
             return refused;
         // A credential lets its holder act as the application, so only someone at least as powerful may add one.
         if (await BeyondCallerAsync(application, cancellationToken) is { } beyondCaller)

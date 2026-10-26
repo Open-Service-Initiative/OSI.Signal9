@@ -38,6 +38,8 @@ builder.Services.AddScoped<CallerAudit>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(options => Signal9Json.Configure(options.JsonSerializerOptions));
+// The OpenAPI document describes schemas with these options, so enums are documented as the strings the API sends.
+builder.Services.ConfigureHttpJsonOptions(options => Signal9Json.Configure(options.SerializerOptions));
 builder.Services.AddExceptionHandler<ConcurrencyConflictHandler>();
 var identity = builder.Configuration.GetIdentityOptions();
 // Invitation links point at auth, the issuer's host (#121).
@@ -50,7 +52,7 @@ builder.Services.AddOpenApi(options => options
         document.Servers = [new OpenApiServer { Url = "/" }];
         return Task.CompletedTask;
     })
-    .AddScopes(identity.Issuer)
+    .AddScopes(identity)
     .AddOperationTransformer<DocumentedRequirements>()
     .AddOperationTransformer<RecentMfaResponses>()
     .AddOperationTransformer<AgentVersionOperationTransformer>()

@@ -480,7 +480,7 @@ public sealed class AgentsController(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<AgentDto>> Enroll(EnrollAgentRequest request, CancellationToken cancellationToken)
     {
-        if (this.Preconditions(current: null) is { } refused)
+        if (this.CollectionPreconditions() is { } refused)
             return refused;
 
         var secretHash = EnrollmentSecret.Hash(request.EnrollmentToken);

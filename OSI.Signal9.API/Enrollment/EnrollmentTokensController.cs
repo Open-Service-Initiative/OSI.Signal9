@@ -72,7 +72,7 @@ public sealed class EnrollmentTokensController(Signal9DbContext db, CallerAudit 
     {
         if (!await db.Tenants.AnyAsync(t => t.Id == tenantId, cancellationToken))
             return NotFound();
-        if (this.Preconditions(current: null) is { } refused)
+        if (this.CollectionPreconditions() is { } refused)
             return refused;
         var now = Now;
         if (request.ExpiresAt is { } expiresAt && expiresAt.UtcDateTime <= now)

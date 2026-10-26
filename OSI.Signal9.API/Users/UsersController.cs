@@ -60,7 +60,7 @@ public sealed class UsersController(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<UserDto>> Create(CreateUserRequest request, CancellationToken cancellationToken)
     {
-        if (this.Preconditions(current: null) is { } refused)
+        if (this.CollectionPreconditions() is { } refused)
             return refused;
         // A tenant outside the caller's reach is treated as missing, so nothing is learned about it.
         if (!await db.Tenants.AnyAsync(t => t.Id == request.TenantId, cancellationToken))

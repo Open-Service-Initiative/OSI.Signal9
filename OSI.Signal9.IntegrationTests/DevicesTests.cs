@@ -231,6 +231,55 @@ public sealed class DevicesTests : IDisposable
         Assert.AreEqual(HttpStatusCode.NotFound, unknown.StatusCode);
     }
 
+    // PUT is idempotent (RFC 9110 §9.2.2): an agent that lost the response resends the same result and must be able to
+    // tell that it landed. If-Match may then be stale; RFC 9110 §13.1.1 lets a change already applied answer 2xx.
+    [TestMethod]
+    public async Task Resending_the_same_command_result_returns_200_with_the_current_representation()
+    {
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
+        using var agent = await RegisterAsync(tenant.Id, "PC01");
+        var command = await QueueCommandAsync(agent.DeviceId);
+        var url = $"api/v1/devices/{agent.DeviceId}/commands/{command.Id}/result";
+        var report = new CommandResultRequest { Succeeded = false, Output = "partial", Error = "Access denied" };
+        var pendingETag = (await _client.GetAsync($"api/v1/devices/{agent.DeviceId}/commands/{command.Id}", Ct)).Headers.ETag!;
+
+        var first = await agent.Client.PutAsJsonAsync(url, report, Signal9Json.Options, Ct);
+        _factory.Time.Advance(TimeSpan.FromMinutes(1));
+        var retry = await agent.Client.PutAsJsonAsync(url, report, Signal9Json.Options, Ct);
+        using var staleRetry = new HttpRequestMessage(HttpMethod.Put, url) { Content = JsonContent.Create(report, options: Signal9Json.Options) };
+        staleRetry.Headers.IfMatch.Add(pendingETag);
+        var staleRetried = await agent.Client.SendAsync(staleRetry, Ct);
+
+        Assert.AreEqual(HttpStatusCode.OK, first.StatusCode);
+        var original = await first.Content.ReadFromJsonAsync<CommandDto>(Signal9Json.Options, Ct);
+        foreach (var response in new[] { retry, staleRetried })
+        {
+            Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, await response.Content.ReadAsStringAsync(Ct));
+            var current = await response.Content.ReadFromJsonAsync<CommandDto>(Signal9Json.Options, Ct);
+            Assert.AreEqual(CommandStatus.Failed, current!.Status);
+            Assert.AreEqual(original!.CompletedAt, current.CompletedAt, "A retry must not record the result again.");
+            Assert.AreEqual(first.Headers.ETag, response.Headers.ETag);
+        }
+    }
+
+    [TestMethod]
+    public async Task A_different_result_for_a_finished_command_returns_409()
+    {
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
+        using var agent = await RegisterAsync(tenant.Id, "PC01");
+        var command = await QueueCommandAsync(agent.DeviceId);
+        var url = $"api/v1/devices/{agent.DeviceId}/commands/{command.Id}/result";
+
+        await agent.Client.PutAsJsonAsync(url, new CommandResultRequest { Succeeded = true, Output = "{}" }, Signal9Json.Options, Ct);
+        var failed = await agent.Client.PutAsJsonAsync(url, new CommandResultRequest { Succeeded = false, Output = "{}" }, Signal9Json.Options, Ct);
+        var otherOutput = await agent.Client.PutAsJsonAsync(url, new CommandResultRequest { Succeeded = true, Output = "{\"a\":1}" }, Signal9Json.Options, Ct);
+
+        Assert.AreEqual(HttpStatusCode.Conflict, failed.StatusCode);
+        Assert.AreEqual(HttpStatusCode.Conflict, otherOutput.StatusCode);
+        var stored = await _client.GetFromJsonAsync<CommandDto>($"api/v1/devices/{agent.DeviceId}/commands/{command.Id}", Signal9Json.Options, Ct);
+        Assert.AreEqual(CommandStatus.Completed, stored!.Status);
+    }
+
     private Task<HttpResponseMessage> PatchAsync(Guid deviceId, string mergePatch) =>
         _client.PatchAsync($"api/v1/devices/{deviceId}",
             new StringContent(mergePatch, System.Text.Encoding.UTF8, "application/merge-patch+json"), Ct);

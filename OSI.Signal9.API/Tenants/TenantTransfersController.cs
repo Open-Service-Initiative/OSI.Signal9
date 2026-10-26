@@ -101,7 +101,7 @@ public sealed class TenantTransfersController(
         var tenant = await db.Tenants.AsNoTracking().SingleOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
         if (tenant is null)
             return NotFound();
-        if (this.Preconditions(current: null) is { } refused)
+        if (this.CollectionPreconditions() is { } refused)
             return refused;
 
         var toParentId = request.ToParentTenantId!.Value;

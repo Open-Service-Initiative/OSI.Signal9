@@ -314,6 +314,8 @@ public sealed class SessionRefreshTests : IDisposable
 
         Assert.AreEqual(HttpStatusCode.Unauthorized, tenants.StatusCode);
         Assert.AreEqual(HttpStatusCode.Unauthorized, me.StatusCode);
+        BffTests.AssertSignInChallenge(tenants);
+        BffTests.AssertSignInChallenge(me);
         Assert.IsEmpty(browser.WebCookies, "web left the ended session's cookie in the browser.");
     }
 

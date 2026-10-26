@@ -75,7 +75,7 @@ public sealed class TenantsController(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TenantDto>> Create(CreateTenantRequest request, CancellationToken cancellationToken)
     {
-        if (this.Preconditions(current: null) is { } refused)
+        if (this.CollectionPreconditions() is { } refused)
             return refused;
         if (request.ParentTenantId is null && !caller.IsSuperadministrator)
             return Problem(statusCode: StatusCodes.Status403Forbidden, title: "Superadministrator required",

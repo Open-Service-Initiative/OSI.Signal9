@@ -101,7 +101,7 @@ public sealed class CommandsController(
             .SingleOrDefaultAsync(d => d.Id == deviceId, cancellationToken);
         if (device is null)
             return NotFound();
-        if (this.Preconditions(current: null) is { } refused)
+        if (this.CollectionPreconditions() is { } refused)
             return refused;
 
         var command = new Command
@@ -128,9 +128,10 @@ public sealed class CommandsController(
     }
 
     /// <summary>
-    /// Records the outcome of a command. Sent once, when it finishes, by the agent the access token names, which must be
+    /// Records the outcome of a command. Sent when it finishes, by the agent the access token names, which must be
     /// the active agent of the command's device; any other agent gets 404. An agent awaiting approval receives no work,
-    /// so it can't report any (409).
+    /// so it can't report any (409). Resending the same result is idempotent (RFC 9110 §9.2.2): 200 with the command as
+    /// it is, even with a now-stale <c>If-Match</c> (§13.1.1); a different result, or one for a cancelled command, is 409.
     /// </summary>
     [RequireScope(Scopes.Agent)]
     [AgentEndpoint]
@@ -155,7 +156,9 @@ public sealed class CommandsController(
             command.Status = request.Succeeded ? CommandStatus.Completed : CommandStatus.Failed;
             command.Output = request.Output;
             command.Error = request.Error;
-        }, onlyAgent: agentId);
+        }, onlyAgent: agentId, applied: command =>
+            command.Status == (request.Succeeded ? CommandStatus.Completed : CommandStatus.Failed)
+            && command.Output == request.Output && command.Error == request.Error);
     }
 
     /// <summary>Cancels a pending command. Commands that already finished can't be cancelled (409).</summary>
@@ -173,9 +176,11 @@ public sealed class CommandsController(
         });
 
     /// <param name="onlyAgent">If given, the agent that must be the device's active agent; for any other, 404.</param>
+    /// <param name="applied">If given, whether a finished command already holds what this request would set: a retry,
+    /// answered with the command as it is.</param>
     private async Task<ActionResult<CommandDto>> CompleteAsync(
         Guid deviceId, Guid commandId, TenantScopeBypass? bypass, CancellationToken cancellationToken,
-        Action<Command, Device> complete, Guid? onlyAgent = null)
+        Action<Command, Device> complete, Guid? onlyAgent = null, Func<Command, bool>? applied = null)
     {
         IQueryable<Command> commands = db.Commands;
         IQueryable<Device> devices = db.Devices.AsNoTracking().Include(d => d.ActiveAgent);
@@ -193,6 +198,13 @@ public sealed class CommandsController(
         if (onlyAgent is not null && device.ActiveAgent!.Status() != Contracts.Agents.AgentStatus.Active)
             return Problem(statusCode: StatusCodes.Status409Conflict, title: "Agent awaiting approval",
                 detail: "The agent receives no work until a person approves it.");
+        if (command.Status != CommandStatus.Pending && applied?.Invoke(command) == true)
+        {
+            if (this.AppliedPreconditions(command.ETag()) is { } refusedRetry)
+                return refusedRetry;
+            this.SetETag(command.ETag());
+            return command.ToDto();
+        }
         if (this.Preconditions(command.ETag()) is { } refused)
             return refused;
         if (command.Status != CommandStatus.Pending)

@@ -75,10 +75,30 @@ internal static class ConditionalRequests
     /// Evaluates <c>If-Match</c> and <c>If-None-Match</c> (RFC 9110 §13.2.2) against the target resource's
     /// current entity tag. Call it once the target is known to exist (a missing one is a plain 404) and before acting.
     /// </summary>
-    /// <param name="current">The current representation's entity tag, or null when the target has none
-    /// (a collection being created in, or a write-only sub-resource).</param>
+    /// <param name="current">The current representation's entity tag, or null when the target has no current
+    /// representation (a write-only sub-resource such as the heartbeat).</param>
     /// <returns>The response to send instead (400 for an unparsable header, 304 or 412), or null to go ahead.</returns>
-    public static ActionResult? Preconditions(this ControllerBase controller, EntityTagHeaderValue? current)
+    public static ActionResult? Preconditions(this ControllerBase controller, EntityTagHeaderValue? current) =>
+        controller.Evaluate(exists: current is not null, current);
+
+    /// <summary>
+    /// Evaluates a create's preconditions against its request target, the collection (RFC 9110 §13.1), not the child
+    /// it hasn't allocated yet. The collection exists but carries no entity tag: <c>If-Match: *</c> passes and
+    /// <c>If-None-Match: *</c> fails (412), while a list of tags never matches.
+    /// </summary>
+    public static ActionResult? CollectionPreconditions(this ControllerBase controller) =>
+        controller.Evaluate(exists: true, current: null);
+
+    /// <summary>
+    /// Evaluates the preconditions of a request whose change the target already holds, such as a retried PUT whose
+    /// response was lost. An <c>If-Match</c> that no longer matches may then be answered 2xx (RFC 9110 §13.1.1), so
+    /// only a malformed one refuses; <c>If-None-Match</c> stays strict (§13.1.2).
+    /// </summary>
+    public static ActionResult? AppliedPreconditions(this ControllerBase controller, EntityTagHeaderValue current) =>
+        controller.Evaluate(exists: true, current, applied: true);
+
+    private static ActionResult? Evaluate(this ControllerBase controller, bool exists, EntityTagHeaderValue? current,
+        bool applied = false)
     {
         var request = controller.Request;
         controller.HttpContext.Items[EvaluatedKey] = true;
@@ -87,8 +107,10 @@ internal static class ConditionalRequests
         {
             if (!EntityTagHeaderValue.TryParseStrictList(request.Headers.IfMatch, out var ifMatch))
                 return Malformed(controller, HeaderNames.IfMatch);
-            var matches = current is not null && ifMatch.Any(tag => tag.Equals(EntityTagHeaderValue.Any) || tag.Compare(current, useStrongComparison: true));
-            if (!matches)
+            var matches = ifMatch.Any(tag => tag.Equals(EntityTagHeaderValue.Any)
+                ? exists
+                : current is not null && tag.Compare(current, useStrongComparison: true));
+            if (!matches && !applied)
                 return PreconditionFailed(controller);
         }
 
@@ -96,12 +118,14 @@ internal static class ConditionalRequests
         {
             if (!EntityTagHeaderValue.TryParseStrictList(request.Headers.IfNoneMatch, out var ifNoneMatch))
                 return Malformed(controller, HeaderNames.IfNoneMatch);
-            var matches = current is not null && ifNoneMatch.Any(tag => tag.Equals(EntityTagHeaderValue.Any) || tag.Compare(current, useStrongComparison: false));
+            var matches = ifNoneMatch.Any(tag => tag.Equals(EntityTagHeaderValue.Any)
+                ? exists
+                : current is not null && tag.Compare(current, useStrongComparison: false));
             if (matches)
             {
-                if (HttpMethods.IsGet(request.Method) || HttpMethods.IsHead(request.Method))
+                if ((HttpMethods.IsGet(request.Method) || HttpMethods.IsHead(request.Method)) && current is not null)
                 {
-                    controller.SetETag(current!);
+                    controller.SetETag(current);
                     return new StatusCodeResult(StatusCodes.Status304NotModified);
                 }
                 return PreconditionFailed(controller);

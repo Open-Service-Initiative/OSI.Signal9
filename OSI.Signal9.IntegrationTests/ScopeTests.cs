@@ -259,7 +259,7 @@ public sealed class ScopeTests : IDisposable
         var flow = scheme.GetProperty("flows").GetProperty("clientCredentials");
         Assert.AreEqual(Signal9AuthFactory.Issuer + "connect/token", flow.GetProperty("tokenUrl").GetString());
         var documented = flow.GetProperty("scopes").EnumerateObject().Select(p => p.Name).ToList();
-        CollectionAssert.IsSubsetOf(new[] { "tenants.read", "devices.write", "terminal.execute", "agent" }, documented);
+        CollectionAssert.IsSubsetOf(new[] { "tenants.read", "devices.write", "terminal.execute" }, documented);
 
         CollectionAssert.AreEqual(new[] { "tenants.read" }, ScopesOf(document, "/api/v1/tenants", "get"));
         CollectionAssert.AreEqual(new[] { "tenants.delete" }, ScopesOf(document, "/api/v1/tenants/{tenantId}", "delete"));
@@ -282,6 +282,46 @@ public sealed class ScopeTests : IDisposable
     }
 
     [TestMethod]
+    public async Task The_security_schemes_describe_each_way_to_get_a_token_with_the_scopes_it_can_grant()
+    {
+        using var api = _factory.CreateAnonymousClient();
+        var document = await api.GetFromJsonAsync<JsonElement>("docs/openapi/v1.json", Ct);
+        var schemes = document.GetProperty("components").GetProperty("securitySchemes");
+
+        // A person, through the dashboard or a delegated API application: authorization code, refreshable.
+        var flows = schemes.GetProperty("oauth2").GetProperty("flows");
+        var code = flows.GetProperty("authorizationCode");
+        Assert.AreEqual("https://auth.signal9.test/connect/authorize", code.GetProperty("authorizationUrl").GetString());
+        Assert.AreEqual("https://auth.signal9.test/connect/token", code.GetProperty("tokenUrl").GetString());
+        Assert.AreEqual("https://auth.signal9.test/connect/token", code.GetProperty("refreshUrl").GetString());
+        var codeScopes = ScopeNames(code);
+        CollectionAssert.IsSubsetOf(new[] { "openid", "profile", "offline_access", "devices.read", "terminal.execute" }, codeScopes);
+        CollectionAssert.DoesNotContain(codeScopes, "agent");
+
+        // An API application acting as itself: client credentials, without the scopes that need a person or an agent.
+        var credentials = ScopeNames(flows.GetProperty("clientCredentials"));
+        Assert.AreEqual("https://auth.signal9.test/connect/token", flows.GetProperty("clientCredentials").GetProperty("tokenUrl").GetString());
+        CollectionAssert.IsSubsetOf(new[] { "devices.read", "terminal.execute" }, credentials);
+        foreach (var personOrAgent in new[] { "openid", "profile", "offline_access", "agent" })
+            CollectionAssert.DoesNotContain(credentials, personOrAgent);
+
+        // An enrolled agent: client credentials at api's mTLS token endpoint, for the agent scope alone.
+        var agent = schemes.GetProperty("agent").GetProperty("flows").GetProperty("clientCredentials");
+        Assert.AreEqual("https://api.signal9.test/connect/token", agent.GetProperty("tokenUrl").GetString());
+        CollectionAssert.AreEqual(new[] { "agent" }, ScopeNames(agent));
+
+        // Each operation names the scheme that can grant its scope.
+        var paths = document.GetProperty("paths");
+        Assert.AreEqual("""[{"oauth2":["tenants.read"]}]""",
+            paths.GetProperty("/api/v1/tenants").GetProperty("get").GetProperty("security").GetRawText().Replace(" ", "").Replace("\n", ""));
+        Assert.AreEqual("""[{"agent":["agent"]}]""",
+            paths.GetProperty("/api/v1/agents/{agentId}/heartbeat").GetProperty("put").GetProperty("security").GetRawText().Replace(" ", "").Replace("\n", ""));
+    }
+
+    private static List<string> ScopeNames(JsonElement flow) =>
+        flow.GetProperty("scopes").EnumerateObject().Select(scope => scope.Name).ToList();
+
+    [TestMethod]
     public async Task OpenApi_document_names_terminal_execute_for_running_scripts()
     {
         using var api = _factory.CreateAnonymousClient();
@@ -299,8 +339,8 @@ public sealed class ScopeTests : IDisposable
     private static List<string> ScopesOf(JsonElement document, string path, string method)
     {
         var security = document.GetProperty("paths").GetProperty(path).GetProperty(method).GetProperty("security");
-        return security.EnumerateArray().SelectMany(requirement => requirement.GetProperty("oauth2").EnumerateArray())
-            .Select(s => s.GetString()!).ToList();
+        return security.EnumerateArray().SelectMany(requirement => requirement.EnumerateObject())
+            .SelectMany(scheme => scheme.Value.EnumerateArray()).Select(s => s.GetString()!).ToList();
     }
 
     private static HttpRequestMessage Request(string method, string path) =>

@@ -83,7 +83,7 @@ public static class ApiProxy
                 return session.AccessToken;
             case SessionTokenStatus.Ended:
                 await context.SignOutAsync(BffAuthentication.CookieScheme);
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                BffAuthentication.Unauthorized(context.Response);
                 return null;
             default:
                 context.Response.Headers.RetryAfter = "5";
