@@ -277,6 +277,23 @@ public sealed partial class DelegatedApiApplicationTests : IDisposable
     }
 
     [TestMethod]
+    public async Task A_superadministrator_through_a_delegated_application_acts_above_its_descendants_but_not_at_its_tenant()
+    {
+        var tree = await TreeAsync();
+        var leaf = await _factory.CreateTenantAsync(_superadministrator, "Leaf", parentTenantId: tree.Client);
+        var (application, secret) = await RegisterDelegatedAsync(tree.Msp, "openid", "tenants.read", "tenants.delete");
+        using var asSuperadministrator = await DelegatedClientAsync(application, secret, _factory.Superadministrator(),
+            "openid tenants.read tenants.delete");
+
+        // Held to the application's subtree as an Administrator at its tenant, like a person assigned above it.
+        var atItsTenant = await asSuperadministrator.DeleteAsync($"api/v1/tenants/{tree.Msp}", Ct);
+        var beneathIt = await asSuperadministrator.DeleteAsync($"api/v1/tenants/{leaf.Id}", Ct);
+
+        Assert.AreEqual(HttpStatusCode.Forbidden, atItsTenant.StatusCode);
+        Assert.AreEqual(HttpStatusCode.NoContent, beneathIt.StatusCode, await beneathIt.Content.ReadAsStringAsync(Ct));
+    }
+
+    [TestMethod]
     public async Task Consent_grants_are_audited_at_the_applications_tenant()
     {
         var tree = await TreeAsync();

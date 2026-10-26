@@ -134,9 +134,10 @@ public sealed class CallerAccess
         if (Superadministrator.Is(caller))
         {
             // A Superadministrator already has every tenant tree, except through a delegated application, which holds
-            // them to its subtree with all of its scopes.
+            // them to its subtree with all of its scopes, as an Administrator at its tenant: like a person assigned at
+            // or above it, they act above its descendants but not above its own tenant (#125).
             if (Delegated is not null)
-                SetAssignments([new Assignment(Delegated.TenantId, Guid.Empty, [.. Delegated.Scopes])], []);
+                SetAssignments([new Assignment(Delegated.TenantId, BuiltInRoles.Administrator.Id, [.. Delegated.Scopes])], []);
             return;
         }
 
