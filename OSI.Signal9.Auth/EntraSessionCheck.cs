@@ -59,8 +59,10 @@ public sealed class EntraRefresh(ITokenAcquisition tokenAcquisition, ILogger<Ent
 
         try
         {
+            // Named, so the directory isn't bound to the overload without a scheme as its tenant and user flow.
             var result = await tokenAcquisition.GetAuthenticationResultForUserAsync(Scopes,
-                OpenIdConnectDefaults.AuthenticationScheme, entraTenantId.ToString(), user: account,
+                authenticationScheme: OpenIdConnectDefaults.AuthenticationScheme, tenantId: entraTenantId.ToString(),
+                user: account,
                 tokenAcquisitionOptions: new TokenAcquisitionOptions
                 {
                     // The sign-in's own registration, named again here: there's no request to infer it from.
@@ -144,21 +146,29 @@ public sealed class EntraSessionChecker(Signal9DbContext db, SignInSessions sess
             .FromSql($"""UPDATE "SignInSessions" SET "EntraCheckedAt" = {now} WHERE "EntraCheckedAt" <= {due} RETURNING *""")
             .AsNoTracking().ToListAsync(cancellationToken);
 
-        foreach (var account in claimed.GroupBy(s => s.EntraAccountId))
+        // One person's home account can sign in to several directories (a guest's home account isn't its sign-in
+        // directory), and each directory's account is a different person to Entra and to Signal9 (ADR-0006). So each
+        // directory is asked about its own sessions, and only its own answer counts for them.
+        foreach (var account in claimed.GroupBy(s => (s.EntraAccountId, s.EntraTenantId)))
         {
             var accountSessions = account.ToList();
-            switch (await entra.ForceAsync(account.Key, accountSessions[0].EntraTenantId, cancellationToken))
+            switch (await entra.ForceAsync(account.Key.EntraAccountId, account.Key.EntraTenantId, cancellationToken))
             {
                 case EntraVerdict.Refused refused:
-                    // auth's own sign-in cookies from these Entra sessions no longer count either.
-                    foreach (var sid in accountSessions.Select(s => (s.EntraTenantId, s.EntraSessionId)).Distinct())
-                        if (sid.EntraSessionId is { } id)
-                            await sessions.RecordEndedAsync(sid.EntraTenantId, id, cancellationToken);
-                    await sessions.EndAsync(accountSessions, new SessionEnd($"Entra refused the person: {Describe(refused.Error)}"),
-                        cancellationToken);
+                    await EndAsync(accountSessions, $"Entra refused the person: {Describe(refused.Error)}", cancellationToken);
                     break;
                 case EntraVerdict.Vouched vouched:
-                    await RereadSuperadministratorAsync(accountSessions, vouched.IdToken, cancellationToken);
+                    // Entra must have answered for the sessions' own person (tid, oid); anyone else's answer vouches for
+                    // no one here.
+                    var answeredFor = vouched.IdToken is null ? null : EntraPerson.From(vouched.IdToken)?.Subject;
+                    var someoneElse = vouched.IdToken is null ? [] : accountSessions.Where(s => s.Subject != answeredFor).ToList();
+                    if (someoneElse.Count > 0)
+                    {
+                        logger.LogWarning("Entra's refresh for {Account} in {Directory} answered for someone else; their sessions end.",
+                            account.Key.EntraAccountId, account.Key.EntraTenantId);
+                        await EndAsync(someoneElse, "Entra answered for someone else", cancellationToken);
+                    }
+                    await RereadSuperadministratorAsync([.. accountSessions.Except(someoneElse)], vouched.IdToken, cancellationToken);
                     break;
                 default:
                     // Asked again at the next run.
@@ -168,6 +178,15 @@ public sealed class EntraSessionChecker(Signal9DbContext db, SignInSessions sess
                     break;
             }
         }
+    }
+
+    /// <summary>Ends the sessions; auth's own sign-in cookies from their Entra sessions no longer count either.</summary>
+    private async Task EndAsync(List<SignInSession> ending, string detail, CancellationToken cancellationToken)
+    {
+        foreach (var sid in ending.Select(s => (s.EntraTenantId, s.EntraSessionId)).Distinct())
+            if (sid.EntraSessionId is { } id)
+                await sessions.RecordEndedAsync(sid.EntraTenantId, id, cancellationToken);
+        await sessions.EndAsync(ending, new SessionEnd(detail), cancellationToken);
     }
 
     /// <summary>Only Entra's own error codes reach the audit log; anything else is named generically.</summary>
@@ -180,7 +199,8 @@ public sealed class EntraSessionChecker(Signal9DbContext db, SignInSessions sess
     /// <summary>
     /// The Superadministrator app role as Entra sends it now (story 59). A session that lost it has its access tokens
     /// revoked, so the role leaves with the next request rather than when they expire; its next refresh issues tokens
-    /// without it. An answer without an ID token can't confirm the role, so it's dropped.
+    /// without it. An answer without an ID token can't confirm the role, so it's dropped. The ID token is for the
+    /// sessions' own person, and the role counts only when that person is in the deploying directory (ADR-0006).
     /// </summary>
     private async Task RereadSuperadministratorAsync(List<SignInSession> accountSessions, ClaimsPrincipal? idToken,
         CancellationToken cancellationToken)

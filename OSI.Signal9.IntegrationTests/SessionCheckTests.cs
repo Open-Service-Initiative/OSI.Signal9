@@ -8,6 +8,7 @@ using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Bff;
 using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Serialization;
+using OSI.Signal9.Server.Data;
 using OSI.Signal9.Server.Identity;
 using OSI.Signal9.Web.Bff;
 using static OpenIddict.Abstractions.OpenIddictConstants;
@@ -262,6 +263,67 @@ public sealed class SessionCheckTests : IDisposable
 
         Assert.AreEqual(HttpStatusCode.OK, (await browser.GetAsync("api/v1/tenants")).StatusCode);
         Assert.AreEqual(1, _factory.Web.Refreshes);
+    }
+
+    // One person in several directories: their home account and a guest account elsewhere share MSAL's home account, but
+    // are different people to Entra and Signal9 (ADR-0006, story 58).
+
+    private async Task<SignInSession> SessionOfAsync(EntraUser user)
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var sessions = scope.ServiceProvider.GetRequiredService<SignInSessions>();
+        return (await sessions.FindByUserAsync(PersonSubject.Format(user.TenantId, user.ObjectId), Ct)).Single().Session;
+    }
+
+    [TestMethod]
+    public async Task Entra_refusing_a_guest_account_ends_only_that_directorys_session()
+    {
+        var home = await _factory.AssignedPersonAsync(WithSession());
+        var guest = await _factory.AssignedPersonAsync(home.User.GuestIn(Guid.NewGuid()));
+        using var homeBrowser = await SignedInAsync(home.User);
+        using var guestBrowser = await SignedInAsync(guest.User);
+
+        _factory.Entra.Refuse(guest.User);
+        await EntraCheckAsync(0);
+
+        await EventuallyAsync(async () => (await guestBrowser.GetAsync("api/v1/tenants")).StatusCode == HttpStatusCode.Unauthorized,
+            "the guest account's session to end");
+        Assert.AreEqual(HttpStatusCode.OK, (await homeBrowser.GetAsync("api/v1/tenants")).StatusCode,
+            "Entra refusing the guest account ended the home account's session.");
+    }
+
+    [TestMethod]
+    public async Task Superadministrator_comes_only_from_the_deploying_directorys_session()
+    {
+        var home = await _factory.AssignedPersonAsync(WithSession());
+        var guest = await _factory.AssignedPersonAsync(home.User.GuestIn(_factory.Entra.DeployingTenantId));
+        using var homeBrowser = await SignedInAsync(home.User);
+        using var guestBrowser = await SignedInAsync(guest.User);
+
+        // The guest account in the deploying directory becomes a Superadministrator; the home account isn't one.
+        _factory.Entra.SetRoles(guest.User, Superadministrator.AppRole);
+        await EntraCheckAsync(0);
+
+        await EventuallyAsync(async () => (await SessionOfAsync(guest.User)).Superadministrator,
+            "the deploying directory's session to become a Superadministrator's");
+        Assert.IsFalse((await SessionOfAsync(home.User)).Superadministrator,
+            "The home directory's session got the deploying directory's Superadministrator role.");
+    }
+
+    [TestMethod]
+    public async Task Entra_answering_for_someone_else_ends_the_session()
+    {
+        var assigned = await _factory.AssignedPersonAsync(_factory.Superadministrator() with { SessionId = $"sid-{Guid.NewGuid():N}" });
+        using var browser = await SignedInAsync(assigned.User);
+
+        // Another object in the same directory, under the same home account: not the person the session is for.
+        _factory.Entra.AnswerAs(assigned.User, assigned.User with { ObjectId = Guid.NewGuid(), Home = assigned.User.HomeAccount });
+        await EntraCheckAsync(0);
+
+        await EventuallyAsync(async () => (await browser.GetAsync("api/v1/tenants")).StatusCode == HttpStatusCode.Unauthorized,
+            "the session to end");
+        var entry = (await AuditAsync(AuditActions.SessionRevoked)).Single();
+        Assert.AreEqual("Entra answered for someone else", entry.Detail);
     }
 
     // Revoking an authorization revokes its tokens (OpenIddict 7.x workaround).

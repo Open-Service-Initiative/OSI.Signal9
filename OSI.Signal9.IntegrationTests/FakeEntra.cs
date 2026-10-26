@@ -21,12 +21,32 @@ namespace OSI.Signal9.IntegrationTests;
 /// in without asking again, unless auth sends <c>prompt=login</c>.
 /// </param>
 /// <param name="SendsAuthTime">Whether the ID token carries <c>auth_time</c> (an optional claim at Entra).</param>
+/// <param name="Home">
+/// For a guest account, the person's account in their home directory (<c>client_info</c>'s <c>utid</c> and
+/// <c>uid</c>), under which MSAL keeps their tokens for every directory. <see langword="null"/> for a home account.
+/// </param>
 public sealed record EntraUser(Guid TenantId, Guid ObjectId, string[] Amr, string? SessionId = "entra-session",
     string[]? Roles = null, string Email = "alex@contoso.example", DateTimeOffset? AuthenticatedAt = null,
-    bool SendsAuthTime = true)
+    bool SendsAuthTime = true, (Guid TenantId, Guid ObjectId)? Home = null)
 {
     /// <summary>A person from a new directory who signed in with a password and MFA.</summary>
     public static EntraUser WithMfa() => new(Guid.NewGuid(), Guid.NewGuid(), ["pwd", "mfa"]);
+
+    /// <summary>The person's home account.</summary>
+    public (Guid TenantId, Guid ObjectId) HomeAccount => Home ?? (TenantId, ObjectId);
+
+    /// <summary>
+    /// The same person's guest account in <paramref name="directory"/>: another object there, signed in to in another
+    /// Entra session, but the same home account.
+    /// </summary>
+    public EntraUser GuestIn(Guid directory, params string[] roles) => this with
+    {
+        TenantId = directory,
+        ObjectId = Guid.NewGuid(),
+        Home = HomeAccount,
+        Roles = roles,
+        SessionId = $"sid-{Guid.NewGuid():N}",
+    };
 }
 
 /// <summary>
@@ -71,6 +91,8 @@ public sealed class FakeEntra
     private readonly ConcurrentDictionary<string, (EntraUser User, DateTimeOffset AuthenticatedAt)> _refreshTokens = new();
     private readonly ConcurrentDictionary<(Guid, Guid), string> _refusals = new();
     private readonly ConcurrentDictionary<(Guid, Guid), string[]> _roles = new();
+    private readonly ConcurrentDictionary<((Guid, Guid) Home, Guid Directory), EntraUser> _accounts = new();
+    private readonly ConcurrentDictionary<(Guid, Guid), EntraUser> _answersAs = new();
     private int _refreshes;
 
     /// <summary>How many times auth refreshed a person's tokens here.</summary>
@@ -93,6 +115,9 @@ public sealed class FakeEntra
 
     /// <summary>From now on, the person's ID tokens carry these app roles, as after a change at Entra.</summary>
     public void SetRoles(EntraUser user, params string[] roles) => _roles[(user.TenantId, user.ObjectId)] = roles;
+
+    /// <summary>From now on, the person's new ID tokens are <paramref name="other"/>'s instead.</summary>
+    public void AnswerAs(EntraUser user, EntraUser other) => _answersAs[(user.TenantId, user.ObjectId)] = other;
 
     /// <param name="time">The clock people authenticate by (<c>auth_time</c>): the fixture's, so tests can age it.</param>
     public FakeEntra(TimeProvider? time = null)
@@ -202,7 +227,7 @@ public sealed class FakeEntra
     {
         var form = QueryHelpers.ParseQuery(await request.Content!.ReadAsStringAsync());
         if (form["grant_type"] == "refresh_token")
-            return await RefreshAsync(request, form);
+            return await RefreshAsync(request, form, tenant);
         if (form["grant_type"] != "authorization_code" || !_codes.TryRemove(form["code"].ToString(), out var pending))
             return Error("invalid_grant", "The code is unknown or was already redeemed.");
         if (form["redirect_uri"] != pending.RedirectUri)
@@ -212,11 +237,12 @@ public sealed class FakeEntra
         if (!await IsCertificateAssertionAsync(form, request.RequestUri!))
             return Error("invalid_client", "The client must authenticate with its certificate credential.");
 
+        _accounts[(pending.User.HomeAccount, pending.User.TenantId)] = pending.User;
         return Tokens(pending.User, pending.AuthenticatedAt, pending.Nonce);
     }
 
     private async Task<HttpResponseMessage> RefreshAsync(HttpRequestMessage request,
-        Dictionary<string, Microsoft.Extensions.Primitives.StringValues> form)
+        Dictionary<string, Microsoft.Extensions.Primitives.StringValues> form, string tenant)
     {
         Interlocked.Increment(ref _refreshes);
         RefreshScopes.Enqueue(form["scope"].ToString());
@@ -226,17 +252,23 @@ public sealed class FakeEntra
             return Error("invalid_client", "The client must authenticate with its certificate credential.");
         if (!_refreshTokens.TryGetValue(form["refresh_token"].ToString(), out var grant))
             return Error("invalid_grant", "AADSTS9002313: The refresh token is unknown.");
-        if (_refusals.TryGetValue((grant.User.TenantId, grant.User.ObjectId), out var error))
+        // A refresh token belongs to the home account: redeemed at one of the person's directories, Entra answers for
+        // their account in that directory, and auth always names the directory.
+        if (!Guid.TryParse(tenant, out var directory)
+            || !_accounts.TryGetValue((grant.User.HomeAccount, directory), out var user))
+            return Error("invalid_request", $"AADSTS90002: Tenant '{tenant}' not found, or the person has no account there.");
+        if (_refusals.TryGetValue((user.TenantId, user.ObjectId), out var error))
             return Error(error, error == "invalid_grant"
                 ? "AADSTS50057: The user account is disabled."
                 : "AADSTS50076: Due to a configuration change made by your administrator, you must use multi-factor authentication.");
-        return Tokens(grant.User, grant.AuthenticatedAt, nonce: null, form["scope"].ToString());
+        return Tokens(user, grant.AuthenticatedAt, nonce: null, form["scope"].ToString());
     }
 
     private HttpResponseMessage Tokens(EntraUser signedIn, DateTimeOffset authenticatedAt, string? nonce,
         string scope = "openid profile offline_access")
     {
-        var user = _roles.TryGetValue((signedIn.TenantId, signedIn.ObjectId), out var roles) ? signedIn with { Roles = roles } : signedIn;
+        var answered = _answersAs.GetValueOrDefault((signedIn.TenantId, signedIn.ObjectId), signedIn);
+        var user = _roles.TryGetValue((answered.TenantId, answered.ObjectId), out var roles) ? answered with { Roles = roles } : answered;
         var now = DateTime.UtcNow;
         var claims = new Dictionary<string, object>
         {
@@ -270,7 +302,7 @@ public sealed class FakeEntra
             Claims = claims,
             SigningCredentials = new SigningCredentials(_signingKey, SecurityAlgorithms.RsaSha256),
         });
-        var clientInfo = Base64UrlEncoder.Encode(JsonSerializer.Serialize(new { uid = user.ObjectId, utid = user.TenantId }));
+        var clientInfo = Base64UrlEncoder.Encode(JsonSerializer.Serialize(new { uid = user.HomeAccount.ObjectId, utid = user.HomeAccount.TenantId }));
         var refreshToken = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32));
         _refreshTokens[refreshToken] = (signedIn, authenticatedAt);
         return Json(new Dictionary<string, object>
