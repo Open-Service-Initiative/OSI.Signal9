@@ -300,6 +300,9 @@ public sealed class TenantTransferTests : IDisposable
             new[] { (pending.Id, TenantTransferStatus.Pending), (declined.Id, TenantTransferStatus.Declined), (accepted.Id, TenantTransferStatus.Accepted) },
             outgoing.Select(t => (t.Id, t.Status)).ToArray());
         CollectionAssert.AreEquivalent(outgoing.Select(t => t.Id).ToArray(), incoming.Select(t => t.Id).ToArray());
+        // Each names its canonical URL, under the transferred tenant, whichever side listed it.
+        foreach (var transfer in outgoing.Concat(incoming))
+            Assert.AreEqual($"/api/v1/tenants/{transfer.TenantId}/transfers/{transfer.Id}", transfer.Url);
         // The receiving side sees what it's being sent, by name, before it can see the tenant itself.
         var offered = incoming.Single(t => t.Id == pending.Id);
         Assert.AreEqual("Client", offered.TenantName);
@@ -390,7 +393,7 @@ public sealed class TenantTransferTests : IDisposable
         return (await response.Content.ReadFromJsonAsync<TenantTransferDto>(Signal9Json.Options, Ct))!;
     }
 
-    private static string UrlOf(TenantTransferDto transfer) => $"api/v1/tenants/{transfer.TenantId}/transfers/{transfer.Id}";
+    private static string UrlOf(TenantTransferDto transfer) => transfer.Url.TrimStart('/');
 
     private Task<HttpResponseMessage> AcceptAsync(HttpClient caller, TenantTransferDto transfer) =>
         caller.PostAsync($"{UrlOf(transfer)}:accept", null, Ct);

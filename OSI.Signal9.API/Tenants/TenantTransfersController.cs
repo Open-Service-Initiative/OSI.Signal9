@@ -378,6 +378,7 @@ public sealed class TenantTransfersController(
     private static TenantTransferDto ToDto(TenantTransfer transfer, Dictionary<Guid, string> names) => new(
         transfer.Id,
         transfer.TenantId,
+        $"/api/v1/tenants/{transfer.TenantId}/transfers/{transfer.Id}",
         names.GetValueOrDefault(transfer.TenantId),
         transfer.FromParentTenantId,
         transfer.ToParentTenantId,

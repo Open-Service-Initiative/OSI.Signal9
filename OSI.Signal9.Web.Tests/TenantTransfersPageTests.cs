@@ -131,7 +131,10 @@ public sealed class TenantTransfersPageTests : DashboardTestContext
         app.WaitForAssertion(() => Assert.Contains("Delete or transfer one of each pair first.", app.Find(".error-bar").TextContent));
     }
 
-    private static TenantTransferDto Transfer(string tenantName, string toParentName, TenantTransferStatus status) =>
-        new(Guid.NewGuid(), Guid.NewGuid(), tenantName, Guid.NewGuid(), Guid.NewGuid(), toParentName, status, Now,
-            status == TenantTransferStatus.Pending ? null : Now);
+    private static TenantTransferDto Transfer(string tenantName, string toParentName, TenantTransferStatus status)
+    {
+        var (id, tenantId) = (Guid.NewGuid(), Guid.NewGuid());
+        return new(id, tenantId, $"/api/v1/tenants/{tenantId}/transfers/{id}", tenantName, Guid.NewGuid(), Guid.NewGuid(),
+            toParentName, status, Now, status == TenantTransferStatus.Pending ? null : Now);
+    }
 }

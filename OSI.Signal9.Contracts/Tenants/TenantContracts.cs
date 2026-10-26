@@ -115,6 +115,7 @@ public enum TenantTransferStatus
 /// Administrator above the tenant, proposes it; the other, at the new parent, accepts or declines it.
 /// </summary>
 /// <param name="TenantId">The tenant being transferred.</param>
+/// <param name="Url">The transfer's canonical URL, under the tenant being transferred, where both sides act on it.</param>
 /// <param name="TenantName">Its name, which both sides see so the receiving side knows what it's accepting.</param>
 /// <param name="FromParentTenantId">Its parent when the transfer was proposed.</param>
 /// <param name="ToParentTenantId">The parent it moves to when the transfer is accepted.</param>
@@ -123,6 +124,7 @@ public enum TenantTransferStatus
 public sealed record TenantTransferDto(
     Guid Id,
     Guid TenantId,
+    string Url,
     string? TenantName,
     Guid? FromParentTenantId,
     Guid ToParentTenantId,

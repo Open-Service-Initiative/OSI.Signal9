@@ -181,7 +181,7 @@ public sealed class Signal9ApiClient(HttpClient http, BffAuthenticationStateProv
     public Task<TenantTransferDto> TransitionTenantTransferAsync(TenantTransferDto transfer, string action,
         CancellationToken cancellationToken = default) =>
         SendAsync<TenantTransferDto>(HttpMethod.Post,
-            $"api/v1/tenants/{transfer.TenantId}/transfers/{transfer.Id}:{action}", null, cancellationToken);
+            $"{transfer.Url.TrimStart('/')}:{action}", null, cancellationToken);
 
     // Audit
 
