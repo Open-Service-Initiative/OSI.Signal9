@@ -133,8 +133,12 @@ One independent copy of the agent running on a machine, for one deployment and o
 _Avoid_: Side-by-side agent, second agent
 
 **Identification**:
-Deciding which device a newly enrolled agent belongs to: an existing device, or a new one. Ambiguous cases wait for a person to decide.
+Deciding which device a newly enrolled agent belongs to: an existing device anywhere in its enrollment token's root tenant tree, or a new one in the token's tenant. Ambiguous cases wait for a person to decide. An agent that joins an existing device belongs to that device's tenant.
 _Avoid_: Matching, pairing, onboarding
+
+**Fresh-OS claim**:
+An enrollment from an operating system installed within the last day whose hardware matches exactly one device, taken to mean the machine was wiped or re-imaged. The agent joins that device but is always held for approval, and replaces the device's agent only once a person approves it.
+_Avoid_: Re-image match, auto-resolve
 
 **Agent package**:
 A signed build of the agent software for one operating system and install format, published by OSI with each release. One generic package serves every deployment.

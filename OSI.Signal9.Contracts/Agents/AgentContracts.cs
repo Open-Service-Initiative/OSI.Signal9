@@ -158,6 +158,13 @@ public sealed record EnrollAgentRequest
     /// <summary>The system serial number (SMBIOS type 1), if it could be read.</summary>
     [StringLength(255)]
     public string? SerialNumber { get; init; }
+
+    /// <summary>
+    /// When the machine's operating system was installed, if the agent could tell. An installation from the last day
+    /// with exactly one matching device suggests the machine was wiped or re-imaged; the agent then joins that device,
+    /// but is held for approval before it replaces the device's agent.
+    /// </summary>
+    public DateTimeOffset? OsInstalledAt { get; init; }
 }
 
 /// <summary>

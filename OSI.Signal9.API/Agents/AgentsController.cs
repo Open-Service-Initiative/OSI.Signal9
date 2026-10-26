@@ -58,7 +58,8 @@ public sealed class AgentsController(
     /// Revokes the agent for good (story 101): it stops being its device's active agent, its access tokens stop working
     /// at once, its hub connection closes, and the token endpoint answers it with <c>agent_revoked</c>. Its device then
     /// requires approval for its next agent, whatever the tenant's approval setting, so reinstalling from the same
-    /// enrollment token can't silently undo the revocation. A revoked agent can't be revoked again (409).
+    /// enrollment token can't silently undo the revocation. Revoking a held fresh-OS claim rejects it, leaving its device
+    /// and the device's agent alone. A revoked agent can't be revoked again (409).
     /// </summary>
     [RequireScope(Scopes.Devices.Write)]
     [HttpPost("{agentId:guid}:revoke")]
@@ -80,9 +81,11 @@ public sealed class AgentsController(
             return Problem(statusCode: StatusCodes.Status409Conflict, title: "Transition not allowed",
                 detail: "The agent is already revoked.");
 
-        // An agent awaiting identification has no device yet; it stays in the queue, revoked.
+        // An agent awaiting identification has no device yet; it stays in the queue, revoked. Rejecting a held fresh-OS
+        // claim leaves its device and the device's agent alone.
+        var heldClaim = agent.IsHeldClaim();
         agent.RevokedAt = time.GetUtcNow().UtcDateTime;
-        if (device is not null)
+        if (device is not null && !heldClaim)
         {
             if (device.ActiveAgentId == agent.Id)
                 device.ActiveAgentId = null;
@@ -111,8 +114,9 @@ public sealed class AgentsController(
 
     /// <summary>
     /// Approves an agent that is awaiting approval (story 97): from then on it receives work, and its doorbell rings if
-    /// work is already waiting. Its device no longer requires approval. Only an agent awaiting approval can be approved
-    /// (409).
+    /// work is already waiting. Its device no longer requires approval. Approving a held fresh-OS claim makes the agent
+    /// its device's active agent, bringing the device's facts up to date, and revokes the agent it replaces. Only an
+    /// agent awaiting approval can be approved (409).
     /// </summary>
     [RequireScope(Scopes.Devices.Write)]
     [HttpPost("{agentId:guid}:approve")]
@@ -123,7 +127,7 @@ public sealed class AgentsController(
     [ProducesResponseType(StatusCodes.Status412PreconditionFailed)]
     public async Task<ActionResult<AgentDto>> Approve(Guid agentId, CancellationToken cancellationToken)
     {
-        var agent = await db.Agents.Include(a => a.Device).Include(a => a.PendingIdentification)
+        var agent = await db.Agents.Include(a => a.Device!).ThenInclude(d => d.ActiveAgent).Include(a => a.PendingIdentification)
             .SingleOrDefaultAsync(a => a.Id == agentId, cancellationToken);
         if (agent is null)
             return NotFound();
@@ -134,8 +138,30 @@ public sealed class AgentsController(
                 detail: $"The agent is {agent.Status()}, not awaiting approval.");
         var device = agent.Device!;
 
+        Agent? replaced = null;
+        if (agent.IsHeldClaim())
+        {
+            if (device.ActiveAgent is { } previous)
+            {
+                previous.RevokedAt = time.GetUtcNow().UtcDateTime;
+                replaced = previous;
+                audit.Record(new AuditEntry
+                {
+                    Action = AuditActions.AgentRevoked,
+                    TenantId = device.TenantId,
+                    TargetType = "agent",
+                    TargetId = previous.Id,
+                    DeviceId = device.Id,
+                    Detail = $"replaced by agent {agent.Id}",
+                });
+            }
+            var claim = await db.PendingIdentifications.IgnoreTenantScope(TenantScopeBypass.HeldClaimFacts)
+                .SingleAsync(p => p.AgentId == agent.Id, cancellationToken);
+            await BindAsync(agent, device, claim, cancellationToken);
+            db.PendingIdentifications.Remove(claim);
+        }
         agent.AwaitingApproval = false;
-        if (device.ActiveAgentId == agent.Id)
+        if (device.ActiveAgent == agent)
             device.RequiresAgentApproval = false;
         audit.Record(new AuditEntry
         {
@@ -146,6 +172,8 @@ public sealed class AgentsController(
             DeviceId = device.Id,
         });
         await db.SaveChangesAsync(cancellationToken);
+        if (replaced is not null)
+            await CutOffAsync(replaced.Id, cancellationToken);
 
         await RingIfWorkWaitingAsync(agent, cancellationToken);
         await dashboard.DeviceChangedAsync(device.TenantId, device.Id, cancellationToken);
@@ -253,8 +281,8 @@ public sealed class AgentsController(
 
     /// <summary>
     /// The devices an agent in the Needs-decision queue might be a reinstall of (story 105): those in its enrollment
-    /// token's subtree, as far as the caller can see, sharing its SMBIOS UUID or its manufacturer and serial. Empty for
-    /// an agent that doesn't need a decision.
+    /// token's root tenant tree, as far as the caller can see, sharing its SMBIOS UUID or its manufacturer and serial.
+    /// Empty for an agent that doesn't need a decision.
     /// </summary>
     [RequireScope(Scopes.Devices.Read)]
     [HttpGet("{agentId:guid}/candidate-devices")]
@@ -277,12 +305,13 @@ public sealed class AgentsController(
     }
 
     /// <summary>
-    /// The devices in <paramref name="reported"/>'s tenant's subtree that share its normalized SMBIOS UUID, or its
-    /// manufacturer and serial (story 103). The subtree lies within one root tenant tree, so identification never
-    /// crosses root trees. Machine names play no part (story 106).
+    /// The devices in <paramref name="reported"/>'s tenant's root tenant tree, in any subtree, that share its normalized
+    /// SMBIOS UUID, or its manufacturer and serial (story 103). Identification never crosses root trees: two tenants
+    /// share an ancestor only within one tree. Machine names play no part (story 106).
     /// </summary>
     private IQueryable<Device> CandidateDevices(IQueryable<Device> devices, PendingIdentification reported) =>
-        devices.Where(d => db.TenantClosures.Any(c => c.AncestorId == reported.TenantId && c.DescendantId == d.TenantId))
+        devices.Where(d => db.TenantClosures.Any(mine => mine.DescendantId == reported.TenantId
+                && db.TenantClosures.Any(theirs => theirs.AncestorId == mine.AncestorId && theirs.DescendantId == d.TenantId)))
             .Where(new HardwareIdentifiers(reported.SmbiosUuid, reported.Manufacturer, reported.SerialNumber).MatchingDevices());
 
     /// <summary>The certificate the agent authenticates with: its thumbprint and validity.</summary>
@@ -425,12 +454,14 @@ public sealed class AgentsController(
     /// Enrolls a new agent with an enrollment token and the self-signed certificate of its new non-exportable key
     /// (stories 95, 98). The certificate becomes the agent's credential: it then gets <c>agent</c> tokens with client
     /// credentials at the mTLS token endpoint, its ID as client ID. The enrollment counts as one use of the token.
-    /// Identification (stories 103-106): an enrollment whose hardware identifiers match no device in the token's subtree
-    /// creates one in the token's tenant; one matching exactly one device whose previous agent was revoked rejoins it,
-    /// keeping its history; any other match waits, with no device, in the Needs-decision queue
-    /// (<see cref="AgentStatus.NeedsDecision"/>). Zeroed and placeholder identifiers are ignored, and devices are never
-    /// matched by name. The agent awaits approval if its tenant or an ancestor holds new agents, or its device requires
-    /// approval.
+    /// Identification (stories 103-106): an enrollment whose hardware identifiers match no device in the token's root
+    /// tenant tree creates one in the token's tenant; one matching exactly one device whose previous agent was revoked
+    /// rejoins it, keeping its history; so does one matching exactly one device from an operating system installed
+    /// within <see cref="FreshOsWindow"/>, as a held fresh-OS claim (<see cref="Mappings.IsHeldClaim"/>); any other
+    /// match waits, with no device, in the Needs-decision queue (<see cref="AgentStatus.NeedsDecision"/>). A device stays
+    /// in its tenant, and an agent that joins it belongs there. Zeroed and placeholder identifiers are ignored, and
+    /// devices are never matched by name. The agent awaits approval if its tenant or an ancestor holds new agents, or
+    /// its device requires approval.
     /// </summary>
     /// <response code="400">The certificate or machine facts aren't acceptable, or the enrollment token is unknown,
     /// revoked, expired or used up.</response>
@@ -512,8 +543,9 @@ public sealed class AgentsController(
         if (used == 0)
             return (InvalidToken(), null);
 
-        // Identification (stories 103-106): a new device when the hardware matches none in the token's subtree; the
-        // existing device when exactly one matches and its previous agent was revoked; otherwise a person decides.
+        // Identification (stories 103-106): a new device when the hardware matches none in the token's root tree; the
+        // existing device when exactly one matches and its previous agent was revoked, or, held for approval, when
+        // exactly one matches and the operating system is fresh; otherwise a person decides.
         var candidates = await CandidateDevices(db.Devices.IgnoreTenantScope(TenantScopeBypass.Enrollment), reported)
             .Select(d => new
             {
@@ -533,6 +565,7 @@ public sealed class AgentsController(
         };
         Device? device;
         string identification;
+        var heldClaim = false;
         if (candidates is [])
         {
             if (await DeviceLimitReachedAsync(tenant, cancellationToken) is { } limit)
@@ -545,9 +578,13 @@ public sealed class AgentsController(
         else if (candidates is [{ PreviousRevoked: true, Device: var match }])
         {
             device = match;
-            identification = match.SmbiosUuid is not null && match.SmbiosUuid == reported.SmbiosUuid
-                ? "matched smbios-uuid"
-                : "matched manufacturer-serial";
+            identification = $"matched {MatchedBy(match, reported)}";
+        }
+        else if (candidates is [{ Device: var claimed }] && IsFreshOs(request.OsInstalledAt, now))
+        {
+            device = claimed;
+            heldClaim = true;
+            identification = $"matched {MatchedBy(claimed, reported)} fresh-os";
         }
         else
         {
@@ -556,7 +593,16 @@ public sealed class AgentsController(
         }
 
         db.Agents.Add(agent);
-        if (device is not null)
+        if (heldClaim)
+        {
+            // Agent-reported facts can be forged by anyone with a leaked installer and the machine's identifiers, so
+            // the claim changes nothing until a person approves it: the device keeps its facts and its active agent.
+            agent.DeviceId = device!.Id;
+            agent.Device = device;
+            agent.PendingIdentification = reported;
+            agent.AwaitingApproval = true;
+        }
+        else if (device is not null)
             await BindAsync(agent, device, reported, cancellationToken);
         else
         {
@@ -602,6 +648,23 @@ public sealed class AgentsController(
         foreach (var key in hardware.LockKeys(root))
             await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({key})", cancellationToken);
     }
+
+    /// <summary>
+    /// How long after its operating system was installed an enrolling agent counts as being on a wiped or re-imaged
+    /// machine.
+    /// </summary>
+    public static readonly TimeSpan FreshOsWindow = TimeSpan.FromHours(24);
+
+    /// <summary>
+    /// Whether an operating system installed at <paramref name="installedAt"/> is fresh at <paramref name="now"/>. An
+    /// unknown or future install time never is.
+    /// </summary>
+    private static bool IsFreshOs(DateTimeOffset? installedAt, DateTime now) =>
+        installedAt?.UtcDateTime is { } at && at <= now && now - at < FreshOsWindow;
+
+    /// <summary>Which identifier matched: for the audit log, which never records the identifiers themselves.</summary>
+    private static string MatchedBy(Device device, PendingIdentification reported) =>
+        device.SmbiosUuid is not null && device.SmbiosUuid == reported.SmbiosUuid ? "smbios-uuid" : "manufacturer-serial";
 
     /// <summary>What an enrolling agent reported, with its hardware identifiers normalized (story 104).</summary>
     private static PendingIdentification Reported(EnrollAgentRequest request, Guid tenantId)

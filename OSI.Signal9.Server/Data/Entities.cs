@@ -173,13 +173,15 @@ public sealed class Agent
 /// <summary>
 /// An agent in the Needs-decision queue (story 105): its hardware matched devices it couldn't be matched to
 /// automatically, so it waits, with no device, until a person decides it's a reinstall of one of them or a new device.
-/// Holds what the agent reported at enrollment, to create or update its device from. Removed once decided.
+/// Also a held fresh-OS claim's: it has joined its device, but waits for approval before it replaces the device's
+/// agent. Holds what the agent reported at enrollment, to create or update its device from. Removed once decided or
+/// approved.
 /// </summary>
 public sealed class PendingIdentification : ITenantOwned
 {
     public Guid AgentId { get; set; }
 
-    /// <summary>The enrollment token's tenant: the subtree its device is looked for in, and where a new one goes.</summary>
+    /// <summary>The enrollment token's tenant: whose root tree its device is looked for in, and where a new one goes.</summary>
     public Guid TenantId { get; set; }
     public required string MachineName { get; set; }
     public string? Domain { get; set; }

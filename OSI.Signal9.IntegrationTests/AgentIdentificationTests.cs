@@ -413,7 +413,7 @@ public sealed class AgentIdentificationTests : IDisposable
     }
 
     [TestMethod]
-    public async Task Matching_stays_within_the_enrollment_tokens_subtree()
+    public async Task Matching_spans_the_root_tree_and_a_rebound_agent_stays_with_its_device_in_another_subtree()
     {
         var msp = await _factory.CreateTenantAsync(_client, "Msp");
         var east = await _factory.CreateTenantAsync(_client, "East", parentTenantId: msp.Id);
@@ -421,17 +421,229 @@ public sealed class AgentIdentificationTests : IDisposable
         using var inEast = await _factory.EnrollAgentAsync(east.Id, hardware: Hardware(Uuid));
         await RevokeAsync(inEast.Id);
 
-        using var inWest = await _factory.EnrollAgentAsync(west.Id, hardware: Hardware(Uuid));
-        await RevokeAsync(inWest.Id);
-        using var fromMsp = await _factory.EnrollAgentAsync(msp.Id, hardware: Hardware(Uuid));
+        using var fromWest = await _factory.EnrollAgentAsync(west.Id, hardware: Hardware(Uuid));
 
-        Assert.AreNotEqual(inEast.DeviceId, inWest.DeviceId);
-        Assert.AreEqual(AgentStatus.Active, inWest.Agent.Status);
-        // From the parent, both devices are in reach: ambiguous, so a person decides, and the queue shows it at the parent.
-        Assert.AreEqual(AgentStatus.NeedsDecision, fromMsp.Agent.Status);
-        var queue = await _client.GetFromJsonAsync<PagedResult<AgentDto>>(
-            $"api/v1/tenants/{msp.Id}/agents?status=NeedsDecision", Signal9Json.Options, Ct);
-        Assert.AreEqual(fromMsp.Id, Assert.ContainsSingle(queue!.Items).Id);
+        Assert.AreEqual(inEast.DeviceId, fromWest.DeviceId);
+        Assert.AreEqual(east.Id, fromWest.TenantId, "The device stays in its tenant, and its agent belongs there.");
+        Assert.AreEqual(AgentStatus.AwaitingApproval, fromWest.Agent.Status);
+        var device = await _client.GetFromJsonAsync<DeviceDto>($"api/v1/devices/{inEast.DeviceId}", Signal9Json.Options, Ct);
+        Assert.AreEqual(east.Id, device!.TenantId);
+        Assert.AreEqual(fromWest.Id, device.ActiveAgentId);
+    }
+
+    [TestMethod]
+    public async Task A_match_in_another_subtree_needs_a_decision_whose_candidates_are_those_the_caller_can_see()
+    {
+        var msp = await _factory.CreateTenantAsync(_client, "Msp");
+        var east = await _factory.CreateTenantAsync(_client, "East", parentTenantId: msp.Id);
+        var west = await _factory.CreateTenantAsync(_client, "West", parentTenantId: msp.Id);
+        using var inEast = await _factory.EnrollAgentAsync(east.Id, hardware: Hardware(Uuid));
+        using var fromWest = await _factory.EnrollAgentAsync(west.Id, hardware: Hardware(Uuid));
+        using var westAdmin = await _factory.CreateAssignedClientAsync([west.Id], Scopes.Devices.Read, Scopes.Devices.Write);
+        using var mspAdmin = await _factory.CreateAssignedClientAsync([msp.Id], Scopes.Devices.Read, Scopes.Devices.Write);
+
+        Assert.AreEqual(AgentStatus.NeedsDecision, fromWest.Agent.Status);
+        Assert.AreEqual(west.Id, fromWest.TenantId);
+        var seenFromWest = await westAdmin.GetFromJsonAsync<PagedResult<DeviceDto>>(
+            $"api/v1/agents/{fromWest.Id}/candidate-devices", Signal9Json.Options, Ct);
+        Assert.IsEmpty(seenFromWest!.Items);
+        var refused = await westAdmin.PostAsJsonAsync($"api/v1/agents/{fromWest.Id}:identify",
+            new IdentifyAgentRequest { Decision = IdentificationDecision.Reinstalled, DeviceId = inEast.DeviceId }, Signal9Json.Options, Ct);
+        Assert.AreEqual(HttpStatusCode.BadRequest, refused.StatusCode);
+        var seenFromMsp = await mspAdmin.GetFromJsonAsync<PagedResult<DeviceDto>>(
+            $"api/v1/agents/{fromWest.Id}/candidate-devices", Signal9Json.Options, Ct);
+        Assert.AreEqual(inEast.DeviceId, Assert.ContainsSingle(seenFromMsp!.Items).Id);
+
+        var identified = await mspAdmin.PostAsJsonAsync($"api/v1/agents/{fromWest.Id}:identify",
+            new IdentifyAgentRequest { Decision = IdentificationDecision.Reinstalled, DeviceId = inEast.DeviceId }, Signal9Json.Options, Ct);
+
+        Assert.AreEqual(HttpStatusCode.OK, identified.StatusCode, await identified.Content.ReadAsStringAsync(Ct));
+        var rebound = (await identified.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options, Ct))!;
+        Assert.AreEqual(inEast.DeviceId, rebound.DeviceId);
+        Assert.AreEqual(east.Id, rebound.TenantId);
+        var replaced = await _client.GetFromJsonAsync<AgentDto>($"api/v1/agents/{inEast.Id}", Signal9Json.Options, Ct);
+        Assert.AreEqual(AgentStatus.Revoked, replaced!.Status);
+    }
+
+    [TestMethod]
+    public async Task Concurrent_enrollments_of_one_machine_from_sibling_subtrees_make_one_device_and_a_decision()
+    {
+        var msp = await _factory.CreateTenantAsync(_client, "Msp");
+        var east = await _factory.CreateTenantAsync(_client, "East", parentTenantId: msp.Id);
+        var west = await _factory.CreateTenantAsync(_client, "West", parentTenantId: msp.Id);
+        var (inEast, inWest) = (await _factory.IssueEnrollmentTokenAsync(east.Id), await _factory.IssueEnrollmentTokenAsync(west.Id));
+        // Both enrollments look for matching devices together, unless enrollment serializes them first.
+        using var racing = _factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.ConfigureDbContext<Signal9DbContext>(options =>
+                options.AddInterceptors(new Rendezvous("FROM \"Devices\"", parties: 2, TimeSpan.FromSeconds(2))))));
+        async Task<AgentDto> EnrollAsync(string secret)
+        {
+            using var anonymous = racing.Server.CreateClient();
+            anonymous.BaseAddress = Signal9ApiFactory.HttpsLocalhost;
+            using var certificate = TestCertificates.AgentCertificate();
+            var response = await anonymous.PostAsJsonAsync("api/v1/agents",
+                Hardware(Uuid)(Signal9ApiFactory.Enrollment(secret, certificate)), Signal9Json.Options, Ct);
+            Assert.AreEqual(HttpStatusCode.Created, response.StatusCode, await response.Content.ReadAsStringAsync(Ct));
+            return (await response.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options, Ct))!;
+        }
+
+        var agents = await Task.WhenAll(EnrollAsync(inEast.Secret!), EnrollAsync(inWest.Secret!));
+
+        CollectionAssert.AreEquivalent(new[] { AgentStatus.Active, AgentStatus.NeedsDecision }, agents.Select(a => a.Status).ToArray());
+        var devices = 0;
+        foreach (var tenant in new[] { east, west })
+            devices += (await _client.GetFromJsonAsync<PagedResult<DeviceDto>>($"api/v1/devices?tenantId={tenant.Id}", Signal9Json.Options, Ct))!.Items.Count;
+        Assert.AreEqual(1, devices);
+    }
+
+    /// <summary>Reports <see cref="Uuid"/>, and an operating system installed <paramref name="hoursAgo"/> hours ago.</summary>
+    private Func<EnrollAgentRequest, EnrollAgentRequest> InstalledHoursAgo(double? hoursAgo) =>
+        request => Hardware(Uuid)(request) with
+        {
+            OsInstalledAt = hoursAgo is { } hours ? _factory.Time.GetUtcNow().AddHours(-hours) : null,
+        };
+
+    [TestMethod]
+    public async Task A_fresh_os_rebinds_to_the_one_match_but_is_held_and_leaves_the_working_agent_alone_until_approved()
+    {
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
+        using var working = await _factory.EnrollAgentAsync(tenant.Id, "PC01", Hardware(Uuid));
+        var command = await QueueCommandAsync(working.DeviceId);
+
+        using var fresh = await _factory.EnrollAgentAsync(tenant.Id, "REIMAGED", InstalledHoursAgo(2));
+
+        Assert.AreEqual(working.DeviceId, fresh.DeviceId);
+        Assert.AreEqual(AgentStatus.AwaitingApproval, fresh.Agent.Status, "Held even though the tenant doesn't hold new agents.");
+        Assert.IsFalse(fresh.Agent.IsActive);
+        var device = await _client.GetFromJsonAsync<DeviceDto>($"api/v1/devices/{working.DeviceId}", Signal9Json.Options, Ct);
+        Assert.AreEqual(working.Id, device!.ActiveAgentId);
+        Assert.AreEqual("PC01", device.MachineName, "An unapproved claim doesn't change the device.");
+        var stillWorking = await working.Client.GetFromJsonAsync<PagedResult<CommandDto>>(
+            $"api/v1/agents/{working.Id}/pending-commands", Signal9Json.Options, Ct);
+        Assert.AreEqual(command.Id, Assert.ContainsSingle(stillWorking!.Items).Id);
+        // The held agent checks in and hears its doorbell, but gets no work and can't write to the device.
+        var heartbeat = await fresh.Client.PutAsJsonAsync($"api/v1/agents/{fresh.Id}/heartbeat", new HeartbeatRequest(), Signal9Json.Options, Ct);
+        Assert.AreEqual(HttpStatusCode.OK, heartbeat.StatusCode, await heartbeat.Content.ReadAsStringAsync(Ct));
+        var held = await fresh.Client.GetFromJsonAsync<PagedResult<CommandDto>>($"api/v1/agents/{fresh.Id}/pending-commands", Signal9Json.Options, Ct);
+        Assert.IsEmpty(held!.Items);
+        var telemetry = await fresh.Client.PostAsJsonAsync($"api/v1/agents/{fresh.Id}/telemetry",
+            new CreateTelemetrySampleRequest { CollectedAt = _factory.Time.GetUtcNow() }, Signal9Json.Options, Ct);
+        Assert.AreEqual(HttpStatusCode.Conflict, telemetry.StatusCode);
+        await using (var hub = BuildHub(fresh))
+        {
+            await hub.StartAsync(Ct);
+            await Assert.ThrowsExactlyAsync<HubException>(() => hub.InvokeAsync("Ping", Ct));
+            Assert.AreEqual(HubConnectionState.Connected, hub.State);
+        }
+
+        var approved = await _client.PostAsync($"api/v1/agents/{fresh.Id}:approve", null, Ct);
+
+        Assert.AreEqual(HttpStatusCode.OK, approved.StatusCode, await approved.Content.ReadAsStringAsync(Ct));
+        var active = (await approved.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options, Ct))!;
+        Assert.AreEqual(AgentStatus.Active, active.Status);
+        Assert.IsTrue(active.IsActive);
+        var replaced = await _client.GetFromJsonAsync<AgentDto>($"api/v1/agents/{working.Id}", Signal9Json.Options, Ct);
+        Assert.AreEqual(AgentStatus.Revoked, replaced!.Status);
+        device = await _client.GetFromJsonAsync<DeviceDto>($"api/v1/devices/{working.DeviceId}", Signal9Json.Options, Ct);
+        Assert.AreEqual(fresh.Id, device!.ActiveAgentId);
+        Assert.AreEqual("REIMAGED", device.MachineName);
+        var work = await fresh.Client.GetFromJsonAsync<PagedResult<CommandDto>>($"api/v1/agents/{fresh.Id}/pending-commands", Signal9Json.Options, Ct);
+        Assert.AreEqual(command.Id, Assert.ContainsSingle(work!.Items).Id);
+        var entries = (await _client.GetFromJsonAsync<PagedResult<AuditEntryDto>>("api/v1/audit-entries?pageSize=100", Signal9Json.Options, Ct))!.Items;
+        var identified = Assert.ContainsSingle(entries.Where(e => e.TargetId == fresh.Id && e.Action == AuditActions.AgentIdentified));
+        Assert.AreEqual("matched smbios-uuid fresh-os", identified.Detail);
+        Assert.AreEqual(working.DeviceId, identified.DeviceId);
+        Assert.AreEqual($"replaced by agent {fresh.Id}", Assert.ContainsSingle(entries
+            .Where(e => e.TargetId == working.Id && e.Action == AuditActions.AgentRevoked)).Detail);
+    }
+
+    [TestMethod]
+    public async Task Rejecting_a_fresh_os_claim_leaves_the_working_agent_and_its_device_alone()
+    {
+        var msp = await _factory.CreateTenantAsync(_client, "Msp");
+        var east = await _factory.CreateTenantAsync(_client, "East", parentTenantId: msp.Id);
+        var west = await _factory.CreateTenantAsync(_client, "West", parentTenantId: msp.Id);
+        using var working = await _factory.EnrollAgentAsync(east.Id, "PC01", Hardware(Uuid));
+        using var fresh = await _factory.EnrollAgentAsync(west.Id, "FORGED", InstalledHoursAgo(1));
+        using var eastAdmin = await _factory.CreateAssignedClientAsync([east.Id], Scopes.Devices.Read, Scopes.Devices.Write);
+
+        var revoked = await eastAdmin.PostAsync($"api/v1/agents/{fresh.Id}:revoke", null, Ct);
+
+        Assert.AreEqual(HttpStatusCode.OK, revoked.StatusCode, await revoked.Content.ReadAsStringAsync(Ct));
+        var agent = await _client.GetFromJsonAsync<AgentDto>($"api/v1/agents/{working.Id}", Signal9Json.Options, Ct);
+        Assert.AreEqual(AgentStatus.Active, agent!.Status);
+        Assert.IsTrue(agent.IsActive);
+        var heartbeat = await working.Client.PutAsJsonAsync($"api/v1/agents/{working.Id}/heartbeat", new HeartbeatRequest(), Signal9Json.Options, Ct);
+        Assert.AreEqual(HttpStatusCode.OK, heartbeat.StatusCode);
+        var device = await _client.GetFromJsonAsync<DeviceDto>($"api/v1/devices/{working.DeviceId}", Signal9Json.Options, Ct);
+        Assert.AreEqual("PC01", device!.MachineName);
+        Assert.IsFalse(device.RequiresAgentApproval);
+    }
+
+    [TestMethod]
+    [DataRow(25.0, DisplayName = "Installed 25 hours ago")]
+    [DataRow(24.0, DisplayName = "Installed exactly 24 hours ago")]
+    [DataRow(-1.0, DisplayName = "Installed in the future")]
+    [DataRow(null, DisplayName = "Install time unknown")]
+    public async Task An_os_not_installed_within_the_last_day_needs_a_decision_as_before(double? hoursAgo)
+    {
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
+        using var working = await _factory.EnrollAgentAsync(tenant.Id, hardware: Hardware(Uuid));
+
+        using var reinstalled = await _factory.EnrollAgentAsync(tenant.Id, hardware: InstalledHoursAgo(hoursAgo));
+
+        Assert.AreEqual(AgentStatus.NeedsDecision, reinstalled.Agent.Status);
+    }
+
+    [TestMethod]
+    public async Task A_fresh_os_needs_a_decision_when_several_devices_match()
+    {
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
+        using var first = await _factory.EnrollAgentAsync(tenant.Id, hardware: Hardware(Uuid));
+        using var pending = await _factory.EnrollAgentAsync(tenant.Id, hardware: Hardware(Uuid));
+        await IdentifyAsync(pending.Id, IdentificationDecision.KeepBoth);
+
+        using var fresh = await _factory.EnrollAgentAsync(tenant.Id, hardware: InstalledHoursAgo(1));
+
+        Assert.AreEqual(AgentStatus.NeedsDecision, fresh.Agent.Status);
+    }
+
+    [TestMethod]
+    public async Task A_fresh_os_never_matches_a_device_in_another_root_tree()
+    {
+        var contoso = await _factory.CreateTenantAsync(_client, "Contoso");
+        var fabrikam = await _factory.CreateTenantAsync(_client, "Fabrikam");
+        using var inContoso = await _factory.EnrollAgentAsync(contoso.Id, hardware: Hardware(Uuid));
+
+        using var inFabrikam = await _factory.EnrollAgentAsync(fabrikam.Id, hardware: InstalledHoursAgo(1));
+
+        Assert.AreEqual(AgentStatus.Active, inFabrikam.Agent.Status);
+        Assert.AreNotEqual(inContoso.DeviceId, inFabrikam.DeviceId);
+        Assert.AreEqual(fabrikam.Id, inFabrikam.TenantId);
+    }
+
+    [TestMethod]
+    public async Task Approving_a_fresh_os_claim_needs_permission_at_the_devices_tenant()
+    {
+        var msp = await _factory.CreateTenantAsync(_client, "Msp");
+        var east = await _factory.CreateTenantAsync(_client, "East", parentTenantId: msp.Id);
+        var west = await _factory.CreateTenantAsync(_client, "West", parentTenantId: msp.Id);
+        using var working = await _factory.EnrollAgentAsync(east.Id, hardware: Hardware(Uuid));
+        using var fresh = await _factory.EnrollAgentAsync(west.Id, "REIMAGED", InstalledHoursAgo(1));
+        using var westAdmin = await _factory.CreateAssignedClientAsync([west.Id], Scopes.Devices.Read, Scopes.Devices.Write);
+        using var eastAdmin = await _factory.CreateAssignedClientAsync([east.Id], Scopes.Devices.Read, Scopes.Devices.Write);
+
+        Assert.AreEqual(working.DeviceId, fresh.DeviceId);
+        Assert.AreEqual(east.Id, fresh.TenantId);
+        Assert.AreEqual(HttpStatusCode.NotFound, (await westAdmin.PostAsync($"api/v1/agents/{fresh.Id}:approve", null, Ct)).StatusCode);
+        var approved = await eastAdmin.PostAsync($"api/v1/agents/{fresh.Id}:approve", null, Ct);
+        Assert.AreEqual(HttpStatusCode.OK, approved.StatusCode, await approved.Content.ReadAsStringAsync(Ct));
+        Assert.IsTrue((await approved.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options, Ct))!.IsActive);
+        var replaced = await _client.GetFromJsonAsync<AgentDto>($"api/v1/agents/{working.Id}", Signal9Json.Options, Ct);
+        Assert.AreEqual(AgentStatus.Revoked, replaced!.Status);
+        var device = await _client.GetFromJsonAsync<DeviceDto>($"api/v1/devices/{working.DeviceId}", Signal9Json.Options, Ct);
+        Assert.AreEqual(fresh.Id, device!.ActiveAgentId);
+        Assert.AreEqual("REIMAGED", device.MachineName);
     }
 
     [TestMethod]

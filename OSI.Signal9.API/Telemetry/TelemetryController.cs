@@ -86,6 +86,9 @@ public sealed class TelemetryController(
         if (agent.Device is not { } device)
             return Problem(statusCode: StatusCodes.Status409Conflict, title: "Awaiting identification",
                 detail: "The agent has no device until a person decides which device it belongs to; telemetry has nowhere to go.");
+        if (agent.IsHeldClaim())
+            return Problem(statusCode: StatusCodes.Status409Conflict, title: "Awaiting approval",
+                detail: "The agent doesn't speak for its device until a person approves it to replace the device's agent.");
 
         var now = time.GetUtcNow().UtcDateTime;
         var sample = new TelemetrySample

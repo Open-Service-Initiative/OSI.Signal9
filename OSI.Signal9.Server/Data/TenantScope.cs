@@ -162,6 +162,14 @@ public enum TenantScopeBypass
     RoleAssignmentHolder,
 
     /// <summary>
+    /// Approving a held fresh-OS claim: reading the facts the agent reported at enrollment, to bring its device up to
+    /// date. They belong to its enrollment token's tenant, which can be in another subtree than the device; the claim
+    /// itself is visible with its device.
+    /// </summary>
+    [NotAudited("Reads only a visible held claim's own reported facts, and the approval is audited.")]
+    HeldClaimFacts,
+
+    /// <summary>
     /// A person redeeming an invitation at auth (#121): finding the invitation by its reference's hash, naming its tenant
     /// and role on the offer, and finding or creating the person's own user and the role assignment. The person has no
     /// role assignments yet; the invitation is their only authority, as an enrollment token is an agent's.

@@ -17,9 +17,12 @@ public interface IMachineFactsSource
 /// Facts about this machine that the agent reports when it enrolls.
 /// </summary>
 /// <param name="readHardware">Reads the machine's hardware identifiers; <see cref="HardwareIdentity.Read"/> by default.</param>
-public sealed class SystemInfoProvider(Func<HardwareIdentity>? readHardware = null) : IMachineFactsSource
+/// <param name="readOsInstalledAt">Reads when the operating system was installed; <see cref="OsInstallTime.Read"/> by default.</param>
+public sealed class SystemInfoProvider(Func<HardwareIdentity>? readHardware = null, Func<DateTimeOffset?>? readOsInstalledAt = null)
+    : IMachineFactsSource
 {
     private readonly Func<HardwareIdentity> _readHardware = readHardware ?? HardwareIdentity.Read;
+    private readonly Func<DateTimeOffset?> _readOsInstalledAt = readOsInstalledAt ?? OsInstallTime.Read;
 
     public static string AgentVersion { get; } =
         typeof(SystemInfoProvider).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]
@@ -66,6 +69,7 @@ public sealed class SystemInfoProvider(Func<HardwareIdentity>? readHardware = nu
             SmbiosUuid = hardware.SmbiosUuid,
             Manufacturer = Truncate(hardware.Manufacturer),
             SerialNumber = Truncate(hardware.SerialNumber),
+            OsInstalledAt = _readOsInstalledAt(),
         };
     }
 

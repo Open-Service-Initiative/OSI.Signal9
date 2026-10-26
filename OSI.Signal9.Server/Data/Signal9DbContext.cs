@@ -341,9 +341,10 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
                 || c.DescendantId == t.ToParentTenantId) && AssignedTenantIds.Contains(c.AncestorId)));
 
         // An agent is visible with its device, or, while it awaits identification and has none, with its pending
-        // identification, which its enrollment token's tenant owns.
+        // identification, which its enrollment token's tenant owns. A held fresh-OS claim has both, and is visible
+        // only with its device.
         modelBuilder.Entity<Agent>().HasQueryFilter(TenantScope.Filter, a =>
-            Devices.Any(d => d.Id == a.DeviceId) || PendingIdentifications.Any(p => p.AgentId == a.Id));
+            Devices.Any(d => d.Id == a.DeviceId) || (a.DeviceId == null && PendingIdentifications.Any(p => p.AgentId == a.Id)));
 
         foreach (var type in modelBuilder.Model.GetEntityTypes().Where(t => t.BaseType is null && !t.IsOwned()).ToList())
         {

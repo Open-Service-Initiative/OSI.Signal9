@@ -1,3 +1,4 @@
+using OSI.Signal9.API.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using OSI.Signal9.Server.Data;
@@ -8,7 +9,8 @@ internal static class ActiveAgents
 {
     /// <summary>
     /// Finds the agent <paramref name="agentId"/>, for requests an agent sends about itself, if it may still make them:
-    /// it's its device's active agent, or it awaits an identification decision and has no device yet. The agent is the
+    /// it's its device's active agent, it awaits an identification decision and has no device yet, or it's a held
+    /// fresh-OS claim awaiting approval (<see cref="Mappings.IsHeldClaim"/>). The agent is the
     /// one the access token names; a request naming any other agent is refused (story 100).
     /// </summary>
     /// <returns>
@@ -28,7 +30,7 @@ internal static class ActiveAgents
             return (null, controller.NotFound());
         if (agent.RevokedAt is not null)
             return (null, controller.Forbid());
-        if (agent.Device is { } device && device.ActiveAgentId != agent.Id)
+        if (agent.Device is { } device && device.ActiveAgentId != agent.Id && !agent.IsHeldClaim())
             return (null, controller.Problem(statusCode: StatusCodes.Status409Conflict, title: "Agent replaced",
                 detail: "This agent is no longer its device's active agent."));
         return (agent, null);

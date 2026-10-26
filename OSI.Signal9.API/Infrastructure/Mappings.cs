@@ -142,6 +142,15 @@ internal static class Mappings
         device.ActiveAgent?.Status());
 
     /// <summary>The first that applies of Revoked, Needs decision and Awaiting approval, or else Active.</summary>
+    /// <summary>
+    /// Whether <paramref name="agent"/>, loaded with its <see cref="Agent.Device"/>, is a held fresh-OS claim: an agent
+    /// that joined its device from a freshly installed operating system and waits for approval before it replaces the
+    /// device's active agent. Until then its reported facts wait in its <see cref="Agent.PendingIdentification"/>, and it
+    /// changes nothing on the device.
+    /// </summary>
+    public static bool IsHeldClaim(this Agent agent) =>
+        agent.RevokedAt is null && agent.AwaitingApproval && agent.Device is { } device && device.ActiveAgentId != agent.Id;
+
     public static AgentStatus Status(this Agent agent) =>
         agent.RevokedAt is not null ? AgentStatus.Revoked
         : agent.DeviceId is null ? AgentStatus.NeedsDecision
