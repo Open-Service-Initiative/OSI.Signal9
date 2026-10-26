@@ -40,6 +40,9 @@ _Avoid_: Children (unless you mean only the direct ones), sub-tenants
 Moving a tenant, with its descendants, to a new parent tenant. One side proposes it and the other accepts it.
 _Avoid_: Move, re-parent, migration
 
+**Tenant deletion**:
+Removing a tenant, once its child tenants and live devices are gone, with everything it owns, including the users it owns. It leaves an anonymous record of its ancestors at that moment, so its audit trail stays readable there.
+
 ## Access
 
 **User**:

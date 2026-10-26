@@ -116,6 +116,12 @@ public static class AuditActions
 
     /// <summary>An accepted tenant transfer moved the tenant, with its descendants, under its new parent (story 10).</summary>
     public const string TenantTransferCompleted = "tenant-transfer.completed";
+
+    /// <summary>
+    /// A tenant was deleted (story 11), stored at its parent (deployment-level for a root). Everything it owned is removed
+    /// first, each removal audited where it was with <see cref="AuditEntryDto.Detail"/> <c>tenant-deleted</c>; its own
+    /// trail stays readable at the ancestors it had when deleted (story 13).
+    /// </summary>
     public const string TenantDeleted = "tenant.deleted";
 
     /// <summary>
@@ -129,6 +135,12 @@ public static class AuditActions
 
     /// <summary>A user's editable fields changed (stories 15-16), stored at their owning tenant.</summary>
     public const string UserUpdated = "user.updated";
+
+    /// <summary>
+    /// A user was deleted with their owning tenant (#134), stored at that tenant; each of their role assignments is
+    /// removed with its own entry. <see cref="AuditEntryDto.Detail"/> is <c>tenant-deleted</c>.
+    /// </summary>
+    public const string UserDeleted = "user.deleted";
 
     public const string RoleAssignmentCreated = "role-assignment.created";
     public const string RoleAssignmentDeleted = "role-assignment.deleted";

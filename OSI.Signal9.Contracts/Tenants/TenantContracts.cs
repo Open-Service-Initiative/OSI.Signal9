@@ -156,3 +156,25 @@ public enum TenantTransferDirection
 /// <param name="DeviceId">The device in the transferred subtree.</param>
 /// <param name="DuplicateOfDeviceId">The device already in the receiving tree with the same hardware.</param>
 public sealed record DuplicateDeviceDto(Guid DeviceId, Guid DuplicateOfDeviceId);
+
+/// <summary>
+/// What deleting a tenant would do, as things stand (#134, story 11): what still blocks it, and what the cascade would
+/// remove beyond the tenant's own subtree. Deleting refuses (409) while <see cref="ChildTenantIds"/> or
+/// <see cref="DeviceIds"/> isn't empty, and, except for a Superadministrator, while
+/// <see cref="TenantsLeftWithoutAdministrator"/> isn't.
+/// </summary>
+/// <param name="ChildTenantIds">Child tenants, which must be deleted or transferred first.</param>
+/// <param name="DeviceIds">Live devices, which must be deleted or transferred first.</param>
+/// <param name="OutsideRoleAssignments">
+/// Role assignments at other tenants, held by users the tenant owns: they're deleted with their users, and each removal is
+/// audited at the tenant where it was.
+/// </param>
+/// <param name="TenantsLeftWithoutAdministrator">
+/// Tenants where removing those assignments would leave no Administrator at the tenant or above it.
+/// </param>
+public sealed record TenantDeletionPreviewDto(
+    Guid TenantId,
+    IReadOnlyList<Guid> ChildTenantIds,
+    IReadOnlyList<Guid> DeviceIds,
+    IReadOnlyList<Roles.RoleAssignmentDto> OutsideRoleAssignments,
+    IReadOnlyList<Guid> TenantsLeftWithoutAdministrator);

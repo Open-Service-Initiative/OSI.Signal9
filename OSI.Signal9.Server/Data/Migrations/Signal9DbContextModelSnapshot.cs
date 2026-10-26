@@ -321,6 +321,23 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.ToTable("DashboardSessions");
                 });
 
+            modelBuilder.Entity("OSI.Signal9.Server.Data.DeletedTenant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.PrimitiveCollection<Guid[]>("AncestorIds")
+                        .IsRequired()
+                        .HasColumnType("uuid[]");
+
+                    b.Property<DateTime>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("DeletedTenants");
+                });
+
             modelBuilder.Entity("OSI.Signal9.Server.Data.Device", b =>
                 {
                     b.Property<Guid>("Id")

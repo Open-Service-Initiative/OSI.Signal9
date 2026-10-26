@@ -37,7 +37,7 @@ public enum TenantTreeError
 /// PostgreSQL advisory lock, and updates the parent pointer and the closure table together (ADR-0001), with the audit
 /// entry that records it.
 /// </summary>
-public sealed class TenantTree(Signal9DbContext db, CallerAudit audit, IOptions<TenantTreeOptions> options)
+public sealed class TenantTree(Signal9DbContext db, CallerAudit audit, IOptions<TenantTreeOptions> options, TimeProvider time)
 {
     /// <summary>Key of the transaction-level advisory lock every tree change holds.</summary>
     public const long LockKey = 0x5167_6E39_5472_6565; // "Sig9Tree"
@@ -127,17 +127,29 @@ public sealed class TenantTree(Signal9DbContext db, CallerAudit audit, IOptions<
         return new MovePlan(TenantTreeError.None, tenant, parentAncestors, subtree);
     }
 
-    /// <summary>Removes a tenant that has no child tenants. Its closure rows go with it.</summary>
+    /// <summary>
+    /// Removes a tenant that has no child tenants, leaving its anonymous record with the ancestors it has now (story 13).
+    /// Its closure rows go with it. <paramref name="alongside"/> runs in the same transaction once the tenant is known to
+    /// have no child tenants, and removes what the tenant owns, with its audit entries; if it returns false, nothing
+    /// changes and the result is <see cref="TenantTreeError.Refused"/>.
+    /// </summary>
     /// <param name="version">The <see cref="Tenant.Version"/> the caller read; if the row has changed since,
     /// the removal fails with <see cref="DbUpdateConcurrencyException"/>.</param>
-    public Task<TenantTreeError> RemoveAsync(Guid tenantId, uint version, CancellationToken cancellationToken) =>
+    public Task<TenantTreeError> RemoveAsync(Guid tenantId, uint version, Func<Task<bool>> alongside,
+        CancellationToken cancellationToken) =>
         ChangeAsync(async () =>
         {
             var tenant = await db.Tenants.SingleOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
             if (tenant is null)
                 return TenantTreeError.TenantNotFound;
-            if (await db.Tenants.AnyAsync(t => t.ParentTenantId == tenant.Id, cancellationToken))
+            if (await db.TenantClosures.AnyAsync(c => c.AncestorId == tenant.Id && c.Depth > 0, cancellationToken))
                 return TenantTreeError.HasChildTenants;
+            if (!await alongside())
+                return TenantTreeError.Refused;
+
+            var ancestors = await db.TenantClosures.Where(c => c.DescendantId == tenant.Id && c.Depth > 0)
+                .OrderBy(c => c.Depth).Select(c => c.AncestorId).ToArrayAsync(cancellationToken);
+            db.DeletedTenants.Add(new DeletedTenant { Id = tenant.Id, AncestorIds = ancestors, DeletedAt = time.GetUtcNow().UtcDateTime });
             db.Entry(tenant).Property(t => t.Version).OriginalValue = version;
             db.Tenants.Remove(tenant);
             // At the parent, whose Administrators can still read it; a root's deletion is deployment-level.

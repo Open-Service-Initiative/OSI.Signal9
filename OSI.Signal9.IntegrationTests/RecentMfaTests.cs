@@ -240,8 +240,8 @@ public sealed class RecentMfaTests : IDisposable
         var document = await client.GetFromJsonAsync<JsonElement>("docs/openapi/v1.json", Ct);
 
         var delete = document.GetProperty("paths").GetProperty("/api/v1/tenants/{tenantId}").GetProperty("delete");
-        var requirement = delete.GetProperty("x-signal9-requirements").EnumerateArray().Single();
-        Assert.AreEqual("recent-mfa", requirement.GetProperty("name").GetString());
+        Assert.ContainsSingle(delete.GetProperty("x-signal9-requirements").EnumerateArray()
+            .Where(r => r.GetProperty("name").GetString() == "recent-mfa"));
         StringAssert.Contains(delete.GetProperty("description").GetString(), "15 minutes");
         Assert.IsTrue(delete.GetProperty("responses").TryGetProperty("401", out var unauthorized));
         StringAssert.Contains(unauthorized.GetProperty("description").GetString(), "insufficient_user_authentication");

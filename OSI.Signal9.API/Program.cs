@@ -32,6 +32,7 @@ builder.Services.AddSingleton<DevicePresence>();
 builder.Services.AddOptions<TenantTreeOptions>().BindConfiguration(TenantTreeOptions.SectionName)
     .ValidateDataAnnotations().ValidateOnStart();
 builder.Services.AddScoped<TenantTree>();
+builder.Services.AddScoped<TenantDeletion>();
 builder.Services.AddSignal9Audit();
 builder.Services.AddScoped<CallerAudit>();
 

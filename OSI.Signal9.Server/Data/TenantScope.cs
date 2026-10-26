@@ -159,6 +159,14 @@ public enum TenantScopeBypass
     /// </summary>
     [NotAudited("Reaches only the presented invitation and the redeeming person's own user, and each redemption is audited.")]
     InvitationRedemption,
+
+    /// <summary>
+    /// Deleting a tenant (#134), and previewing it: finding everything the tenant owns, the role assignments its users
+    /// hold anywhere, including in other tenant trees, and whether removing them would leave a tenant with no
+    /// Administrator at it or above it. Only an Administrator above the tenant, or a Superadministrator, gets here.
+    /// </summary>
+    [NotAudited("The owning tenant governs its users wherever they're assigned, and each removal is audited where it was.")]
+    TenantDeletion,
 }
 
 /// <summary>Each use of this <see cref="TenantScopeBypass"/> is recorded in the audit log.</summary>

@@ -47,6 +47,18 @@ public sealed class TenantClosure
 }
 
 /// <summary>
+/// The anonymous record a deleted tenant leaves (#134, story 13): only its ID and the ancestors it had when it was
+/// deleted, nearest first. Its audit trail stays readable, with <c>audit.read</c>, at those ancestors, whatever becomes
+/// of the tree afterwards.
+/// </summary>
+public sealed class DeletedTenant
+{
+    public Guid Id { get; set; }
+    public Guid[] AncestorIds { get; set; } = [];
+    public DateTime DeletedAt { get; set; }
+}
+
+/// <summary>
 /// A tenant transfer (#122, ADR-0001): a proposal to move <see cref="TenantId"/>, with its descendants, under
 /// <see cref="ToParentTenantId"/>. Both sides see it: people who reach the tenant, its parent as it was when proposed,
 /// or the new parent. Accepting it moves the tenant in the same transaction.

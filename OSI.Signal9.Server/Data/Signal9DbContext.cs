@@ -21,6 +21,7 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<TenantClosure> TenantClosures => Set<TenantClosure>();
     public DbSet<TenantTransfer> TenantTransfers => Set<TenantTransfer>();
+    public DbSet<DeletedTenant> DeletedTenants => Set<DeletedTenant>();
     public DbSet<Device> Devices => Set<Device>();
     public DbSet<Agent> Agents => Set<Agent>();
     public DbSet<PendingIdentification> PendingIdentifications => Set<PendingIdentification>();
@@ -296,6 +297,9 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
             application.HasOne(a => a.Role).WithMany().HasForeignKey(a => a.RoleId).OnDelete(DeleteBehavior.Restrict);
         });
 
+        // No foreign keys: the tenant is gone, and its ancestors may go too.
+        modelBuilder.Entity<DeletedTenant>(deleted => deleted.Property(d => d.Id).ValueGeneratedNever());
+
         modelBuilder.Entity<AuditEntry>(entry =>
         {
             entry.Property(e => e.Sequence).UseIdentityAlwaysColumn();
@@ -323,9 +327,11 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
         modelBuilder.Entity<Tenant>().HasQueryFilter(TenantScope.Filter, t => SeesEveryTenant ||
             TenantClosures.Any(c => c.DescendantId == t.Id && AssignedTenantIds.Contains(c.AncestorId)));
 
-        // An entry is read at its tenant and above; a deployment-level entry (no tenant) only by a Superadministrator.
+        // An entry is read at its tenant and above; a deployment-level entry (no tenant) only by a Superadministrator. A
+        // deleted tenant's entries are read at the ancestors it had when it was deleted.
         modelBuilder.Entity<AuditEntry>().HasQueryFilter(TenantScope.Filter, e => SeesEveryTenant ||
-            (e.TenantId != null && TenantClosures.Any(c => c.DescendantId == e.TenantId && AssignedTenantIds.Contains(c.AncestorId))));
+            (e.TenantId != null && (TenantClosures.Any(c => c.DescendantId == e.TenantId && AssignedTenantIds.Contains(c.AncestorId))
+                || DeletedTenants.Any(d => d.Id == e.TenantId && d.AncestorIds.Any(a => AssignedTenantIds.Contains(a))))));
 
         // A transfer is visible to both sides: from the tenant it moves, its parent when proposed, or its new parent.
         modelBuilder.Entity<TenantTransfer>().HasQueryFilter(TenantScope.Filter, t => SeesEveryTenant ||

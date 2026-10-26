@@ -252,15 +252,46 @@ public sealed class TenantsController(
         return tenant.ToDto(deviceCount, inherited);
     }
 
-    /// <summary>Deletes a tenant. Tenants that still own devices or child tenants cannot be deleted.</summary>
+    /// <summary>
+    /// Shows what deleting the tenant would do now: the child tenants and live devices that block it, the role
+    /// assignments at other tenants that would go with the users it owns, and any tenant that would be left with no
+    /// Administrator at it or above it.
+    /// </summary>
     [RequireScope(Scopes.Tenants.Delete)]
+    [RequireAncestorAdministrator]
+    [HttpGet("{tenantId:guid}:preview-delete")]
+    [OptimisticConcurrency]
+    [ProducesResponseType<TenantDeletionPreviewDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<TenantDeletionPreviewDto>> PreviewDelete(Guid tenantId, TenantDeletion deletion,
+        CancellationToken cancellationToken)
+    {
+        if (!await db.Tenants.AnyAsync(t => t.Id == tenantId, cancellationToken))
+            return NotFound();
+        var preview = await deletion.PreviewAsync(tenantId, cancellationToken);
+        return this.Conditional(preview, ConditionalRequests.ETag(0,
+            string.Join(',', preview.ChildTenantIds), string.Join(',', preview.DeviceIds),
+            string.Join(',', preview.OutsideRoleAssignments.Select(a => a.Id)), string.Join(',', preview.TenantsLeftWithoutAdministrator)));
+    }
+
+    /// <summary>
+    /// Deletes a tenant with everything it owns: its enrollment tokens, invitations, API applications, the role
+    /// assignments at it, and the users it owns with all their role assignments, wherever they are. Its child tenants
+    /// and live devices must be deleted or transferred first (409, listing them), and it's refused (409) if it would leave
+    /// a tenant with no Administrator at it or above it, except for a Superadministrator. See <c>:preview-delete</c>.
+    /// Only an Administrator above the tenant, or a Superadministrator, can delete it. Its audit trail stays readable at
+    /// the ancestors it had.
+    /// </summary>
+    [RequireScope(Scopes.Tenants.Delete)]
+    [RequireAncestorAdministrator]
     [RequireRecentMfa]
     [HttpDelete("{tenantId:guid}")]
     [OptimisticConcurrency]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> Delete(Guid tenantId, CancellationToken cancellationToken)
+    public async Task<IActionResult> Delete(Guid tenantId, TenantDeletion deletion, CancellationToken cancellationToken)
     {
         var found = await db.Tenants.AsNoTracking()
             .Where(t => t.Id == tenantId)
@@ -271,19 +302,31 @@ public sealed class TenantsController(
         if (this.Preconditions(found.Tenant.ETag(found.DeviceCount, await db.InheritsHoldAsync(tenantId, cancellationToken))) is { } refused)
             return refused;
 
-        if (found.DeviceCount > 0)
-            return Problem(statusCode: StatusCodes.Status409Conflict, title: "Tenant has devices",
-                detail: "Delete or transfer the tenant's devices before deleting the tenant.");
-
-        switch (await tree.RemoveAsync(tenantId, found.Tenant.Version, cancellationToken))
+        var end = new SessionEnd("", PersonSubject.TryParse(User, out _, out _) ? AuditActorKind.Person : AuditActorKind.Application,
+            User.FindFirst(OpenIddict.Abstractions.OpenIddictConstants.Claims.Subject)?.Value,
+            HttpContext.Connection.RemoteIpAddress?.ToString());
+        switch (await deletion.DeleteAsync(tenantId, found.Tenant.Version, end, cancellationToken))
         {
-            case TenantTreeError.TenantNotFound:
+            case TenantDeletionResult.NotFound:
                 return NotFound();
-            case TenantTreeError.HasChildTenants:
-                return Problem(statusCode: StatusCodes.Status409Conflict, title: "Tenant has child tenants",
-                    detail: "Delete or transfer the tenant's child tenants before deleting it.");
+            case TenantDeletionResult.NotEmpty:
+                return Refusal("Tenant not empty",
+                    "Delete or transfer the tenant's child tenants and devices before deleting it.",
+                    ("childTenantIds", deletion.Remaining!.ChildTenantIds), ("deviceIds", deletion.Remaining.DeviceIds));
+            case TenantDeletionResult.WouldLeaveWithoutAdministrator:
+                return Refusal("Last Administrator",
+                    "Deleting the tenant deletes the users it owns, and would leave these tenants with no Administrator at them or above them; grant another Administrator there first.",
+                    ("tenantsLeftWithoutAdministrator", deletion.Remaining!.TenantsLeftWithoutAdministrator));
         }
 
         return NoContent();
+    }
+
+    private ObjectResult Refusal(string title, string detail, params (string Name, IReadOnlyList<Guid> Ids)[] lists)
+    {
+        var problem = ProblemDetailsFactory.CreateProblemDetails(HttpContext, StatusCodes.Status409Conflict, title, detail: detail);
+        foreach (var (name, ids) in lists)
+            problem.Extensions[name] = ids;
+        return new ObjectResult(problem) { StatusCode = StatusCodes.Status409Conflict, ContentTypes = { "application/problem+json" } };
     }
 }
