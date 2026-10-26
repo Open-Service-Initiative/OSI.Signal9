@@ -1,0 +1,194 @@
+@page "/tenant-transfers"
+@attribute [Authorize]
+@inject Signal9ApiClient Api
+@inject IDialogService Dialogs
+
+<PageTitle>Tenant transfers - Signal9</PageTitle>
+
+<div class="page-header">
+    <FluentText As="TextTag.H1" Size="TextSize.Size800">Tenant transfers</FluentText>
+    <FluentSpacer />
+    <FluentButton Id="propose-transfer" Appearance="ButtonAppearance.Primary" IconStart="@(new Icons.Regular.Size20.ArrowSwap())"
+                  Disabled="@(tenants.Count == 0)" OnClick="ProposeAsync">Propose transfer</FluentButton>
+</div>
+<p>Moving a tenant, with all its descendants, to a new parent tenant. An Administrator above the tenant proposes it, and an Administrator at the new parent accepts or declines it. Accepting moves the tenant at once: people above its old parent lose access to it, and people above its new parent gain it.</p>
+
+<FluentSelect Id="transfer-view-tenant" TOption="string" TValue="string" Label="Tenant"
+              Value="@tenantId?.ToString()" ValueChanged="@((string? value) => ChooseTenantAsync(value))">
+    @foreach (var tenant in tenants)
+    {
+        <FluentOption TValue="string" Value="@tenant.Id.ToString()">@tenant.Name</FluentOption>
+    }
+</FluentSelect>
+
+<ProblemBar Error="error" />
+@if (notice is not null)
+{
+    <FluentMessageBar Class="notice-bar" Intent="MessageBarIntent.Success">@notice</FluentMessageBar>
+}
+
+<section id="outgoing-transfers">
+    <FluentText As="TextTag.H2" Size="TextSize.Size600">Outgoing</FluentText>
+    <p>Transfers of this tenant, or of tenants that were beneath it.</p>
+    <FluentDataGrid Items="@outgoing.AsQueryable()" TGridItem="TenantTransferDto" Loading="loading" ItemKey="@(t => t.Id)">
+        <TemplateColumn Title="Tenant">@NameOf(context.TenantName, context.TenantId)</TemplateColumn>
+        <TemplateColumn Title="New parent">@NameOf(context.ToParentTenantName, context.ToParentTenantId)</TemplateColumn>
+        <TemplateColumn Title="Status">@context.Status</TemplateColumn>
+        <TemplateColumn Title="Proposed">@context.ProposedAt.ToLocalTime().ToString("g")</TemplateColumn>
+        <TemplateColumn Title="Decided">@context.DecidedAt?.ToLocalTime().ToString("g")</TemplateColumn>
+        <TemplateColumn Title="Actions" Align="DataGridCellAlignment.End">
+            @if (context.Status == TenantTransferStatus.Pending)
+            {
+                <FluentButton Id="@($"cancel-{context.Id}")" IconOnly="true" Title="Cancel transfer" Appearance="ButtonAppearance.Subtle"
+                              IconStart="@(new Icons.Regular.Size20.DismissCircle())" OnClick="@(() => CancelAsync(context))" />
+            }
+        </TemplateColumn>
+    </FluentDataGrid>
+</section>
+
+<section id="incoming-transfers">
+    <FluentText As="TextTag.H2" Size="TextSize.Size600">Incoming</FluentText>
+    <p>Transfers to this tenant, or to tenants beneath it, as the new parent.</p>
+    <FluentDataGrid Items="@incoming.AsQueryable()" TGridItem="TenantTransferDto" Loading="loading" ItemKey="@(t => t.Id)">
+        <TemplateColumn Title="Tenant">@NameOf(context.TenantName, context.TenantId)</TemplateColumn>
+        <TemplateColumn Title="New parent">@NameOf(context.ToParentTenantName, context.ToParentTenantId)</TemplateColumn>
+        <TemplateColumn Title="Status">@context.Status</TemplateColumn>
+        <TemplateColumn Title="Proposed">@context.ProposedAt.ToLocalTime().ToString("g")</TemplateColumn>
+        <TemplateColumn Title="Decided">@context.DecidedAt?.ToLocalTime().ToString("g")</TemplateColumn>
+        <TemplateColumn Title="Actions" Align="DataGridCellAlignment.End">
+            @if (context.Status == TenantTransferStatus.Pending)
+            {
+                <FluentButton Id="@($"accept-{context.Id}")" IconOnly="true" Title="Accept" Appearance="ButtonAppearance.Subtle"
+                              IconStart="@(new Icons.Regular.Size20.CheckmarkCircle())" OnClick="@(() => AcceptAsync(context))" />
+                <FluentButton Id="@($"decline-{context.Id}")" IconOnly="true" Title="Decline" Appearance="ButtonAppearance.Subtle"
+                              IconStart="@(new Icons.Regular.Size20.DismissCircle())" OnClick="@(() => DeclineAsync(context))" />
+            }
+        </TemplateColumn>
+    </FluentDataGrid>
+</section>
+
+@code {
+    // TODO: paging and a search picker once there can be more than one page (the API's maximum is 100).
+    private const int PageSize = 100;
+
+    private IReadOnlyList<TenantDto> tenants = [];
+    private List<TenantTransferDto> outgoing = [];
+    private List<TenantTransferDto> incoming = [];
+    private Guid? tenantId;
+    private bool loading = true;
+    private ApiException? error;
+    private string? notice;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            tenants = (await Api.ListTenantsAsync(1, 100)).Items;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+            loading = false;
+            return;
+        }
+
+        tenantId = tenants.FirstOrDefault()?.Id;
+        await LoadAsync();
+    }
+
+    private async Task ChooseTenantAsync(string? value)
+    {
+        tenantId = Guid.TryParse(value, out var id) ? id : null;
+        notice = null;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (tenantId is not { } id)
+        {
+            (outgoing, incoming, loading) = ([], [], false);
+            return;
+        }
+
+        loading = true;
+        try
+        {
+            outgoing = [.. (await Api.ListTenantTransfersAsync(id, TenantTransferDirection.Outgoing, 1, PageSize)).Items];
+            incoming = [.. (await Api.ListTenantTransfersAsync(id, TenantTransferDirection.Incoming, 1, PageSize)).Items];
+            error = null;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task ProposeAsync()
+    {
+        var result = await Dialogs.ShowDialogAsync<TenantTransferProposeDialog>(options =>
+        {
+            options.Header.Title = "Propose a tenant transfer";
+            options.Parameters[nameof(TenantTransferProposeDialog.Tenants)] = tenants;
+        });
+        if (result.Cancelled || result.Value is not TenantTransferProposeDialog.Proposal proposal)
+            return;
+
+        TenantTransferDto? proposed = null;
+        await RunAsync(async () =>
+        {
+            proposed = await Api.ProposeTenantTransferAsync(proposal.TenantId, proposal.Request);
+            await LoadAsync();
+        }, () => $"Proposed transferring {NameOf(proposed!.TenantName, proposed.TenantId)} to {NameOf(proposed.ToParentTenantName, proposed.ToParentTenantId)}.");
+    }
+
+    private Task AcceptAsync(TenantTransferDto transfer) => DecideAsync(transfer, "accept", "Accept transfer", "Accept",
+        $"Accept {Describe(transfer)}? It moves, with all its descendants, at once: people above its current parent lose access to it, and people above {NameOf(transfer.ToParentTenantName, transfer.ToParentTenantId)} gain it.",
+        $"Accepted the transfer of {NameOf(transfer.TenantName, transfer.TenantId)}.");
+
+    private Task DeclineAsync(TenantTransferDto transfer) => DecideAsync(transfer, "decline", "Decline transfer", "Decline",
+        $"Decline {Describe(transfer)}? Nothing moves.",
+        $"Declined the transfer of {NameOf(transfer.TenantName, transfer.TenantId)}.");
+
+    private Task CancelAsync(TenantTransferDto transfer) => DecideAsync(transfer, "cancel", "Cancel transfer", "Cancel transfer",
+        $"Cancel {Describe(transfer)}? Nothing moves.",
+        $"Cancelled the transfer of {NameOf(transfer.TenantName, transfer.TenantId)}.");
+
+    private async Task DecideAsync(TenantTransferDto transfer, string action, string title, string verb, string question, string done)
+    {
+        var confirm = await Dialogs.ShowConfirmationAsync(question, title, verb, "Keep it");
+        if (confirm.Cancelled)
+            return;
+
+        await RunAsync(async () =>
+        {
+            await Api.TransitionTenantTransferAsync(transfer, action);
+            await LoadAsync();
+        }, () => done);
+    }
+
+    /// <summary>Runs a change, then says how it went.</summary>
+    private async Task RunAsync(Func<Task> change, Func<string> done)
+    {
+        notice = null;
+        try
+        {
+            await change();
+            error = null;
+            notice = done();
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+    }
+
+    private static string Describe(TenantTransferDto transfer) =>
+        $"the transfer of {NameOf(transfer.TenantName, transfer.TenantId)} to {NameOf(transfer.ToParentTenantName, transfer.ToParentTenantId)}";
+
+    private static string NameOf(string? name, Guid id) => name ?? id.ToString();
+}

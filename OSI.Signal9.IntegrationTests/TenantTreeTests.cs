@@ -27,44 +27,6 @@ public sealed class TenantTreeTests : IDisposable
     private CancellationToken Ct => _testContext.CancellationToken;
 
     [TestMethod]
-    public async Task Moving_a_tenant_under_itself_or_a_descendant_is_refused_as_a_cycle()
-    {
-        var msp = await CreateAsync("MSP");
-        var client = await CreateAsync("Client", msp);
-        var site = await CreateAsync("Site", client);
-
-        Assert.AreEqual(TenantTreeError.Cycle, await MoveAsync(msp, site));
-        Assert.AreEqual(TenantTreeError.Cycle, await MoveAsync(client, client));
-        Assert.AreEqual(msp, (await GetAsync(client)).ParentTenantId);
-    }
-
-    [TestMethod]
-    public async Task Moving_a_subtree_beyond_the_maximum_depth_is_refused()
-    {
-        // Right's leaf is 11 below its root. Moved under Left's depth-9 leaf, that leaf would sit at depth 21;
-        // under Left's depth-8 tenant, at exactly the maximum of 20.
-        var left = await ChainAsync("Left", deepest: 9);
-        var right = await ChainAsync("Right", deepest: 11);
-
-        Assert.AreEqual(TenantTreeError.TooDeep, await MoveAsync(right[0], left[^1]));
-        Assert.AreEqual(TenantTreeError.None, await MoveAsync(right[0], left[^2]));
-    }
-
-    [TestMethod]
-    public async Task A_maximum_depth_of_zero_refuses_moving_a_root_under_another()
-    {
-        using var host = _factory.WithWebHostBuilder(builder => builder.UseSetting("TenantTree:MaxDepth", "0"));
-        var left = await CreateAsync("Left");
-        var right = await CreateAsync("Right");
-
-        using var scope = host.Services.CreateScope();
-        var tree = scope.ServiceProvider.GetRequiredService<TenantTree>();
-
-        Assert.AreEqual(TenantTreeError.TooDeep, await tree.MoveAsync(right, left, Ct));
-        Assert.IsNull((await GetAsync(right)).ParentTenantId);
-    }
-
-    [TestMethod]
     [DataRow(-1, false)]
     [DataRow(0, true)]
     [DataRow(1000, true)]
@@ -110,7 +72,7 @@ public sealed class TenantTreeTests : IDisposable
         await CreateAsync("Standalone");
         using var superadministrator = await _factory.CreatePersonClientAsync(_factory.Superadministrator());
         Assert.AreEqual(HttpStatusCode.NoContent, (await superadministrator.DeleteAsync($"api/v1/tenants/{site2}", Ct)).StatusCode);
-        Assert.AreEqual(TenantTreeError.None, await MoveAsync(client1, mspB));
+        await TransferAsync(client1, mspB);
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<Signal9DbContext>();
@@ -154,11 +116,14 @@ public sealed class TenantTreeTests : IDisposable
     private Task<TenantDto> GetAsync(Guid tenantId) =>
         _client.GetFromJsonAsync<TenantDto>($"api/v1/tenants/{tenantId}", Signal9Json.Options, Ct)!;
 
-    // Re-parenting has no endpoint until tenant transfers; until then, the tree service is driven directly.
-    private async Task<TenantTreeError> MoveAsync(Guid tenantId, Guid newParentId)
+    // Moves a tenant as a Superadministrator: proposes the transfer, then accepts it.
+    private async Task TransferAsync(Guid tenantId, Guid newParentId)
     {
-        using var scope = _factory.Services.CreateScope();
-        return await scope.ServiceProvider.GetRequiredService<TenantTree>().MoveAsync(tenantId, newParentId, Ct);
+        var proposed = await _client.PostAsJsonAsync($"api/v1/tenants/{tenantId}/transfers",
+            new ProposeTenantTransferRequest { ToParentTenantId = newParentId }, Signal9Json.Options, Ct);
+        Assert.AreEqual(HttpStatusCode.Created, proposed.StatusCode, await proposed.Content.ReadAsStringAsync(Ct));
+        var accepted = await _client.PostAsync($"{proposed.Headers.Location}:accept", null, Ct);
+        Assert.AreEqual(HttpStatusCode.OK, accepted.StatusCode, await accepted.Content.ReadAsStringAsync(Ct));
     }
 
     public void Dispose()

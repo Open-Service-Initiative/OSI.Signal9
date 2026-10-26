@@ -130,6 +130,25 @@ public sealed class Signal9ApiClient(HttpClient http, BffAuthenticationStateProv
     public Task<EnrollmentTokenDto> TransitionEnrollmentTokenAsync(string url, string action, CancellationToken cancellationToken = default) =>
         SendAsync<EnrollmentTokenDto>(HttpMethod.Post, $"{url.TrimStart('/')}:{action}", null, cancellationToken);
 
+    // Tenant transfers
+
+    /// <summary>One side of a tenant's transfers, newest first, including its descendants'.</summary>
+    public Task<PagedResult<TenantTransferDto>> ListTenantTransfersAsync(Guid tenantId, TenantTransferDirection direction,
+        int page, int pageSize, CancellationToken cancellationToken = default) =>
+        SendAsync<PagedResult<TenantTransferDto>>(HttpMethod.Get,
+            $"api/v1/tenants/{tenantId}/transfers?direction={direction}&page={page}&pageSize={pageSize}", null, cancellationToken);
+
+    public Task<TenantTransferDto> ProposeTenantTransferAsync(Guid tenantId, ProposeTenantTransferRequest request,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<TenantTransferDto>(HttpMethod.Post, $"api/v1/tenants/{tenantId}/transfers",
+            JsonContent.Create(request, options: Signal9Json.Options), cancellationToken);
+
+    /// <summary>A lifecycle action on the transfer, at its canonical URL: <c>accept</c>, <c>decline</c> or <c>cancel</c>.</summary>
+    public Task<TenantTransferDto> TransitionTenantTransferAsync(TenantTransferDto transfer, string action,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<TenantTransferDto>(HttpMethod.Post,
+            $"api/v1/tenants/{transfer.TenantId}/transfers/{transfer.Id}:{action}", null, cancellationToken);
+
     // Audit
 
     /// <summary>The audit entries the signed-in person can read, newest first.</summary>

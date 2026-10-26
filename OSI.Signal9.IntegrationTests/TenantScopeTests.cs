@@ -153,7 +153,7 @@ public sealed class TenantScopeTests : IDisposable
         var owned = TenantOwnedEntities(db.Model).Select(t => t.ClrType).ToList();
 
         CollectionAssert.AreEquivalent(
-            new[] { typeof(Tenant), typeof(Device), typeof(Server.Data.Agent), typeof(PendingIdentification), typeof(Command), typeof(TelemetrySample), typeof(User), typeof(RoleAssignment), typeof(EnrollmentToken), typeof(ApiApplication) }, owned);
+            new[] { typeof(Tenant), typeof(TenantTransfer), typeof(Device), typeof(Server.Data.Agent), typeof(PendingIdentification), typeof(Command), typeof(TelemetrySample), typeof(User), typeof(RoleAssignment), typeof(EnrollmentToken), typeof(ApiApplication) }, owned);
     }
 
     /// <summary>

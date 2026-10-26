@@ -46,6 +46,31 @@ public sealed class TenantClosure
     public int Depth { get; set; }
 }
 
+/// <summary>
+/// A tenant transfer (#122, ADR-0001): a proposal to move <see cref="TenantId"/>, with its descendants, under
+/// <see cref="ToParentTenantId"/>. Both sides see it: people who reach the tenant, its parent as it was when proposed,
+/// or the new parent. Accepting it moves the tenant in the same transaction.
+/// </summary>
+public sealed class TenantTransfer
+{
+    public Guid Id { get; set; }
+
+    /// <summary>Row version (PostgreSQL <c>xmin</c>): the concurrency token behind the resource's ETag.</summary>
+    public uint Version { get; set; }
+
+    /// <summary>The tenant being transferred, which owns the transfer.</summary>
+    public Guid TenantId { get; set; }
+
+    /// <summary>Its parent when proposed: none for a root, or once that tenant is deleted.</summary>
+    public Guid? FromParentTenantId { get; set; }
+    public Guid ToParentTenantId { get; set; }
+    public TenantTransferStatus Status { get; set; }
+    public DateTime ProposedAt { get; set; }
+
+    /// <summary>When it was accepted (and so completed), declined or cancelled.</summary>
+    public DateTime? DecidedAt { get; set; }
+}
+
 /// <summary>A managed machine. Owns its telemetry and command history across agent reinstalls.</summary>
 public sealed class Device : ITenantOwned
 {

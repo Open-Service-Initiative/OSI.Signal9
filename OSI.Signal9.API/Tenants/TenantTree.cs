@@ -27,6 +27,9 @@ public enum TenantTreeError
     TooDeep,
     Cycle,
     HasChildTenants,
+
+    /// <summary>The check the caller ran alongside the change refused it.</summary>
+    Refused,
 }
 
 /// <summary>
@@ -61,37 +64,68 @@ public sealed class TenantTree(Signal9DbContext db, CallerAudit audit, IOptions<
             return TenantTreeError.None;
         }, cancellationToken);
 
-    /// <summary>Moves a tenant, with its descendants, under a new parent tenant.</summary>
-    public Task<TenantTreeError> MoveAsync(Guid tenantId, Guid newParentId, CancellationToken cancellationToken) =>
+    /// <summary>
+    /// Whether <paramref name="tenantId"/> could move under <paramref name="newParentId"/> as the tree stands now, without
+    /// taking the tree lock: for refusing a tenant transfer when it's proposed. <see cref="MoveAsync"/> checks again.
+    /// </summary>
+    public async Task<TenantTreeError> CheckMoveAsync(Guid tenantId, Guid newParentId, CancellationToken cancellationToken) =>
+        (await PlanMoveAsync(tenantId, newParentId, cancellationToken)).Error;
+
+    /// <summary>
+    /// Moves a tenant, with its descendants, under a new parent tenant, rewriting only the subtree's closure rows. Only
+    /// a tenant transfer moves tenants: <paramref name="alongside"/> runs in the same transaction once the move is known
+    /// to keep the tree a tree within the maximum depth, makes the transfer's own checks and records it, including its
+    /// audit entries. If it returns false, nothing changes and the result is <see cref="TenantTreeError.Refused"/>.
+    /// </summary>
+    public Task<TenantTreeError> MoveAsync(Guid tenantId, Guid newParentId, Func<Task<bool>> alongside,
+        CancellationToken cancellationToken) =>
         ChangeAsync(async () =>
         {
-            var tenant = await db.Tenants.SingleOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
-            if (tenant is null)
-                return TenantTreeError.TenantNotFound;
-            var parentAncestors = await db.TenantClosures.Where(c => c.DescendantId == newParentId).ToListAsync(cancellationToken);
-            if (parentAncestors.Count == 0)
-                return TenantTreeError.ParentNotFound;
-            if (parentAncestors.Any(a => a.AncestorId == tenantId))
-                return TenantTreeError.Cycle;
-
-            var subtree = await db.TenantClosures.Where(c => c.AncestorId == tenantId).ToListAsync(cancellationToken);
-            // The subtree's deepest tenant would sit one below the new parent, plus its own height.
-            if (parentAncestors.Max(c => c.Depth) + 1 + subtree.Max(c => c.Depth) > options.Value.MaxDepth)
-                return TenantTreeError.TooDeep;
+            var plan = await PlanMoveAsync(tenantId, newParentId, cancellationToken);
+            if (plan.Error != TenantTreeError.None)
+                return plan.Error;
+            if (!await alongside())
+                return TenantTreeError.Refused;
 
             // Unlink the subtree from its old ancestors, then link it under the new parent's ancestors.
-            var subtreeIds = subtree.Select(c => c.DescendantId).ToList();
+            var subtreeIds = plan.Subtree.Select(c => c.DescendantId).ToList();
             await db.TenantClosures
                 .Where(c => subtreeIds.Contains(c.DescendantId) && !subtreeIds.Contains(c.AncestorId))
                 .ExecuteDeleteAsync(cancellationToken);
             db.TenantClosures.AddRange(
-                from a in parentAncestors
-                from d in subtree
+                from a in plan.ParentAncestors
+                from d in plan.Subtree
                 select new TenantClosure { AncestorId = a.AncestorId, DescendantId = d.DescendantId, Depth = a.Depth + d.Depth + 1 });
-            Audit(AuditActions.TenantMoved, at: tenantId, tenantId, $"From parent {tenant.ParentTenantId?.ToString() ?? "none"} to {newParentId}.");
-            tenant.ParentTenantId = newParentId;
+            plan.Tenant!.ParentTenantId = newParentId;
             return TenantTreeError.None;
         }, cancellationToken);
+
+    private sealed record MovePlan(TenantTreeError Error, Tenant? Tenant = null, List<TenantClosure>? ParentAncestorRows = null,
+        List<TenantClosure>? SubtreeRows = null)
+    {
+        public List<TenantClosure> ParentAncestors => ParentAncestorRows ?? [];
+        public List<TenantClosure> Subtree => SubtreeRows ?? [];
+    }
+
+    private async Task<MovePlan> PlanMoveAsync(Guid tenantId, Guid newParentId, CancellationToken cancellationToken)
+    {
+        // Read past the filter: the receiving side can't see the tenant until it has moved. The closure table isn't
+        // filtered, so the checks below see the whole tree whoever asks.
+        var tenant = await db.Tenants.IgnoreTenantScope(TenantScopeBypass.TenantTransferMove).SingleOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+        if (tenant is null)
+            return new MovePlan(TenantTreeError.TenantNotFound);
+        var parentAncestors = await db.TenantClosures.Where(c => c.DescendantId == newParentId).ToListAsync(cancellationToken);
+        if (parentAncestors.Count == 0)
+            return new MovePlan(TenantTreeError.ParentNotFound);
+        if (parentAncestors.Any(a => a.AncestorId == tenantId))
+            return new MovePlan(TenantTreeError.Cycle);
+
+        var subtree = await db.TenantClosures.Where(c => c.AncestorId == tenantId).ToListAsync(cancellationToken);
+        // The subtree's deepest tenant would sit one below the new parent, plus its own height.
+        if (parentAncestors.Max(c => c.Depth) + 1 + subtree.Max(c => c.Depth) > options.Value.MaxDepth)
+            return new MovePlan(TenantTreeError.TooDeep);
+        return new MovePlan(TenantTreeError.None, tenant, parentAncestors, subtree);
+    }
 
     /// <summary>Removes a tenant that has no child tenants. Its closure rows go with it.</summary>
     /// <param name="version">The <see cref="Tenant.Version"/> the caller read; if the row has changed since,
@@ -128,7 +162,11 @@ public sealed class TenantTree(Signal9DbContext db, CallerAudit audit, IOptions<
 
             var error = await change();
             if (error != TenantTreeError.None)
+            {
+                // Nothing the refused change tracked may be saved later in the request.
+                db.ChangeTracker.Clear();
                 return error;
+            }
 
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);

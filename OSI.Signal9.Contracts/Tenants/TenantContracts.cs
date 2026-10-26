@@ -93,3 +93,66 @@ public sealed record UpdateTenantRequest
     /// </summary>
     public bool HoldsNewAgentsForApproval { get; init; }
 }
+
+/// <summary>Where a tenant transfer stands. Accepting it completes it: the tenant moves in the same step.</summary>
+public enum TenantTransferStatus
+{
+    /// <summary>Proposed, waiting for the receiving side to accept or decline it.</summary>
+    Pending = 0,
+
+    /// <summary>Accepted by the receiving side, and so completed: the tenant now sits under its new parent.</summary>
+    Accepted = 1,
+
+    /// <summary>Declined by the receiving side. Nothing moved.</summary>
+    Declined = 2,
+
+    /// <summary>Withdrawn by the proposing side before it was decided. Nothing moved.</summary>
+    Cancelled = 3,
+}
+
+/// <summary>
+/// A proposal to move a tenant, with all its descendants, to a new parent tenant (a tenant transfer). One side, an
+/// Administrator above the tenant, proposes it; the other, at the new parent, accepts or declines it.
+/// </summary>
+/// <param name="TenantId">The tenant being transferred.</param>
+/// <param name="TenantName">Its name, which both sides see so the receiving side knows what it's accepting.</param>
+/// <param name="FromParentTenantId">Its parent when the transfer was proposed.</param>
+/// <param name="ToParentTenantId">The parent it moves to when the transfer is accepted.</param>
+/// <param name="ToParentTenantName">The new parent's name, which both sides see.</param>
+/// <param name="DecidedAt">When it was accepted, declined or cancelled.</param>
+public sealed record TenantTransferDto(
+    Guid Id,
+    Guid TenantId,
+    string? TenantName,
+    Guid? FromParentTenantId,
+    Guid ToParentTenantId,
+    string? ToParentTenantName,
+    TenantTransferStatus Status,
+    DateTimeOffset ProposedAt,
+    DateTimeOffset? DecidedAt);
+
+/// <summary>Proposes transferring the tenant to a new parent tenant, which may be in another tenant tree.</summary>
+public sealed record ProposeTenantTransferRequest
+{
+    [Required]
+    public Guid? ToParentTenantId { get; init; }
+}
+
+/// <summary>Which side of a tenant transfer a tenant is on, for listing its transfers.</summary>
+public enum TenantTransferDirection
+{
+    /// <summary>Transfers of the tenant, or of tenants that were beneath it when proposed.</summary>
+    Outgoing = 0,
+
+    /// <summary>Transfers to the tenant, or to tenants beneath it, as their new parent.</summary>
+    Incoming = 1,
+}
+
+/// <summary>
+/// A device a tenant transfer would bring into a root tenant tree that already has a device for the same hardware
+/// (SMBIOS UUID, or manufacturer and serial): one device per machine per root tree. Listed, by ID only, in the 409
+/// refusing the transfer.
+/// </summary>
+/// <param name="DeviceId">The device in the transferred subtree.</param>
+/// <param name="DuplicateOfDeviceId">The device already in the receiving tree with the same hardware.</param>
+public sealed record DuplicateDeviceDto(Guid DeviceId, Guid DuplicateOfDeviceId);

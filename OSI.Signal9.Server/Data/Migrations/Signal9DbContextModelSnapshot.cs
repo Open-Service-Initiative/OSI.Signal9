@@ -845,6 +845,51 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.ToTable("TenantClosures");
                 });
 
+            modelBuilder.Entity("OSI.Signal9.Server.Data.TenantTransfer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("DecidedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("FromParentTenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ProposedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ToParentTenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FromParentTenantId");
+
+                    b.HasIndex("TenantId")
+                        .IsUnique()
+                        .HasFilter("\"Status\" = 'Pending'");
+
+                    b.HasIndex("ToParentTenantId");
+
+                    b.ToTable("TenantTransfers");
+                });
+
             modelBuilder.Entity("OSI.Signal9.Server.Data.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1297,6 +1342,26 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.HasOne("OSI.Signal9.Server.Data.Tenant", null)
                         .WithMany()
                         .HasForeignKey("DescendantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.TenantTransfer", b =>
+                {
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("FromParentTenantId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("ToParentTenantId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

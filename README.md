@@ -131,6 +131,9 @@ A `tls_client_auth` client registers exactly one RFC 8705 subject (`tls_client_a
 | `/api/v1/tenants` | `GET` (paged), `POST` |
 | `/api/v1/tenants/{tenantId}` | `GET`, `PATCH` (`application/merge-patch+json`: name, description, contact, plan, max devices), `DELETE` |
 | `/api/v1/tenants/{tenantId}:suspend`, `:activate`, `:cancel` | `POST` (status transitions; 409 when the current status doesn't allow it) |
+| `/api/v1/tenants/{tenantId}/transfers` | `GET` (paged, newest first; both sides of the tenant's transfers, `direction`, `status` and `includeDescendants`, default `true`), `POST` (propose moving the tenant and its descendants to `toParentTenantId`; an Administrator above the tenant) |
+| `/api/v1/tenants/{tenantId}/transfers/{transferId}` | `GET` |
+| `/api/v1/tenants/{tenantId}/transfers/{transferId}:accept`, `:decline`, `:cancel` | `POST` (the new parent's side accepts, moving the tenant at once, or declines; the proposing side cancels; 409 once decided) |
 | `/api/v1/devices` | `GET` (paged; `tenantId`, `status`, `group`, `search` filters) |
 | `/api/v1/devices/{deviceId}` | `GET`, `PATCH` (`application/merge-patch+json`: group, tags, maintenance mode), `DELETE` |
 | `/api/v1/devices/{deviceId}/telemetry` | `GET` (paged; `from`, `to`) |

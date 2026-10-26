@@ -96,7 +96,26 @@ public static class AuditActions
     public const string TenantScopeBypassed = "tenant-scope.bypassed";
 
     public const string TenantCreated = "tenant.created";
-    public const string TenantMoved = "tenant.moved";
+
+    /// <summary>
+    /// A tenant transfer was proposed (story 7). Each transfer entry targets the transfer (<c>tenant-transfer</c>) and is
+    /// stored at both sides, the tenant's former parent and its new one, once if one is above the other; a root
+    /// tenant's former side is deployment-level. <see cref="AuditEntryDto.Detail"/> names the tenant and both parents
+    /// by ID.
+    /// </summary>
+    public const string TenantTransferProposed = "tenant-transfer.proposed";
+
+    /// <summary>The receiving side accepted a tenant transfer (story 8), which completed it in the same step.</summary>
+    public const string TenantTransferAccepted = "tenant-transfer.accepted";
+
+    /// <summary>The receiving side declined a tenant transfer (story 8).</summary>
+    public const string TenantTransferDeclined = "tenant-transfer.declined";
+
+    /// <summary>The proposing side withdrew a pending tenant transfer.</summary>
+    public const string TenantTransferCancelled = "tenant-transfer.cancelled";
+
+    /// <summary>An accepted tenant transfer moved the tenant, with its descendants, under its new parent (story 10).</summary>
+    public const string TenantTransferCompleted = "tenant-transfer.completed";
     public const string TenantDeleted = "tenant.deleted";
 
     /// <summary>

@@ -111,6 +111,30 @@ public enum TenantScopeBypass
     /// </summary>
     [NotAudited("Runs on every refresh and reads only yes or no about the token's own person; ending a session is audited.")]
     SessionCheck,
+
+    /// <summary>
+    /// Naming the two tenants a tenant transfer the caller can see is about (#122): the tenant being transferred and its
+    /// new parent, which may lie in another tenant tree. The receiving side needs to know what it's accepting, and the
+    /// proposing side where it's sending it.
+    /// </summary>
+    [NotAudited("Reads only the names of the tenants a visible transfer names, and every transfer is audited.")]
+    TenantTransferParties,
+
+    /// <summary>
+    /// Checking, as a tenant transfer is accepted, that it wouldn't leave two devices for the same hardware in one root
+    /// tenant tree (#122): the transferred subtree's devices against the receiving tree's. Only the conflicting devices'
+    /// IDs are returned.
+    /// </summary>
+    [NotAudited("Returns only device IDs, to the receiving side, and the acceptance it guards is audited.")]
+    TenantTransferDuplicateDevices,
+
+    /// <summary>
+    /// The tree service reading the tenant a transfer moves, to check the move and, once the transfer is accepted, to
+    /// change its parent: the receiving side accepting it can't see the tenant until it has moved. Only that tenant is
+    /// read, and nothing about it reaches the caller.
+    /// </summary>
+    [NotAudited("Reads only the tenant a transfer names, and the transfer is audited.")]
+    TenantTransferMove,
 }
 
 /// <summary>Each use of this <see cref="TenantScopeBypass"/> is recorded in the audit log.</summary>

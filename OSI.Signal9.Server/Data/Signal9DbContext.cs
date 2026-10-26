@@ -20,6 +20,7 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
 
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<TenantClosure> TenantClosures => Set<TenantClosure>();
+    public DbSet<TenantTransfer> TenantTransfers => Set<TenantTransfer>();
     public DbSet<Device> Devices => Set<Device>();
     public DbSet<Agent> Agents => Set<Agent>();
     public DbSet<PendingIdentification> PendingIdentifications => Set<PendingIdentification>();
@@ -48,6 +49,7 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
         // Every resource's Version is PostgreSQL's xmin, so any write to its row changes its ETag, and EF refuses an
         // update or delete whose row changed since it was read (DbUpdateConcurrencyException).
         modelBuilder.Entity<Tenant>().Property(t => t.Version).IsRowVersion();
+        modelBuilder.Entity<TenantTransfer>().Property(t => t.Version).IsRowVersion();
         modelBuilder.Entity<Device>().Property(d => d.Version).IsRowVersion();
         modelBuilder.Entity<Agent>().Property(a => a.Version).IsRowVersion();
         modelBuilder.Entity<Command>().Property(c => c.Version).IsRowVersion();
@@ -77,6 +79,19 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
             closure.HasIndex(c => c.DescendantId);
             closure.HasOne<Tenant>().WithMany().HasForeignKey(c => c.AncestorId).OnDelete(DeleteBehavior.Cascade);
             closure.HasOne<Tenant>().WithMany().HasForeignKey(c => c.DescendantId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // A transfer goes with the tenant it moves or the parent it would move to; the parent it came from may go first.
+        modelBuilder.Entity<TenantTransfer>(transfer =>
+        {
+            transfer.Property(t => t.Status).HasConversion<string>().HasMaxLength(20);
+            transfer.HasOne<Tenant>().WithMany().HasForeignKey(t => t.TenantId).OnDelete(DeleteBehavior.Cascade);
+            transfer.HasOne<Tenant>().WithMany().HasForeignKey(t => t.FromParentTenantId).OnDelete(DeleteBehavior.SetNull);
+            transfer.HasOne<Tenant>().WithMany().HasForeignKey(t => t.ToParentTenantId).OnDelete(DeleteBehavior.Cascade);
+            // One pending transfer per tenant at a time.
+            transfer.HasIndex(t => t.TenantId).IsUnique().HasFilter("\"Status\" = 'Pending'");
+            transfer.HasIndex(t => t.FromParentTenantId);
+            transfer.HasIndex(t => t.ToParentTenantId);
         });
 
         modelBuilder.Entity<Device>(device =>
@@ -296,6 +311,11 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
         // An entry is read at its tenant and above; a deployment-level entry (no tenant) only by a Superadministrator.
         modelBuilder.Entity<AuditEntry>().HasQueryFilter(TenantScope.Filter, e => SeesEveryTenant ||
             (e.TenantId != null && TenantClosures.Any(c => c.DescendantId == e.TenantId && AssignedTenantIds.Contains(c.AncestorId))));
+
+        // A transfer is visible to both sides: from the tenant it moves, its parent when proposed, or its new parent.
+        modelBuilder.Entity<TenantTransfer>().HasQueryFilter(TenantScope.Filter, t => SeesEveryTenant ||
+            TenantClosures.Any(c => (c.DescendantId == t.TenantId || c.DescendantId == t.FromParentTenantId
+                || c.DescendantId == t.ToParentTenantId) && AssignedTenantIds.Contains(c.AncestorId)));
 
         // An agent is visible with its device, or, while it awaits identification and has none, with its pending
         // identification, which its enrollment token's tenant owns.
