@@ -13,8 +13,8 @@ using OSI.Signal9.Server.Data;
 namespace OSI.Signal9.Server.Data.Migrations
 {
     [DbContext(typeof(Signal9DbContext))]
-    [Migration("20261026013321_AgentIdentification")]
-    partial class AgentIdentification
+    [Migration("20261026223918_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -262,11 +262,6 @@ namespace OSI.Signal9.Server.Data.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
 
-                    b.Property<string>("Priority")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -305,12 +300,21 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("EndedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("LastSeenAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<byte[]>("ProtectedTokens")
                         .IsRequired()
                         .HasColumnType("bytea");
+
+                    b.Property<int>("RevocationAttempts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("RevocationDueAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Subject")
                         .IsRequired()
@@ -319,9 +323,29 @@ namespace OSI.Signal9.Server.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("RevocationDueAt")
+                        .HasFilter("\"EndedAt\" IS NOT NULL");
+
                     b.HasIndex("Subject");
 
                     b.ToTable("DashboardSessions");
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.DeletedTenant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.PrimitiveCollection<Guid[]>("AncestorIds")
+                        .IsRequired()
+                        .HasColumnType("uuid[]");
+
+                    b.Property<DateTime>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("DeletedTenants");
                 });
 
             modelBuilder.Entity("OSI.Signal9.Server.Data.Device", b =>
@@ -361,9 +385,6 @@ namespace OSI.Signal9.Server.Data.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
 
-                    b.Property<bool>("MaintenanceMode")
-                        .HasColumnType("boolean");
-
                     b.Property<string>("Manufacturer")
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
@@ -372,6 +393,11 @@ namespace OSI.Signal9.Server.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<string>("OsFamily")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<string>("OsVersion")
                         .HasMaxLength(100)
@@ -422,6 +448,23 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.HasIndex("TenantId", "MachineName");
 
                     b.ToTable("Devices");
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.EndedEntraSession", b =>
+                {
+                    b.Property<Guid>("EntraTenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EntraSessionId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("EndedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("EntraTenantId", "EntraSessionId");
+
+                    b.ToTable("EndedEntraSessions");
                 });
 
             modelBuilder.Entity("OSI.Signal9.Server.Data.EnrollmentToken", b =>
@@ -480,6 +523,104 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.ToTable("EnrollmentTokens");
                 });
 
+            modelBuilder.Entity("OSI.Signal9.Server.Data.EntraTokenCacheEntry", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<byte[]>("Value")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("EntraTokenCache");
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.FreshSignIn", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReauthenticatedFor")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.ToTable("FreshSignIns");
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Invitation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("EntraTenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("RedeemedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("RedeemedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<byte[]>("ReferenceHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RedeemedByUserId");
+
+                    b.HasIndex("ReferenceHash")
+                        .IsUnique();
+
+                    b.HasIndex("RoleId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("Invitations");
+                });
+
             modelBuilder.Entity("OSI.Signal9.Server.Data.PendingIdentification", b =>
                 {
                     b.Property<Guid>("AgentId")
@@ -514,6 +655,11 @@ namespace OSI.Signal9.Server.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<string>("OsFamily")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<string>("OsVersion")
                         .HasMaxLength(100)
@@ -639,6 +785,57 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.ToTable("RoleAssignments");
                 });
 
+            modelBuilder.Entity("OSI.Signal9.Server.Data.SignInSession", b =>
+                {
+                    b.Property<string>("AuthorizationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ClientId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EntraAccountId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("EntraCheckedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EntraSessionId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("EntraTenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("SignedInAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<bool>("Superadministrator")
+                        .HasColumnType("boolean");
+
+                    b.HasKey("AuthorizationId");
+
+                    b.HasIndex("Subject");
+
+                    b.HasIndex("EntraAccountId", "EntraCheckedAt");
+
+                    b.HasIndex("EntraTenantId", "EntraSessionId");
+
+                    b.ToTable("SignInSessions");
+                });
+
             modelBuilder.Entity("OSI.Signal9.Server.Data.TelemetrySample", b =>
                 {
                     b.Property<Guid>("Id")
@@ -718,11 +915,6 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.Property<Guid?>("ParentTenantId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("Plan")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -760,6 +952,51 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.HasIndex("DescendantId");
 
                     b.ToTable("TenantClosures");
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.TenantTransfer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("DecidedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("FromParentTenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ProposedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ToParentTenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FromParentTenantId");
+
+                    b.HasIndex("TenantId")
+                        .IsUnique()
+                        .HasFilter("\"Status\" = 'Pending'");
+
+                    b.HasIndex("ToParentTenantId");
+
+                    b.ToTable("TenantTransfers");
                 });
 
             modelBuilder.Entity("OSI.Signal9.Server.Data.User", b =>
@@ -1116,6 +1353,31 @@ namespace OSI.Signal9.Server.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("OSI.Signal9.Server.Data.Invitation", b =>
+                {
+                    b.HasOne("OSI.Signal9.Server.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("RedeemedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("OSI.Signal9.Server.Data.Role", null)
+                        .WithMany()
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("OSI.Signal9.Server.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade);
+                });
+
             modelBuilder.Entity("OSI.Signal9.Server.Data.PendingIdentification", b =>
                 {
                     b.HasOne("OSI.Signal9.Server.Data.Agent", null)
@@ -1214,6 +1476,26 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.HasOne("OSI.Signal9.Server.Data.Tenant", null)
                         .WithMany()
                         .HasForeignKey("DescendantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.TenantTransfer", b =>
+                {
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("FromParentTenantId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("OSI.Signal9.Server.Data.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("ToParentTenantId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
