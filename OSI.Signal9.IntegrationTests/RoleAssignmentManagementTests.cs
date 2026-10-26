@@ -31,7 +31,7 @@ public sealed class RoleAssignmentManagementTests : IDisposable
     public RoleAssignmentManagementTests(TestContext testContext)
     {
         _testContext = testContext;
-        _superadministrator = _factory.CreateClient();
+        _superadministrator = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;
@@ -246,7 +246,7 @@ public sealed class RoleAssignmentManagementTests : IDisposable
         var assignment = await AssignAsync(tree.Client, (await CreateUserAsync(tree.Client, EntraUser.WithMfa())).Id, "Viewer");
         var url = $"api/v1/tenants/{tree.Client}/role-assignments/{assignment.Id}";
         using var anonymous = _factory.CreateAnonymousClient();
-        using var readOnly = await _factory.CreateClientAsync(Scopes.RoleAssignments.Read);
+        using var readOnly = await _factory.CreateApplicationClientAsync(tree.Client, Scopes.RoleAssignments.Read);
 
         var unauthenticated = await anonymous.DeleteAsync(url, Ct);
         var withoutScope = await readOnly.DeleteAsync(url, Ct);
@@ -305,7 +305,8 @@ public sealed class RoleAssignmentManagementTests : IDisposable
         Assert.AreEqual(HttpStatusCode.Forbidden, (await ProbeAsync(api, technicianAbove, tree.Msp)).StatusCode);
         Assert.AreEqual(HttpStatusCode.OK, (await ProbeAsync(api, atTenant, tree.Client)).StatusCode);
         Assert.AreEqual(HttpStatusCode.OK, (await ProbeAsync(api, above, tree.Msp)).StatusCode);
-        Assert.AreEqual(HttpStatusCode.OK, (await ProbeAsync(api, _superadministrator, tree.Msp)).StatusCode);
+        using var superadministrator = await _factory.CreatePersonClientAsync(_factory.Superadministrator());
+        Assert.AreEqual(HttpStatusCode.OK, (await ProbeAsync(api, superadministrator, tree.Msp)).StatusCode);
         // Outside the caller's subtree the tenant reads as missing, as it would without the attribute.
         Assert.AreEqual(HttpStatusCode.NotFound, (await ProbeAsync(api, beside, tree.Msp)).StatusCode);
     }

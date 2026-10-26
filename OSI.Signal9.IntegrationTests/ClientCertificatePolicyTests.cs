@@ -91,7 +91,7 @@ public sealed class ClientCertificatePolicyTests : IDisposable
     [DataRow(Rule.BrokenSignature)]
     public async Task An_enrolling_agent_and_an_api_application_are_refused_the_same_certificate(Rule rule)
     {
-        using var superadministrator = _factory.CreateClient();
+        using var superadministrator = _factory.CreateSuperadministratorClient();
         var tenant = await _factory.CreateTenantAsync(superadministrator, "Contoso");
         var pem = Pem(rule);
 
@@ -124,7 +124,7 @@ public sealed class ClientCertificatePolicyTests : IDisposable
     [TestMethod]
     public async Task An_api_application_registers_a_certificate_meeting_the_policy()
     {
-        using var superadministrator = _factory.CreateClient();
+        using var superadministrator = _factory.CreateSuperadministratorClient();
         var tenant = await _factory.CreateTenantAsync(superadministrator, "Contoso");
         using var certificate = AgentCertificate(AgentKey.Rsa3072);
 

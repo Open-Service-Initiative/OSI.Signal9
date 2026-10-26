@@ -31,10 +31,8 @@ namespace OSI.Signal9.IntegrationTests;
 [TestClass]
 public sealed class AgentDeliveryTests : IAsyncDisposable
 {
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
-
     private readonly Signal9ApiFactory _factory;
-    private HttpClient _client;
+    private readonly HttpClient _client;
     private readonly string _stateDirectory = Path.Combine(Path.GetTempPath(), $"signal9-agents-{Guid.NewGuid():N}");
     private readonly InMemoryKeyStore _keys = new();
     private readonly FakeTimeProvider _agentTime;
@@ -45,22 +43,15 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
     public AgentDeliveryTests(TestContext testContext)
     {
         _testContext = testContext;
-        // SignalR closes a connection when its token expires by the real clock, so the expiry test starts the hosts'
-        // clock just short of a token lifetime ago: its first tokens expire for real a few seconds in.
-        _factory = testContext.TestName switch
-        {
-            nameof(When_its_token_expires_the_hub_closes_and_the_agent_reconnects_with_a_fresh_token) =>
-                new Signal9ApiFactory(start: DateTimeOffset.UtcNow - AuthorizationServer.AccessTokenLifetime + TimeSpan.FromSeconds(10)),
-            nameof(An_agent_whose_version_the_deployment_no_longer_supports_stops_instead_of_retrying) =>
-                new Signal9ApiFactory(settings: new Dictionary<string, string?>
-                {
-                    ["AgentVersions:Minimum"] = "99.0.0",
-                    ["AgentVersions:Maximum"] = "99.0.0",
-                }),
-            _ => new Signal9ApiFactory(),
-        };
+        _factory = testContext.TestName == nameof(An_agent_whose_version_the_deployment_no_longer_supports_stops_instead_of_retrying)
+            ? new Signal9ApiFactory(settings: new Dictionary<string, string?>
+            {
+                ["AgentVersions:Minimum"] = "99.0.0",
+                ["AgentVersions:Maximum"] = "99.0.0",
+            })
+            : new Signal9ApiFactory();
         _agentTime = new FakeTimeProvider(_factory.Time.GetUtcNow());
-        _client = _factory.CreateClient();
+        _client = _factory.CreateSuperadministratorClient();
         _stop = CancellationTokenSource.CreateLinkedTokenSource(testContext.CancellationToken);
     }
 
@@ -111,16 +102,13 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
     public async Task When_its_token_expires_the_hub_closes_and_the_agent_reconnects_with_a_fresh_token()
     {
         var agent = await StartAgentAsync();
-        var connections = agent.Network.Connections;
+        var fetches = agent.Network.Completed(PendingCommands(agent));
 
-        // Both clocks catch up with the real one, which reaches the token's expiry within seconds: the hub closes the
-        // connection, and the agent reconnects with a new token.
+        // The token expires on both clocks: api's access check closes the connection, and the agent reconnects with a
+        // new token, fetching its work as it does on every reconnect.
         _factory.Time.Advance(AuthorizationServer.AccessTokenLifetime);
         _agentTime.Advance(AuthorizationServer.AccessTokenLifetime);
-        _client.Dispose();
-        _client = await _factory.CreateClientAsync(Signal9ApiFactory.GrantableScopes);
-        await WaitUntilAsync(() => Task.FromResult(
-            agent.Network.Connections > connections && agent.Network.Hub!.State == HubConnectionState.Connected));
+        await WaitForAsync(agent.Network.CompletedAsync(PendingCommands(agent), fetches + 1), "the agent's fetch on reconnecting");
 
         var command = await QueueCommandAsync(agent.DeviceId);
         Assert.AreEqual(CommandStatus.Completed, (await WaitUntilFinishedAsync(command)).Status);
@@ -161,18 +149,15 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
     {
         var agent = await StartAgentAsync();
         var original = agent.Identities.Load()!.Certificate;
-        var connections = agent.Network.Connections;
+        var fetches = agent.Network.Completed(PendingCommands(agent));
 
-        // Both clocks reach the point where the certificate falls due; the session ends and the agent rotates.
+        // Both clocks reach the point where the certificate falls due; the session ends and the agent rotates, then
+        // starts a new session, which fetches its work.
         var due = AgentIdentityStore.RenewalDue(original) - _agentTime.GetUtcNow();
         _factory.Time.Advance(due);
         _agentTime.Advance(due);
-        _client.Dispose();
-        _client = await _factory.CreateClientAsync(Signal9ApiFactory.GrantableScopes);
-        await WaitUntilAsync(() => Task.FromResult(
-            agent.Identities.Load()!.Certificate.Thumbprint != original.Thumbprint
-            && agent.Network.Connections > connections
-            && agent.Network.Hub!.State == HubConnectionState.Connected));
+        await WaitForAsync(agent.Network.CompletedAsync($"/api/v1/agents/{agent.Agent.Id}/certificate"), "the agent's rotation");
+        await WaitForAsync(agent.Network.CompletedAsync(PendingCommands(agent), fetches + 1), "the new session's fetch");
 
         var rotated = agent.Identities.Load()!.Certificate;
         var registered = await _client.GetFromJsonAsync<AgentCertificateDto>($"api/v1/agents/{agent.Agent.Id}/certificate", Signal9Json.Options, Ct);
@@ -199,7 +184,7 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
         var agent = await StartAgentAsync(waitUntilRunning: false);
 
         // It would otherwise back off on the agent's clock, which never moves here, and never finish.
-        await agent.Worker.ExecuteTask!.WaitAsync(Timeout, Ct);
+        await agent.Worker.ExecuteTask!.SignalledAsync("the agent stopping");
 
         Assert.IsNull(agent.Identities.Load(), "it enrolled");
         Assert.AreEqual(1, agent.Network.Completed($"/{AgentProtocol.Routes.Enroll}"));
@@ -248,15 +233,15 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
         if (!waitUntilRunning)
             return running;
 
-        await WaitUntilAsync(() => Task.FromResult(identities.Load() is not null));
+        // The session fetches its work once connected, and sends its first heartbeat, after the agent has enrolled.
+        await WaitForAsync(network.CompletedAsync(p => p.EndsWith("/pending-commands", StringComparison.Ordinal)), "the agent's first fetch");
+        await WaitForAsync(network.CompletedAsync(p => p.EndsWith("/heartbeat", StringComparison.Ordinal)), "the agent's first heartbeat");
         var agentId = identities.Load()!.AgentId;
-        await WaitUntilAsync(() => Task.FromResult(
-            network.Hub?.State == HubConnectionState.Connected &&
-            network.Completed($"/api/v1/agents/{agentId}/pending-commands") > 0 &&
-            network.Completed($"/api/v1/agents/{agentId}/heartbeat") > 0));
         running.Agent = (await _client.GetFromJsonAsync<AgentDto>($"api/v1/agents/{agentId}", Signal9Json.Options, Ct))!;
         return running;
     }
+
+    private static string PendingCommands(RunningAgent agent) => $"/api/v1/agents/{agent.Agent.Id}/pending-commands";
 
     private async Task<CommandDto> QueueCommandAsync(Guid deviceId)
     {
@@ -269,23 +254,25 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
     private async Task<CommandDto> GetAsync(CommandDto command) =>
         (await _client.GetFromJsonAsync<CommandDto>(command.Url.TrimStart('/'), Signal9Json.Options, Ct))!;
 
+    /// <summary>Waits for the agent that ran <paramref name="command"/> to report its result, and reads it.</summary>
     private async Task<CommandDto> WaitUntilFinishedAsync(CommandDto command)
     {
-        CommandDto current = command;
-        await WaitUntilAsync(async () => (current = await GetAsync(command)).Status != CommandStatus.Pending);
-        return current;
+        // The latest instance running as the device's agent.
+        var agent = _agents.Last(a => a.Agent?.DeviceId == command.DeviceId);
+        await WaitForAsync(agent.Network.CompletedAsync($"{command.Url}/result"), $"the result of {command.Url}");
+        return await GetAsync(command);
     }
 
-    private async Task WaitUntilAsync(Func<Task<bool>> condition)
+    /// <summary>Waits for <paramref name="signal"/>, failing with why if an agent stops first.</summary>
+    private async Task WaitForAsync(Task signal, string what)
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(Ct);
-        timeout.CancelAfter(Timeout);
-        while (!await condition())
+        var stopped = _agents.Where(a => a.Worker.ExecuteTask is not null).Select(a => a.Worker.ExecuteTask!);
+        if (await Task.WhenAny([signal.SignalledAsync(what), .. stopped]) != signal)
         {
             foreach (var agent in _agents.Where(a => a.Worker.ExecuteTask is { IsCompleted: true }))
                 await agent.Worker.ExecuteTask!; // Surfaces why an agent stopped.
-            await Task.Delay(20, timeout.Token);
         }
+        await signal.SignalledAsync(what);
     }
 
     public async ValueTask DisposeAsync()
@@ -359,7 +346,7 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
     /// </summary>
     private sealed class InMemoryTransport(TestServer server) : IAgentTransport
     {
-        private readonly List<string> _completed = [];
+        private readonly ObservedQueue<string> _completed = new();
         private readonly HashSet<string> _tokens = [];
         private volatile bool _offline;
         private WebSocket? _socket;
@@ -380,11 +367,13 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
             }
         }
 
-        public int Completed(string path)
-        {
-            lock (_completed)
-                return _completed.Count(p => p == path);
-        }
+        public int Completed(string path) => _completed.Count(p => p == path);
+
+        /// <summary>Completes once <paramref name="count"/> requests to <paramref name="path"/> have had their answer.</summary>
+        public Task CompletedAsync(string path, int count = 1) => _completed.CountAsync(p => p == path, count);
+
+        /// <summary>Completes once a request to a path that matches has had its answer.</summary>
+        public Task CompletedAsync(Func<string, bool> path) => _completed.CountAsync(path);
 
         public HttpClient CreateClient(AgentIdentity? identity, params DelegatingHandler[] handlers)
         {
@@ -429,11 +418,15 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
         /// <summary>Cuts the connection and keeps it down, returning once the agent knows.</summary>
         public async Task GoOfflineAsync()
         {
+            var reconnecting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            Hub!.Reconnecting += _ =>
+            {
+                reconnecting.TrySetResult();
+                return Task.CompletedTask;
+            };
             _offline = true;
             _socket?.Abort();
-            using var timeout = new CancellationTokenSource(Timeout);
-            while (Hub!.State != HubConnectionState.Reconnecting)
-                await Task.Delay(20, timeout.Token);
+            await reconnecting.Task.SignalledAsync("the agent noticing it's offline");
         }
 
         public void GoOnline() => _offline = false;
@@ -445,8 +438,7 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
                 if (certificate is not null)
                     request.Headers.Add(Signal9ApiFactory.ClientCertificateHeader, TestCertificates.ContainerAppsHeader(certificate));
                 var response = await base.SendAsync(request, cancellationToken);
-                lock (transport._completed)
-                    transport._completed.Add(request.RequestUri!.AbsolutePath);
+                transport._completed.Enqueue(request.RequestUri!.AbsolutePath);
                 return response;
             }
         }

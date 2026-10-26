@@ -31,7 +31,7 @@ public sealed class DashboardHubTests : IDisposable
     public DashboardHubTests(TestContext testContext)
     {
         _testContext = testContext;
-        _superadministrator = _factory.CreateClient();
+        _superadministrator = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;
@@ -331,7 +331,7 @@ public sealed class DashboardHubTests : IDisposable
         var first = HubTokens().Last();
 
         _factory.Time.Advance(AuthorizationServer.AccessTokenLifetime);
-        await dashboard.Closed.WaitAsync(TimeSpan.FromSeconds(15), Ct);
+        await dashboard.Closed.SignalledAsync("the connection closing");
         // The dashboard connects again when the hub closes; web refreshes the session's token on the way.
         await dashboard.Hub.StartAsync(Ct);
         await Assert.ThrowsExactlyAsync<HubException>(() => dashboard.Hub.InvokeAsync("Ping", Ct));

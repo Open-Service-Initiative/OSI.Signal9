@@ -39,7 +39,7 @@ public sealed class RealtimeHostingTests
     public async Task A_single_self_hosted_replica_runs_both_hubs_in_api_with_no_backplane()
     {
         await using var factory = new Signal9ApiFactory();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateSuperadministratorClient();
 
         Assert.IsInstanceOfType<DefaultHubLifetimeManager<AgentHub>>(factory.Services.GetRequiredService<HubLifetimeManager<AgentHub>>());
         Assert.IsInstanceOfType<DefaultHubLifetimeManager<DashboardHub>>(factory.Services.GetRequiredService<HubLifetimeManager<DashboardHub>>());
@@ -53,7 +53,7 @@ public sealed class RealtimeHostingTests
     public async Task Configuration_puts_both_hubs_on_Azure_SignalR_with_short_lived_service_tokens()
     {
         await using var factory = OnAzureSignalR();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateSuperadministratorClient();
 
         Assert.IsNotInstanceOfType<DefaultHubLifetimeManager<AgentHub>>(factory.Services.GetRequiredService<HubLifetimeManager<AgentHub>>());
         Assert.IsNotInstanceOfType<DefaultHubLifetimeManager<DashboardHub>>(factory.Services.GetRequiredService<HubLifetimeManager<DashboardHub>>());
@@ -68,7 +68,8 @@ public sealed class RealtimeHostingTests
     public async Task On_Azure_SignalR_clients_cannot_connect_to_api_directly(string hub)
     {
         await using var factory = OnAzureSignalR();
-        using var client = factory.CreateClient();
+        // A token with every scope, so only the missing endpoint can refuse it.
+        using var client = await factory.CreateUnregisteredClientAsync(Signal9ApiFactory.GrantableScopes);
 
         var direct = await client.GetAsync($"{hub.TrimStart('/')}?id=anything", Ct);
 

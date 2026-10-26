@@ -27,7 +27,7 @@ public sealed class DeviceTransferTests : IDisposable
     {
         _testContext = testContext;
         // The fixture's own client stands in for a Superadministrator.
-        _superadministrator = _factory.CreateClient();
+        _superadministrator = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;

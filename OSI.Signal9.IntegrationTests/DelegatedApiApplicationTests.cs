@@ -30,7 +30,7 @@ public sealed partial class DelegatedApiApplicationTests : IDisposable
     public DelegatedApiApplicationTests(TestContext testContext)
     {
         _testContext = testContext;
-        _superadministrator = _factory.CreateClient();
+        _superadministrator = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;

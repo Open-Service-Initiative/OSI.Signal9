@@ -17,8 +17,8 @@ public sealed class BearerTokenTests : IDisposable
 
     private CancellationToken Ct => _testContext.CancellationToken;
 
-    private async Task<string> TokenAsync() =>
-        (await _factory.CreateClientAsync("tenants.read", "tenants.write")).DefaultRequestHeaders.Authorization!.Parameter!;
+    /// <summary>A token that reads and writes tenants: the Superadministrator's.</summary>
+    private Task<string> TokenAsync() => _factory.SuperadministratorTokenAsync();
 
     [TestMethod]
     public async Task A_token_in_the_authorization_header_is_accepted()

@@ -32,7 +32,7 @@ public sealed class UserManagementTests : IDisposable
     public UserManagementTests(TestContext testContext)
     {
         _testContext = testContext;
-        _superadministrator = _factory.CreateClient();
+        _superadministrator = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;
@@ -178,7 +178,7 @@ public sealed class UserManagementTests : IDisposable
         var user = await CreateUserAsync((await _factory.CreateTenantAsync(_superadministrator, "Contoso")).Id);
         var url = $"api/v1/users/{user.Id}";
         using var anonymous = _factory.CreateAnonymousClient();
-        using var readOnly = await _factory.CreateClientAsync(Scopes.Users.Read);
+        using var readOnly = await _factory.CreateApplicationClientAsync(user.TenantId, Scopes.Users.Read);
 
         Assert.AreEqual(HttpStatusCode.Unauthorized, (await PatchAsync(anonymous, user.Id, """{"displayName":"X"}""")).StatusCode);
         var withoutScope = await PatchAsync(readOnly, user.Id, """{"displayName":"X"}""");

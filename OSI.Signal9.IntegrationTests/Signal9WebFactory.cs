@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using OSI.Signal9.Web;
@@ -37,10 +38,13 @@ public sealed class Signal9WebFactory : WebApplicationFactory<WebHost>
     public static readonly Uri BaseUri = new(Origin + "/");
 
     /// <summary>Every request web sent to <c>api</c>, as api's ingress received it.</summary>
-    public ConcurrentQueue<ApiHop> ApiRequests { get; } = new();
+    public ObservedQueue<ApiHop> ApiRequests { get; } = new();
 
     /// <summary>Every request web sent to <c>api</c> that has had its answer, by URI, as they complete.</summary>
-    public ConcurrentQueue<Uri> AnsweredApiRequests { get; } = new();
+    public ObservedQueue<Uri> AnsweredApiRequests { get; } = new();
+
+    /// <summary>Every warning or worse this host logged, formatted.</summary>
+    public ObservedQueue<string> Logs { get; } = new();
 
     /// <summary>The refresh tokens api's token endpoint issued to web, in order.</summary>
     public ConcurrentQueue<string> IssuedRefreshTokens { get; } = new();
@@ -80,6 +84,7 @@ public sealed class Signal9WebFactory : WebApplicationFactory<WebHost>
             services.AddSingleton<IApiHandlerFactory>(new IngressHandlerFactory(this));
             services.RemoveAll<IRealtimeServiceHandlerFactory>();
             services.AddSingleton<IRealtimeServiceHandlerFactory>(new FakeRealtimeService(this));
+            services.AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(Logs.Enqueue));
         });
     }
 

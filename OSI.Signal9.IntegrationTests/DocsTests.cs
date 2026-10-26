@@ -112,8 +112,9 @@ public sealed partial class DocsTests : IDisposable
     [TestMethod]
     public async Task Try_it_acts_as_the_signed_in_person_and_no_further()
     {
-        using var admin = await _factory.CreateClientAsync(Scopes.Tenants.Read, Scopes.Tenants.Write);
-        var tenant = await _factory.CreateTenantAsync(admin, "Contoso");
+        using var superadministratorClient = _factory.CreateSuperadministratorClient();
+        var tenant = await _factory.CreateTenantAsync(superadministratorClient, "Contoso");
+        using var admin = await _factory.CreateApplicationClientAsync(tenant.Id, Scopes.Tenants.Read);
         using var person = new DashboardBrowser(_factory);
         await person.SignInAsync(EntraUser.WithMfa());
         using var superadministrator = new DashboardBrowser(_factory);
@@ -137,11 +138,11 @@ public sealed partial class DocsTests : IDisposable
     [TestMethod]
     public async Task Try_it_without_signing_in_reaches_nothing()
     {
-        using var admin = await _factory.CreateClientAsync(Scopes.Tenants.Read);
+        var superadministrators = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", await _factory.SuperadministratorTokenAsync());
         using var browser = new DashboardBrowser(_factory);
 
         var response = await browser.FetchAsync(HttpMethod.Get, "api/v1/tenants",
-            headers: h => h.Authorization = admin.DefaultRequestHeaders.Authorization);
+            headers: h => h.Authorization = superadministrators);
 
         Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.IsEmpty(_factory.Web.ApiRequests);

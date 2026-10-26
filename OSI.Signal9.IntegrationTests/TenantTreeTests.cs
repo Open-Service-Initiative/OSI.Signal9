@@ -1,11 +1,9 @@
 using System.ComponentModel.DataAnnotations;
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using OSI.Signal9.Server.Data;
 using OSI.Signal9.API.Tenants;
+using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Contracts.Tenants;
 
@@ -21,7 +19,7 @@ public sealed class TenantTreeTests : IDisposable
     public TenantTreeTests(TestContext testContext)
     {
         _testContext = testContext;
-        _client = _factory.CreateClient();
+        _client = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;
@@ -51,7 +49,7 @@ public sealed class TenantTreeTests : IDisposable
             await takeLock.ExecuteNonQueryAsync(Ct);
 
         var create = PostAsync("Child", root);
-        await Task.Delay(TimeSpan.FromMilliseconds(500), Ct);
+        await PostgresLocks.BlockingAsync(_factory.ConnectionString, connection.ProcessID, Ct);
         Assert.IsFalse(create.IsCompleted, "The change ran while another transaction held the tree lock.");
 
         await transaction.CommitAsync(Ct);
@@ -59,7 +57,7 @@ public sealed class TenantTreeTests : IDisposable
     }
 
     [TestMethod]
-    public async Task Closure_table_matches_one_rebuilt_from_parent_pointers()
+    public async Task Each_tenant_reaches_exactly_its_subtree_by_parent_after_creations_deletions_and_transfers()
     {
         var consultancy = await CreateAsync("Consultancy");
         var mspA = await CreateAsync("MSP A", consultancy);
@@ -70,26 +68,28 @@ public sealed class TenantTreeTests : IDisposable
         await CreateAsync("Site 1b", client1);
         var site2 = await CreateAsync("Site 2", client2);
         await CreateAsync("Standalone");
-        using var superadministrator = await _factory.CreatePersonClientAsync(_factory.Superadministrator());
-        Assert.AreEqual(HttpStatusCode.NoContent, (await superadministrator.DeleteAsync($"api/v1/tenants/{site2}", Ct)).StatusCode);
+        Assert.AreEqual(HttpStatusCode.NoContent, (await _client.DeleteAsync($"api/v1/tenants/{site2}", Ct)).StatusCode);
         await TransferAsync(client1, mspB);
 
-        using var scope = _factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<Signal9DbContext>();
-        var parents = await db.Tenants.ToDictionaryAsync(t => t.Id, t => t.ParentTenantId, Ct);
-        var maintained = (await db.TenantClosures.ToListAsync(Ct))
-            .Select(c => (c.AncestorId, c.DescendantId, c.Depth)).Order().ToList();
-
-        var rebuilt = new List<(Guid, Guid, int)>();
+        // The tree as each tenant's parent says, and what an application registered at each tenant can see.
+        var parents = (await _client.GetFromJsonAsync<PagedResult<TenantDto>>("api/v1/tenants?pageSize=100", Signal9Json.Options, Ct))!
+            .Items.ToDictionary(t => t.Id, t => t.ParentTenantId);
+        Assert.HasCount(8, parents);
         foreach (var tenant in parents.Keys)
         {
-            Guid? ancestor = tenant;
-            for (var depth = 0; ancestor is { } id; depth++, ancestor = parents[id])
-                rebuilt.Add((id, tenant, depth));
-        }
+            Guid[] subtree = [.. parents.Keys.Where(t => Ancestry(parents, t).Contains(tenant))];
+            using var atTenant = await _factory.CreateApplicationClientAsync(tenant, "tenants.read");
+            var visible = (await atTenant.GetFromJsonAsync<PagedResult<TenantDto>>("api/v1/tenants?pageSize=100", Signal9Json.Options, Ct))!;
 
-        Assert.AreEqual(8, parents.Count);
-        CollectionAssert.AreEqual(rebuilt.Order().ToList(), maintained);
+            CollectionAssert.AreEquivalent(subtree, visible.Items.Select(t => t.Id).ToArray(), $"From {tenant}");
+        }
+    }
+
+    /// <summary>A tenant and each of its ancestors, by parent.</summary>
+    private static IEnumerable<Guid> Ancestry(Dictionary<Guid, Guid?> parents, Guid tenant)
+    {
+        for (Guid? current = tenant; current is { } id; current = parents[id])
+            yield return id;
     }
 
     private async Task<HttpResponseMessage> PostAsync(string name, Guid? parentTenantId = null) =>

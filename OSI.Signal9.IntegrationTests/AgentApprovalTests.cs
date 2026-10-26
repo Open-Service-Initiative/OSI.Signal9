@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Http.Connections;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
 using OSI.Signal9.Contracts;
@@ -30,7 +31,7 @@ public sealed class AgentApprovalTests : IDisposable
     public AgentApprovalTests(TestContext testContext)
     {
         _testContext = testContext;
-        _client = _factory.CreateClient();
+        _client = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;
@@ -89,7 +90,7 @@ public sealed class AgentApprovalTests : IDisposable
     public async Task Setting_the_hold_needs_tenants_write()
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
-        using var technician = await _factory.CreateClientAsync(Scopes.Tenants.Read, Scopes.Devices.Write);
+        using var technician = await _factory.CreateApplicationClientAsync(tenant.Id, Scopes.Tenants.Read, Scopes.Devices.Write);
 
         var response = await technician.PatchAsync($"api/v1/tenants/{tenant.Id}", MergePatch("""{ "holdsNewAgentsForApproval": true }"""), Ct);
 
@@ -141,7 +142,8 @@ public sealed class AgentApprovalTests : IDisposable
         var result = await agent.Client.PutAsJsonAsync(command.Url.TrimStart('/') + "/result",
             new CommandResultRequest { Succeeded = true }, Signal9Json.Options, Ct);
         Assert.AreEqual(HttpStatusCode.Conflict, result.StatusCode);
-        await Task.Delay(200, Ct);
+        // A round trip on the connection: any doorbell api rang before it has arrived.
+        await Assert.ThrowsExactlyAsync<HubException>(() => hub.InvokeAsync("Ping", Ct));
         Assert.IsFalse(rung.Task.IsCompleted);
     }
 
@@ -153,7 +155,7 @@ public sealed class AgentApprovalTests : IDisposable
         var rung = new TaskCompletionSource();
         hub.On(nameof(IAgentHubClient.WorkAvailable), () => rung.TrySetResult());
         var command = await QueueCommandAsync(agent.DeviceId);
-        using var technician = await _factory.CreateClientAsync(Scopes.Devices.Write);
+        using var technician = await _factory.CreateApplicationClientAsync(agent.TenantId, Scopes.Devices.Write);
 
         var approved = await technician.PostAsync($"api/v1/agents/{agent.Id}:approve", null, Ct);
 
@@ -191,7 +193,7 @@ public sealed class AgentApprovalTests : IDisposable
     public async Task Approving_needs_devices_write()
     {
         using var agent = await EnrollHeldAsync();
-        using var reader = await _factory.CreateClientAsync(Scopes.Devices.Read);
+        using var reader = await _factory.CreateApplicationClientAsync(agent.TenantId, Scopes.Devices.Read);
 
         var response = await reader.PostAsync($"api/v1/agents/{agent.Id}:approve", null, Ct);
 

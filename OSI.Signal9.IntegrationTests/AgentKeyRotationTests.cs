@@ -26,7 +26,7 @@ public sealed class AgentKeyRotationTests : IDisposable
     {
         _testContext = testContext;
         // The fixture's own client stands in for a Superadministrator.
-        _client = _factory.CreateClient();
+        _client = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;
@@ -97,7 +97,7 @@ public sealed class AgentKeyRotationTests : IDisposable
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
         using var agent = await _factory.EnrollAgentAsync(tenant.Id);
         using var other = await _factory.EnrollAgentAsync(tenant.Id, "PC02");
-        using var application = await _factory.CreateClientAsync(OSI.Signal9.Server.Identity.Scopes.Agent);
+        using var application = await _factory.CreateUnregisteredClientAsync(OSI.Signal9.Server.Identity.Scopes.Agent);
         using var next = AgentCertificate();
 
         var byOtherAgent = await RotateAsync(other.Client, agent.Id, next);
@@ -136,8 +136,8 @@ public sealed class AgentKeyRotationTests : IDisposable
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
         using var agent = await _factory.EnrollAgentAsync(tenant.Id);
-        using var reader = await _factory.CreateClientAsync("devices.read");
-        using var stranger = await _factory.CreateClientAsync("tenants.read");
+        using var reader = await _factory.CreateApplicationClientAsync(tenant.Id, "devices.read");
+        using var stranger = await _factory.CreateApplicationClientAsync(tenant.Id, "tenants.read");
 
         var response = await reader.GetAsync($"api/v1/agents/{agent.Id}/certificate", Ct);
 

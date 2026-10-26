@@ -30,7 +30,8 @@ public abstract record EntraVerdict
 /// with the registration's own credential and the refresh token in <see cref="EntraTokenCache"/>. Only Entra's
 /// <c>invalid_grant</c> and <c>interaction_required</c> end the person's sessions (#63); MSAL reports both, and a cache
 /// with no refresh token for the person, as <see cref="MsalUiRequiredException"/>: only the person signing in again can
-/// fix any of them. Everything else, from network errors to Entra's 5xx and throttling, is transient.
+/// fix any of them. Everything else, from network errors, Entra's 5xx and throttling to the outbound resilience pipeline
+/// giving up, is transient.
 /// </summary>
 public sealed class EntraRefresh(ITokenAcquisition tokenAcquisition, ILogger<EntraRefresh> logger)
 {
@@ -74,8 +75,9 @@ public sealed class EntraRefresh(ITokenAcquisition tokenAcquisition, ILogger<Ent
         {
             return new EntraVerdict.Refused(required.ErrorCode);
         }
-        catch (Exception exception) when (exception is MsalException or HttpRequestException
-                                              or OperationCanceledException && !cancellationToken.IsCancellationRequested)
+        // Anything else is transient, the outbound resilience pipeline giving up (its total timeout running out during
+        // retries) included: the person is asked again at the next run, and the run goes on to everyone else.
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(exception, "Checking {Account} at Entra failed; their sessions go on.", accountId);
             return new EntraVerdict.Unavailable();

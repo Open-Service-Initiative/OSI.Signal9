@@ -37,7 +37,7 @@ public sealed class AgentIdentificationTests : IDisposable
     {
         _testContext = testContext;
         // The fixture's own client stands in for a Superadministrator.
-        _client = _factory.CreateClient();
+        _client = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;
@@ -473,9 +473,9 @@ public sealed class AgentIdentificationTests : IDisposable
         var west = await _factory.CreateTenantAsync(_client, "West", parentTenantId: msp.Id);
         var (inEast, inWest) = (await _factory.IssueEnrollmentTokenAsync(east.Id), await _factory.IssueEnrollmentTokenAsync(west.Id));
         // Both enrollments look for matching devices together, unless enrollment serializes them first.
+        var rendezvous = new Rendezvous(_factory.ConnectionString, "FROM \"Devices\"", parties: 2);
         using var racing = _factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
-            services.ConfigureDbContext<Signal9DbContext>(options =>
-                options.AddInterceptors(new Rendezvous("FROM \"Devices\"", parties: 2, TimeSpan.FromSeconds(2))))));
+            services.ConfigureDbContext<Signal9DbContext>(options => options.AddInterceptors(rendezvous))));
         async Task<AgentDto> EnrollAsync(string secret)
         {
             using var anonymous = racing.Server.CreateClient();
@@ -653,9 +653,9 @@ public sealed class AgentIdentificationTests : IDisposable
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
         var (first, second) = (await _factory.IssueEnrollmentTokenAsync(tenant.Id), await _factory.IssueEnrollmentTokenAsync(tenant.Id));
         // Both enrollments look for matching devices together, unless enrollment serializes them first.
+        var rendezvous = new Rendezvous(_factory.ConnectionString, "FROM \"Devices\"", parties: 2);
         using var racing = _factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
-            services.ConfigureDbContext<Signal9DbContext>(options =>
-                options.AddInterceptors(new Rendezvous("FROM \"Devices\"", parties: 2, TimeSpan.FromSeconds(2))))));
+            services.ConfigureDbContext<Signal9DbContext>(options => options.AddInterceptors(rendezvous))));
         async Task<AgentDto> EnrollAsync(string secret)
         {
             using var anonymous = racing.Server.CreateClient();

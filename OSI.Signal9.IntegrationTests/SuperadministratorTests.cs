@@ -64,10 +64,10 @@ public sealed class SuperadministratorTests : IDisposable
         return [.. page!.Items.Select(t => t.Id)];
     }
 
-    /// <summary>Two separate tenant trees, made by the fixture's own client.</summary>
+    /// <summary>Two separate tenant trees, made by the fixture's Superadministrator.</summary>
     private async Task<Guid[]> TwoTreesAsync()
     {
-        using var fixture = _factory.CreateClient();
+        using var fixture = _factory.CreateSuperadministratorClient();
         var first = await _factory.CreateTenantAsync(fixture, "Contoso");
         var child = await _factory.CreateTenantAsync(fixture, "Contoso-Site", parentTenantId: first.Id);
         var second = await _factory.CreateTenantAsync(fixture, "Fabrikam");

@@ -40,7 +40,7 @@ public sealed class RealtimeScaleOutTests : IAsyncDisposable
         _factory = new Signal9ApiFactory(settings: await RedisContainer.BackplaneSettingsAsync());
         _replica = _factory.CreateApiReplica();
         // The fixture's own client stands in for a Superadministrator, on the first replica.
-        _client = _factory.CreateClient();
+        _client = _factory.CreateSuperadministratorClient();
     }
 
     [TestMethod]
@@ -104,7 +104,7 @@ public sealed class RealtimeScaleOutTests : IAsyncDisposable
         var revoked = await _client.PostAsync($"api/v1/agents/{agent.Id}:revoke", null, Ct);
         Assert.AreEqual(HttpStatusCode.OK, revoked.StatusCode, await revoked.Content.ReadAsStringAsync(Ct));
 
-        await AdvanceUntilAsync(closed.Task, new HubAccessOptions().AccessCheckInterval);
+        await NextAccessCheckAsync(closed.Task, new HubAccessOptions().AccessCheckInterval);
     }
 
     [TestMethod]
@@ -118,20 +118,14 @@ public sealed class RealtimeScaleOutTests : IAsyncDisposable
         var removed = await _client.DeleteAsync(person.Assignment, Ct);
         Assert.AreEqual(HttpStatusCode.NoContent, removed.StatusCode, await removed.Content.ReadAsStringAsync(Ct));
 
-        await AdvanceUntilAsync(dashboard.Closed, new HubAccessOptions().AccessCheckInterval);
+        await NextAccessCheckAsync(dashboard.Closed, new HubAccessOptions().AccessCheckInterval);
     }
 
-    /// <summary>Moves the shared clock on an access check at a time until <paramref name="done"/> completes.</summary>
-    private async Task AdvanceUntilAsync(Task done, TimeSpan interval)
+    /// <summary>Moves the shared clock on to the next access check, and waits for <paramref name="closed"/>.</summary>
+    private async Task NextAccessCheckAsync(Task closed, TimeSpan interval)
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(Ct);
-        timeout.CancelAfter(Timeout);
-        while (!done.IsCompleted)
-        {
-            _factory.Time.Advance(interval);
-            await Task.WhenAny(done, Task.Delay(100, timeout.Token));
-        }
-        await done;
+        _factory.Time.Advance(interval);
+        await closed.SignalledAsync("the connection closing");
     }
 
     private async Task<CommandDto> QueueCommandAsync(Guid deviceId)

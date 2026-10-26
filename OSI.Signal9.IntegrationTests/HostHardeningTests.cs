@@ -89,7 +89,7 @@ public sealed class HostHardeningTests : IDisposable
     [DataRow("api")]
     public async Task Error_status_codes_are_problem_details(string host)
     {
-        using var client = host == "auth" ? _factory.Auth.CreateClient() : _factory.CreateClient();
+        using var client = host == "auth" ? _factory.Auth.CreateClient() : _factory.CreateSuperadministratorClient();
 
         var response = await client.GetAsync("no-such-endpoint", Ct);
 
@@ -102,7 +102,7 @@ public sealed class HostHardeningTests : IDisposable
     [DataRow("api", "api/v1/tenants")]
     public async Task Https_responses_carry_a_preload_ready_hsts_header(string host, string path)
     {
-        using var client = host == "auth" ? _factory.Auth.CreateClient() : _factory.CreateClient();
+        using var client = host == "auth" ? _factory.Auth.CreateClient() : _factory.CreateSuperadministratorClient();
         // HSTS is never sent for localhost, so call the host by a public name.
         client.BaseAddress = new Uri($"https://{host}.signal9.test/");
 
@@ -118,7 +118,7 @@ public sealed class HostHardeningTests : IDisposable
     {
         "auth" => _factory.Auth.CreateClient(),
         "web" => _factory.Web.CreateClient(),
-        _ => _factory.CreateClient(),
+        _ => _factory.CreateSuperadministratorClient(),
     };
 
     [TestMethod]
@@ -146,7 +146,7 @@ public sealed class HostHardeningTests : IDisposable
     [DataRow("web", "api/v1/tenants", false)]
     public async Task Private_responses_are_never_stored(string host, string path, bool withToken)
     {
-        using var client = host == "web" ? _factory.Web.CreateClient() : withToken ? _factory.CreateClient() : _factory.CreateAnonymousClient();
+        using var client = host == "web" ? _factory.Web.CreateClient() : withToken ? _factory.CreateSuperadministratorClient() : _factory.CreateAnonymousClient();
 
         var response = await client.GetAsync(path, Ct);
 

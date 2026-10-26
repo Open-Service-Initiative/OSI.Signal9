@@ -103,7 +103,7 @@ public sealed class RateLimitingTests
         using var factory = new Signal9ApiFactory(settings: Defaults());
         await factory.SeedClientAsync("busy-app");
         using var auth = factory.Auth.CreateClient();
-        using var api = factory.CreateClient();
+        using var api = factory.CreateSuperadministratorClient();
 
         for (var i = 0; i < 25; i++)
         {
@@ -132,7 +132,7 @@ public sealed class RateLimitingTests
     public async Task Enrollment_is_limited_per_ip()
     {
         using var factory = new Signal9ApiFactory(settings: Limit("Enrollment", 1));
-        using var admin = factory.CreateClient();
+        using var admin = factory.CreateSuperadministratorClient();
         var tenant = await factory.CreateTenantAsync(admin, "Contoso");
         var first = await factory.IssueEnrollmentTokenAsync(tenant.Id);
         var second = await factory.IssueEnrollmentTokenAsync(tenant.Id);
@@ -151,7 +151,7 @@ public sealed class RateLimitingTests
     public async Task Enrollment_is_limited_per_enrollment_token()
     {
         using var factory = new Signal9ApiFactory(settings: Limit("EnrollmentToken", 2));
-        using var admin = factory.CreateClient();
+        using var admin = factory.CreateSuperadministratorClient();
         var tenant = await factory.CreateTenantAsync(admin, "Contoso");
         var busy = await factory.IssueEnrollmentTokenAsync(tenant.Id);
         var other = await factory.IssueEnrollmentTokenAsync(tenant.Id);
@@ -168,7 +168,7 @@ public sealed class RateLimitingTests
         Assert.IsNotNull(limited.Headers.RetryAfter);
         Assert.AreEqual(HttpStatusCode.Created, otherToken.StatusCode);
         // A refused attempt isn't a use.
-        using var tokens = factory.CreateClient();
+        using var tokens = factory.CreateSuperadministratorClient();
         var used = await tokens.GetFromJsonAsync<OSI.Signal9.Contracts.Enrollment.EnrollmentTokenDto>(busy.Url.TrimStart('/'),
             OSI.Signal9.Contracts.Serialization.Signal9Json.Options, Ct);
         Assert.AreEqual(2, used!.UseCount);
@@ -273,7 +273,7 @@ public sealed class RateLimitingTests
     public async Task Api_limit_is_per_caller()
     {
         using var factory = new Signal9ApiFactory(settings: Limit("Api", 2));
-        using var callerA = factory.CreateClient();
+        using var callerA = factory.CreateSuperadministratorClient();
         await factory.SeedClientAsync("caller-b", "tenants.read");
         var tokenB = await factory.RequestTokenAsync("caller-b", "tenants.read");
         using var callerB = factory.CreateAnonymousClient();
@@ -295,7 +295,8 @@ public sealed class RateLimitingTests
     public async Task Global_limit_covers_every_endpoint_per_ip(string host, string path)
     {
         using var factory = new Signal9ApiFactory(settings: Limit("Global", 2));
-        using var client = host == "auth" ? factory.Auth.CreateClient() : factory.CreateClient();
+        // A client whose one token request is all it asks of auth, which the global limit covers too.
+        using var client = host == "auth" ? factory.Auth.CreateClient() : await factory.CreateUnregisteredClientAsync("tenants.read");
 
         Assert.AreEqual(HttpStatusCode.OK, (await GetAsync(client, path)).StatusCode);
         Assert.AreEqual(HttpStatusCode.OK, (await GetAsync(client, path)).StatusCode);

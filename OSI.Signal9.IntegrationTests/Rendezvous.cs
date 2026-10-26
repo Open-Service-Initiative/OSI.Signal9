@@ -1,30 +1,42 @@
 using System.Data.Common;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Npgsql;
 
 namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>
-/// Holds the first <paramref name="parties"/> commands whose SQL contains <paramref name="marker"/> until all of them
-/// have arrived, or until <paramref name="patience"/> runs out for those that came first: concurrent requests then
-/// reach that query together, unless something serializes them before it. Add one to the API's DbContext options.
+/// Holds the first command whose SQL contains <paramref name="marker"/> from each of <paramref name="parties"/>
+/// database sessions until all of them have arrived: concurrent requests then reach that query together. If something
+/// serializes them before it, each waits instead until PostgreSQL shows another session queued behind a lock its own
+/// session holds. Add one instance to the API's DbContext options, shared by every request; <paramref name="connectionString"/>
+/// is the database's, to watch its locks from.
 /// </summary>
-internal sealed class Rendezvous(string marker, int parties, TimeSpan patience) : DbCommandInterceptor
+internal sealed class Rendezvous(string connectionString, string marker, int parties) : DbCommandInterceptor
 {
     private readonly TaskCompletionSource _everyone = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private int _arrived;
+    private readonly HashSet<int> _arrived = [];
 
     public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
         DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result,
         CancellationToken cancellationToken = default)
     {
-        if (command.CommandText.Contains(marker, StringComparison.Ordinal))
+        if (!command.CommandText.Contains(marker, StringComparison.Ordinal))
+            return result;
+        var session = ((NpgsqlConnection)command.Connection!).ProcessID;
+        lock (_arrived)
         {
-            var arrival = Interlocked.Increment(ref _arrived);
-            if (arrival == parties)
+            if (_arrived.Count >= parties || !_arrived.Add(session))
+                return result;
+            if (_arrived.Count == parties)
                 _everyone.TrySetResult();
-            if (arrival <= parties)
-                await Task.WhenAny(_everyone.Task, Task.Delay(patience, cancellationToken));
         }
+
+        using var arrived = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var blocking = PostgresLocks.BlockingAsync(connectionString, session, arrived.Token);
+        await Task.WhenAny(_everyone.Task, blocking);
+        await arrived.CancelAsync();
+        if (blocking.IsFaulted)
+            await blocking;
         return result;
     }
 }

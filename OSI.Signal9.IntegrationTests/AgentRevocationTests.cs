@@ -30,7 +30,7 @@ public sealed class AgentRevocationTests : IDisposable
     {
         _testContext = testContext;
         // The fixture's own client stands in for a Superadministrator.
-        _client = _factory.CreateClient();
+        _client = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;
@@ -160,7 +160,7 @@ public sealed class AgentRevocationTests : IDisposable
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
         using var agent = await _factory.EnrollAgentAsync(tenant.Id);
-        using var reader = await _factory.CreateClientAsync("devices.read");
+        using var reader = await _factory.CreateApplicationClientAsync(tenant.Id, "devices.read");
 
         var response = await reader.PostAsync($"api/v1/agents/{agent.Id}:revoke", null, Ct);
 

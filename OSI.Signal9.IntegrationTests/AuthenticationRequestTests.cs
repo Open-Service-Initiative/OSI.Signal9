@@ -60,8 +60,8 @@ public sealed class AuthenticationRequestTests : IDisposable
         var flow = new CodeFlow(ClientId);
         var redirect = await browser.AuthorizeAsync(With(flow.AuthorizeRequest(Scope), "prompt", "login"), _factory.Entra, person);
 
-        Assert.AreEqual(2, _factory.Entra.SignIns, "The person authenticated at Entra again.");
-        Assert.AreEqual("login", _factory.Entra.Prompts.Last());
+        Assert.HasCount(2, _factory.Entra.SignInsOf(person), "The person authenticated at Entra again.");
+        Assert.AreEqual("login", _factory.Entra.SignInsOf(person).Last());
         Assert.AreEqual(_factory.Time.GetUtcNow().ToUnixTimeSeconds(), await RedeemedAuthTimeAsync(flow, redirect));
     }
 

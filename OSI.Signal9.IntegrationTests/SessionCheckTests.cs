@@ -32,7 +32,7 @@ public sealed class SessionCheckTests : IDisposable
     public SessionCheckTests(TestContext testContext)
     {
         _testContext = testContext;
-        _superadministrator = _factory.CreateClient();
+        _superadministrator = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;
@@ -62,55 +62,31 @@ public sealed class SessionCheckTests : IDisposable
         return (response.StatusCode, body.TryGetValue("error", out var error) ? error.GetString()! : "(none)");
     }
 
-    /// <summary>Waits for something a background job does, such as the hourly Entra check.</summary>
-    private async Task EventuallyAsync(Func<Task<bool>> condition, string what)
+    /// <summary>
+    /// Moves the clock on by <paramref name="by"/> and waits for the run of the Entra check that this starts, which asks
+    /// Entra about everyone due, to finish.
+    /// </summary>
+    private async Task EntraCheckAfterAsync(TimeSpan by)
     {
-        for (var waited = 0; waited < 100; waited++)
-        {
-            if (await condition())
-                return;
-            await Task.Delay(100, Ct);
-        }
-        Assert.Fail($"Timed out waiting for {what}.");
-    }
-
-    /// <summary>Lets an hour pass, less the check's own interval, and waits for auth to ask Entra about the person.</summary>
-    private async Task EntraCheckAsync(int refreshesBefore)
-    {
-        _factory.Time.Advance(TimeSpan.FromMinutes(56));
-        await EventuallyAsync(() => Task.FromResult(_factory.Entra.Refreshes > refreshesBefore), "the hourly Entra check");
+        var run = _factory.Jobs.NextRunAsync(nameof(EntraSessionCheck));
+        _factory.Time.Advance(by);
+        await run.SignalledAsync("the Entra check's run");
     }
 
     /// <summary>
-    /// Waits for the Entra check that claimed the person's sessions to finish with them after Entra couldn't answer: it
-    /// hands them back as due, for its next run. Only that says the run is over. Asking Entra can take more than one
-    /// call: the outbound resilience handler retries network errors and 5xx after a backoff on the fixture's clock, so
-    /// fixture time passes a second at a time meanwhile, and Microsoft.Identity.Web asks again after
-    /// <c>invalid_client</c> with its credential reloaded.
+    /// Lets an hour pass, less the check's own interval, a run of the Entra check at a time, waiting for each: the one
+    /// at 55 minutes asks Entra about everyone who signed in at the start.
     /// </summary>
-    private async Task HandedBackAsync(EntraUser user)
+    private async Task EntraCheckAsync()
     {
-        var subject = PersonSubject.Format(user.TenantId, user.ObjectId);
-        for (var waited = 0; waited < 100; waited++)
-        {
-            await using (var scope = _factory.Services.CreateAsyncScope())
-            {
-                var due = _factory.Time.GetUtcNow().UtcDateTime - (EntraSessionCheck.Every - EntraSessionCheck.Interval);
-                if (await scope.ServiceProvider.GetRequiredService<Signal9DbContext>().SignInSessions
-                        .AnyAsync(s => s.Subject == subject && s.EntraCheckedAt <= due, Ct))
-                    return;
-            }
-            _factory.Time.Advance(TimeSpan.FromSeconds(1));
-            await Task.Delay(100, Ct);
-        }
-        Assert.Fail("Timed out waiting for the Entra check to hand the session back.");
+        for (var elapsed = TimeSpan.Zero; elapsed < EntraSessionCheck.Every - EntraSessionCheck.Interval; elapsed += EntraSessionCheck.Interval)
+            await EntraCheckAfterAsync(EntraSessionCheck.Interval);
     }
 
-    /// <summary>The audit trail, read through the public API by a client seeing every tenant, with a token from now.</summary>
+    /// <summary>The audit trail, read through the public API by the Superadministrator, who sees every tenant.</summary>
     private async Task<List<AuditEntryDto>> AuditAsync(string action)
     {
-        using var auditor = await _factory.CreateClientAsync(OSI.Signal9.Server.Identity.Scopes.Audit.Read);
-        return [.. (await auditor.GetFromJsonAsync<PagedResult<AuditEntryDto>>("api/v1/audit-entries?pageSize=100",
+        return [.. (await _superadministrator.GetFromJsonAsync<PagedResult<AuditEntryDto>>("api/v1/audit-entries?pageSize=100",
             Signal9Json.Options, Ct))!.Items.Where(e => e.Action == action)];
     }
 
@@ -180,10 +156,10 @@ public sealed class SessionCheckTests : IDisposable
         using var browser = await SignedInAsync(assigned.User);
 
         _factory.Entra.Refuse(assigned.User, error);
-        await EntraCheckAsync(0);
+        await EntraCheckAsync();
 
-        await EventuallyAsync(async () => (await browser.GetAsync("api/v1/tenants")).StatusCode == HttpStatusCode.Unauthorized,
-            "the session to end");
+        Assert.AreEqual(HttpStatusCode.Unauthorized, (await browser.GetAsync("api/v1/tenants")).StatusCode);
+        Assert.HasCount(1, _factory.Entra.RefreshesOf(assigned.User));
         var entry = (await AuditAsync(AuditActions.SessionRevoked)).Single();
         Assert.AreEqual(assigned.TenantId, entry.TenantId);
         Assert.AreEqual($"Entra refused the person: {error}", entry.Detail);
@@ -196,14 +172,14 @@ public sealed class SessionCheckTests : IDisposable
         var assigned = await _factory.AssignedPersonAsync(WithSession());
         using var browser = await SignedInAsync(assigned.User);
 
-        await EntraCheckAsync(0);
+        await EntraCheckAsync();
         // Another hour: asked again, never served from MSAL's cache of access tokens.
         _factory.Time.Advance(TimeSpan.FromMinutes(1));
         await browser.GetAsync("api/v1/tenants");
-        await EntraCheckAsync(1);
+        await EntraCheckAsync();
 
         Assert.AreEqual(HttpStatusCode.OK, (await browser.GetAsync("api/v1/tenants")).StatusCode);
-        Assert.AreEqual(2, _factory.Entra.Refreshes);
+        Assert.HasCount(2, _factory.Entra.RefreshesOf(assigned.User));
         // Only what signing in needs: no API permission at Entra.
         foreach (var scope in _factory.Entra.RefreshScopes)
             CollectionAssert.IsSubsetOf(scope.Split(' '), new[] { "openid", "profile", "offline_access" }, scope);
@@ -215,16 +191,16 @@ public sealed class SessionCheckTests : IDisposable
         var assigned = await _factory.AssignedPersonAsync(WithSession());
         using var browser = await SignedInAsync(assigned.User);
 
-        for (var i = 0; i < 10; i++)
+        // Every run of the check within the hour, with the person active throughout.
+        for (var minutes = 5; minutes <= 50; minutes += 5)
         {
-            _factory.Time.Advance(TimeSpan.FromMinutes(5));
-            await browser.GetAsync("api/v1/tenants");
+            await EntraCheckAfterAsync(TimeSpan.FromMinutes(5));
+            Assert.AreEqual(HttpStatusCode.OK, (await browser.GetAsync("api/v1/tenants")).StatusCode);
+            Assert.IsEmpty(_factory.Entra.RefreshesOf(assigned.User), $"auth asked Entra after {minutes} minutes.");
         }
-        // A check now, whatever the background runs have got to.
-        await using (var scope = _factory.Auth.Services.CreateAsyncScope())
-            await scope.ServiceProvider.GetRequiredService<EntraSessionChecker>().RunAsync(Ct);
+        await EntraCheckAfterAsync(TimeSpan.FromMinutes(5));
 
-        Assert.AreEqual(0, _factory.Entra.Refreshes, "auth asked Entra within the hour.");
+        Assert.HasCount(1, _factory.Entra.RefreshesOf(assigned.User), "auth didn't ask Entra within the hour.");
     }
 
     public static IEnumerable<object[]> TransientEntraFailures =>
@@ -248,21 +224,34 @@ public sealed class SessionCheckTests : IDisposable
         var assigned = await _factory.AssignedPersonAsync(WithSession());
         using var browser = await SignedInAsync(assigned.User);
 
-        _factory.Entra.RefreshFault = fault;
-        await EntraCheckAsync(0);
-        await HandedBackAsync(assigned.User);
+        _factory.Entra.FailRefreshes(assigned.User, fault);
+        // Every run within the hour, then the one at 55 minutes, which asks Entra.
+        for (var minutes = 5; minutes < 55; minutes += 5)
+            await EntraCheckAfterAsync(EntraSessionCheck.Interval);
+        var failing = _factory.Jobs.NextRunAsync(nameof(EntraSessionCheck));
+        _factory.Time.Advance(EntraSessionCheck.Interval);
+        // Asking takes more than one call: the outbound resilience handler retries network errors and 5xx after a
+        // backoff on the fixture's clock, within its total timeout of 30 seconds; MSAL then tries once more, through the
+        // handler again; and Microsoft.Identity.Web asks again after invalid_client with its credential reloaded. After
+        // each call that begins a try, a minute (short of the next run) ends that try's retries.
+        for (var asks = 1; ; asks++)
+        {
+            var nextAsk = _factory.Entra.RefreshedAsync(assigned.User, asks);
+            if (await Task.WhenAny(failing, nextAsk).SignalledAsync("auth asking Entra, or the run ending") == failing)
+                break;
+            _factory.Time.Advance(TimeSpan.FromMinutes(1));
+        }
+        await failing.SignalledAsync("the Entra check's run");
+        var asked = _factory.Entra.RefreshesOf(assigned.User).Count;
+
         Assert.AreEqual(HttpStatusCode.OK, (await browser.GetAsync("api/v1/tenants")).StatusCode, failure);
-        _factory.Entra.RefreshFault = null;
+        _factory.Entra.FailRefreshes(assigned.User, null);
         _factory.Entra.Refuse(assigned.User);
-        var before = _factory.Entra.Refreshes;
-        _factory.Time.Advance(EntraSessionCheckInterval);
-        await EventuallyAsync(() => Task.FromResult(_factory.Entra.Refreshes > before), "Entra to be asked again");
+        await EntraCheckAfterAsync(EntraSessionCheck.Interval);
 
-        await EventuallyAsync(async () => (await browser.GetAsync("api/v1/tenants")).StatusCode == HttpStatusCode.Unauthorized,
-            "the session to end");
+        Assert.HasCount(asked + 1, _factory.Entra.RefreshesOf(assigned.User), "Entra wasn't asked again at the next run.");
+        Assert.AreEqual(HttpStatusCode.Unauthorized, (await browser.GetAsync("api/v1/tenants")).StatusCode);
     }
-
-    private static readonly TimeSpan EntraSessionCheckInterval = EntraSessionCheck.Interval;
 
     // Superadministrator is re-read at every session check (story 59).
 
@@ -275,10 +264,10 @@ public sealed class SessionCheckTests : IDisposable
         Assert.AreEqual(HttpStatusCode.OK, (await browser.GetAsync($"api/v1/tenants/{other.Id}")).StatusCode);
 
         _factory.Entra.SetRoles(assigned.User);
-        await EntraCheckAsync(0);
+        await EntraCheckAsync();
 
-        await EventuallyAsync(async () => (await browser.GetAsync($"api/v1/tenants/{other.Id}")).StatusCode == HttpStatusCode.NotFound,
-            "the Superadministrator role to go");
+        Assert.AreEqual(HttpStatusCode.NotFound, (await browser.GetAsync($"api/v1/tenants/{other.Id}")).StatusCode,
+            "The Superadministrator role outlived the check.");
         Assert.AreEqual(HttpStatusCode.OK, (await browser.GetAsync($"api/v1/tenants/{assigned.TenantId}")).StatusCode,
             "The session ended rather than losing the role.");
     }
@@ -297,13 +286,6 @@ public sealed class SessionCheckTests : IDisposable
     // One person in several directories: their home account and a guest account elsewhere share MSAL's home account, but
     // are different people to Entra and Signal9 (ADR-0006, story 58).
 
-    private async Task<SignInSession> SessionOfAsync(EntraUser user)
-    {
-        await using var scope = _factory.Services.CreateAsyncScope();
-        var sessions = scope.ServiceProvider.GetRequiredService<SignInSessions>();
-        return (await sessions.FindByUserAsync(PersonSubject.Format(user.TenantId, user.ObjectId), Ct)).Single().Session;
-    }
-
     [TestMethod]
     public async Task Entra_refusing_a_guest_account_ends_only_that_directorys_session()
     {
@@ -313,10 +295,10 @@ public sealed class SessionCheckTests : IDisposable
         using var guestBrowser = await SignedInAsync(guest.User);
 
         _factory.Entra.Refuse(guest.User);
-        await EntraCheckAsync(0);
+        await EntraCheckAsync();
 
-        await EventuallyAsync(async () => (await guestBrowser.GetAsync("api/v1/tenants")).StatusCode == HttpStatusCode.Unauthorized,
-            "the guest account's session to end");
+        Assert.AreEqual(HttpStatusCode.Unauthorized, (await guestBrowser.GetAsync("api/v1/tenants")).StatusCode,
+            "Entra refusing the guest account left its session.");
         Assert.AreEqual(HttpStatusCode.OK, (await homeBrowser.GetAsync("api/v1/tenants")).StatusCode,
             "Entra refusing the guest account ended the home account's session.");
     }
@@ -324,6 +306,7 @@ public sealed class SessionCheckTests : IDisposable
     [TestMethod]
     public async Task Superadministrator_comes_only_from_the_deploying_directorys_session()
     {
+        var elsewhere = await _factory.CreateTenantAsync(_superadministrator, "Elsewhere");
         var home = await _factory.AssignedPersonAsync(WithSession());
         var guest = await _factory.AssignedPersonAsync(home.User.GuestIn(_factory.Entra.DeployingTenantId));
         using var homeBrowser = await SignedInAsync(home.User);
@@ -331,11 +314,12 @@ public sealed class SessionCheckTests : IDisposable
 
         // The guest account in the deploying directory becomes a Superadministrator; the home account isn't one.
         _factory.Entra.SetRoles(guest.User, Superadministrator.AppRole);
-        await EntraCheckAsync(0);
+        await EntraCheckAsync();
 
-        await EventuallyAsync(async () => (await SessionOfAsync(guest.User)).Superadministrator,
-            "the deploying directory's session to become a Superadministrator's");
-        Assert.IsFalse((await SessionOfAsync(home.User)).Superadministrator,
+        // Their access tokens have expired by now, so each next request refreshes with the role as the check found it.
+        Assert.AreEqual(HttpStatusCode.OK, (await guestBrowser.GetAsync($"api/v1/tenants/{elsewhere.Id}")).StatusCode,
+            "The deploying directory's session didn't become a Superadministrator's.");
+        Assert.AreEqual(HttpStatusCode.NotFound, (await homeBrowser.GetAsync($"api/v1/tenants/{elsewhere.Id}")).StatusCode,
             "The home directory's session got the deploying directory's Superadministrator role.");
     }
 
@@ -347,10 +331,9 @@ public sealed class SessionCheckTests : IDisposable
 
         // Another object in the same directory, under the same home account: not the person the session is for.
         _factory.Entra.AnswerAs(assigned.User, assigned.User with { ObjectId = Guid.NewGuid(), Home = assigned.User.HomeAccount });
-        await EntraCheckAsync(0);
+        await EntraCheckAsync();
 
-        await EventuallyAsync(async () => (await browser.GetAsync("api/v1/tenants")).StatusCode == HttpStatusCode.Unauthorized,
-            "the session to end");
+        Assert.AreEqual(HttpStatusCode.Unauthorized, (await browser.GetAsync("api/v1/tenants")).StatusCode);
         var entry = (await AuditAsync(AuditActions.SessionRevoked)).Single();
         Assert.AreEqual("Entra answered for someone else", entry.Detail);
     }
@@ -358,29 +341,37 @@ public sealed class SessionCheckTests : IDisposable
     // Revoking an authorization revokes its tokens (OpenIddict 7.x workaround).
 
     [TestMethod]
-    public async Task Revoking_an_authorization_revokes_all_of_its_tokens()
+    public async Task Ending_a_session_revokes_the_tokens_of_every_grant_behind_it()
     {
         var assigned = await _factory.AssignedPersonAsync(WithSession());
         using var browser = await SignedInAsync(assigned.User);
+        var first = LastAccessToken();
+        Assert.AreEqual(HttpStatusCode.OK, await CallApiAsWebAsync(first));
         _factory.Time.Advance(TimeSpan.FromMinutes(11));
-        await browser.GetAsync("api/v1/tenants");
+        Assert.AreEqual(HttpStatusCode.OK, (await browser.GetAsync("api/v1/tenants")).StatusCode);
+        var refreshed = LastAccessToken();
+        Assert.AreNotEqual(first, refreshed, "web didn't refresh.");
+        var refreshToken = _factory.Web.IssuedRefreshTokens.Last();
 
-        await using var scope = _factory.Auth.Services.CreateAsyncScope();
-        var authorizations = scope.ServiceProvider.GetRequiredService<IOpenIddictAuthorizationManager>();
-        var tokens = scope.ServiceProvider.GetRequiredService<IOpenIddictTokenManager>();
-        var subject = PersonSubject.Format(assigned.User.TenantId, assigned.User.ObjectId);
-        var authorization = await authorizations.FindBySubjectAsync(subject, Ct).SingleAsync(Ct);
-        var id = (await authorizations.GetIdAsync(authorization, Ct))!;
-        Assert.IsTrue(await authorizations.TryRevokeAsync(authorization, Ct));
+        // Entra's front-channel logout ends the session at auth alone, by revoking its authorization.
+        using var entra = _factory.Auth.CreateClient();
+        await entra.GetAsync(FrontChannelLogout(assigned.User), Ct);
 
-        var statuses = new List<string?>();
-        await foreach (var token in tokens.FindByAuthorizationIdAsync(id, Ct))
-            statuses.Add(await tokens.GetStatusAsync(token, Ct));
-        Assert.IsGreaterThanOrEqualTo(3, statuses.Count, "Expected the access and refresh tokens of two grants.");
-        CollectionAssert.AreEqual(statuses.Select(_ => Statuses.Revoked).ToList(),
-            statuses.Select(s => s == Statuses.Redeemed ? Statuses.Revoked : s).ToList(), string.Join(", ", statuses));
-        Assert.DoesNotContain(Statuses.Valid, statuses);
+        Assert.AreEqual(HttpStatusCode.Unauthorized, await CallApiAsWebAsync(refreshed), "The refreshed access token still works.");
+        Assert.AreEqual("invalid_grant", (await RedeemAsWebAsync(refreshToken)).Error);
     }
+
+    /// <summary>Calls api with an access token web holds, presenting web's certificate, as the token is bound to it.</summary>
+    private async Task<HttpStatusCode> CallApiAsWebAsync(string accessToken)
+    {
+        var certificate = _factory.Web.Services.GetRequiredService<WebClientCertificate>().Current;
+        using var api = _factory.CreateForwardedCertificateClient(certificate);
+        api.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        return (await api.GetAsync("api/v1/tenants", Ct)).StatusCode;
+    }
+
+    private string LastAccessToken() =>
+        _factory.Web.ApiRequests.Last(r => r.Uri.AbsolutePath.StartsWith("/api/", StringComparison.Ordinal)).Authorization!["Bearer ".Length..];
 
     // Explicit sign-out (story 53).
 
@@ -465,7 +456,7 @@ public sealed class SessionCheckTests : IDisposable
         var landing = await browser.SignInAsync(assigned.User with { SessionId = $"sid-{Guid.NewGuid():N}" });
 
         Assert.AreEqual(HttpStatusCode.OK, landing.StatusCode);
-        Assert.AreEqual(2, _factory.Entra.SignIns, "auth's sign-in from the ended Entra session was reused.");
+        Assert.HasCount(2, _factory.Entra.SignInsOf(assigned.User), "auth's sign-in from the ended Entra session was reused.");
         Assert.AreEqual(HttpStatusCode.OK, (await browser.GetAsync("api/v1/tenants")).StatusCode);
     }
 
@@ -494,30 +485,6 @@ public sealed class SessionCheckTests : IDisposable
         using var browser = await SignedInAsync(assigned.User);
 
         Assert.Contains(m => m.Contains("carried no sid", StringComparison.Ordinal), _factory.Auth.Logs);
-    }
-
-    // The seam for live-connection teardown.
-
-    [TestMethod]
-    public async Task Sessions_and_their_tokens_can_be_found_by_user_and_by_sid()
-    {
-        var assigned = await _factory.AssignedPersonAsync(WithSession());
-        using var browser = await SignedInAsync(assigned.User);
-        using var other = await SignedInAsync((await _factory.AssignedPersonAsync(WithSession())).User);
-        var subject = PersonSubject.Format(assigned.User.TenantId, assigned.User.ObjectId);
-
-        await using var scope = _factory.Services.CreateAsyncScope();
-        var sessions = scope.ServiceProvider.GetRequiredService<SignInSessions>();
-        var byUser = await sessions.FindByUserAsync(subject, Ct);
-        var bySid = await sessions.FindByEntraSessionAsync(assigned.User.TenantId, assigned.User.SessionId!, Ct);
-
-        var session = byUser.Single();
-        Assert.AreEqual(session.Session.AuthorizationId, bySid.Single().Session.AuthorizationId);
-        Assert.AreEqual(WebClientRegistration.ClientId, session.Session.ClientId);
-        Assert.IsGreaterThanOrEqualTo(2, session.TokenIds.Count, "The access and refresh tokens.");
-
-        await browser.FetchAsync(HttpMethod.Post, BffRoutes.Logout);
-        Assert.IsEmpty(await sessions.FindByUserAsync(subject, Ct), "A revoked session is still listed.");
     }
 
     public void Dispose()

@@ -37,7 +37,7 @@ public sealed class AgentEnrollmentTests : IDisposable
     {
         _testContext = testContext;
         // The fixture's own client stands in for a Superadministrator.
-        _client = _factory.CreateClient();
+        _client = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;
@@ -255,7 +255,7 @@ public sealed class AgentEnrollmentTests : IDisposable
     public async Task The_recently_enrolled_feed_needs_devices_read()
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
-        using var withoutScope = await _factory.CreateClientAsync("tenants.read");
+        using var withoutScope = await _factory.CreateApplicationClientAsync(tenant.Id, "tenants.read");
 
         var response = await withoutScope.GetAsync($"api/v1/tenants/{tenant.Id}/agents", Ct);
 
@@ -382,7 +382,7 @@ public sealed class AgentEnrollmentTests : IDisposable
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
         using var agent = await _factory.EnrollAgentAsync(tenant.Id);
         var command = await QueueCommandAsync(agent.DeviceId);
-        using var application = await _factory.CreateClientAsync(OSI.Signal9.Server.Identity.Scopes.Agent);
+        using var application = await _factory.CreateUnregisteredClientAsync(OSI.Signal9.Server.Identity.Scopes.Agent);
 
         var heartbeat = await application.PutAsJsonAsync($"api/v1/agents/{agent.Id}/heartbeat", new HeartbeatRequest(), Signal9Json.Options, Ct);
         var result = await application.PutAsJsonAsync($"{command.Url.TrimStart('/')}/result",

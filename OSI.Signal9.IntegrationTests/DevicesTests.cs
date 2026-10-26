@@ -21,7 +21,7 @@ public sealed class DevicesTests : IDisposable
     public DevicesTests(TestContext testContext)
     {
         _testContext = testContext;
-        _client = _factory.CreateClient();
+        _client = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;

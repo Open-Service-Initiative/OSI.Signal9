@@ -197,15 +197,36 @@ public sealed class AuthorizationServerTests : IDisposable
         Assert.AreEqual(1, await tokens.CountAsync(Ct));
         Assert.AreEqual(1, await authorizations.CountAsync(Ct));
 
+        var pruning = new JobRun();
+        scheduler.ListenerManager.AddJobListener(pruning);
         await scheduler.Start(Ct);
         await scheduler.TriggerJob(OpenIddictQuartzJob.Identity, data: null, Ct);
-        var deadline = DateTime.UtcNow.AddSeconds(30);
-        while ((await tokens.CountAsync(Ct) > 0 || await authorizations.CountAsync(Ct) > 0) && DateTime.UtcNow < deadline)
-            await Task.Delay(100, Ct);
+        await pruning.Finished.Task.SignalledAsync("the pruning job's run");
         await scheduler.Shutdown(waitForJobsToComplete: true, Ct);
 
         Assert.AreEqual(0, await tokens.CountAsync(Ct));
         Assert.AreEqual(0, await authorizations.CountAsync(Ct));
+    }
+
+    /// <summary>Quartz's word that OpenIddict's pruning job has run, or why it failed.</summary>
+    private sealed class JobRun : IJobListener
+    {
+        public TaskCompletionSource Finished { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public string Name => nameof(JobRun);
+
+        public ValueTask JobWasExecuted(IJobExecutionContext context, JobExecutionException? jobException,
+            CancellationToken cancellationToken = default)
+        {
+            if (context.JobDetail.Key.Equals(OpenIddictQuartzJob.Identity))
+            {
+                if (jobException is null)
+                    Finished.TrySetResult();
+                else
+                    Finished.TrySetException(jobException);
+            }
+            return ValueTask.CompletedTask;
+        }
     }
 
     private HttpClient CreateApiClient(AccessToken token)

@@ -142,7 +142,7 @@ public sealed partial class DelegatedApiApplicationTests
         using var dashboard = await _factory.CreatePersonClientAsync(person);
         var sibling = (await ConnectionsAsync(dashboard, MyConnections)).Single(c => c.ApiApplicationId == atSibling.Id);
         using var withoutScope = await _factory.CreatePersonClientAsync(person, "openid", "tenants.read");
-        using var appOnly = await _factory.CreateClientAsync("apiapplications.read");
+        using var appOnly = await _factory.CreateApplicationClientAsync(tree.Msp, "apiapplications.read");
         using var anonymous = _factory.CreateAnonymousClient();
 
         var throughApplication = await ConnectionsAsync(delegated, MyConnections);

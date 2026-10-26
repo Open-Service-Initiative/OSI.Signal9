@@ -19,7 +19,7 @@ public sealed class TenantsTests : IDisposable
     public TenantsTests(TestContext testContext)
     {
         _testContext = testContext;
-        _client = _factory.CreateClient();
+        _client = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;
@@ -77,7 +77,7 @@ public sealed class TenantsTests : IDisposable
     public async Task Maximum_depth_is_configurable()
     {
         using var host = _factory.WithWebHostBuilder(builder => builder.UseSetting("TenantTree:MaxDepth", "2"));
-        using var client = host.CreateClient();
+        using var client = _factory.CreateSuperadministratorClient(host);
         var root = await CreateAsync(client, "Root", null);
         var rootId = (await root.Content.ReadFromJsonAsync<TenantDto>(Signal9Json.Options, Ct))!.Id;
         var child = await CreateAsync(client, "Child", rootId);
@@ -99,7 +99,7 @@ public sealed class TenantsTests : IDisposable
     public async Task A_maximum_depth_of_zero_allows_only_root_tenants()
     {
         using var host = _factory.WithWebHostBuilder(builder => builder.UseSetting("TenantTree:MaxDepth", "0"));
-        using var client = host.CreateClient();
+        using var client = _factory.CreateSuperadministratorClient(host);
         var root = await CreateAsync(client, "Root", null);
         var rootId = (await root.Content.ReadFromJsonAsync<TenantDto>(Signal9Json.Options, Ct))!.Id;
         var secondRoot = await CreateAsync(client, "Second root", null);

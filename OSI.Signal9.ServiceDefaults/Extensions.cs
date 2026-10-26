@@ -65,7 +65,8 @@ public static class Extensions
             })
             .WithTracing(tracing =>
             {
-                tracing.AddSource(builder.Environment.ApplicationName)
+                // The host's own spans, and one per background job run (OSI.Signal9.Server.Hosting.BackgroundJobs).
+                tracing.AddSource(builder.Environment.ApplicationName, "OSI.Signal9.BackgroundJobs")
                     .AddAspNetCoreInstrumentation(tracing =>
                     {
                         // Exclude health check requests from tracing

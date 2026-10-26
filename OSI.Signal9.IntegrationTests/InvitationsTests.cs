@@ -25,7 +25,7 @@ public sealed class InvitationsTests : IDisposable
     {
         _testContext = testContext;
         // The fixture's own client stands in for a Superadministrator.
-        _superadministrator = _factory.CreateClient();
+        _superadministrator = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;
@@ -157,7 +157,7 @@ public sealed class InvitationsTests : IDisposable
         using var browser = new Browser(_factory.Auth.Server);
 
         var page = await browser.SendAuthorizeAsync(LinkPath(invitation), _factory.Entra, person);
-        Assert.AreEqual(1, _factory.Entra.SignIns, "Redeeming starts with signing in at Entra.");
+        Assert.HasCount(1, _factory.Entra.SignInsOf(person), "Redeeming starts with signing in at Entra.");
         Assert.AreEqual(HttpStatusCode.OK, page.StatusCode, await page.Content.ReadAsStringAsync(Ct));
         var offer = await page.Content.ReadAsStringAsync(Ct);
         Assert.Contains("Technician", offer);
@@ -264,9 +264,7 @@ public sealed class InvitationsTests : IDisposable
 
         Assert.AreEqual(HttpStatusCode.Gone, accepted.StatusCode);
         Assert.Contains("expired", await accepted.Content.ReadAsStringAsync(Ct));
-        // A token from now: the fixture's first one expired with the clock.
-        using var superadministrator = await _factory.CreateClientAsync(Signal9ApiFactory.GrantableScopes);
-        var fetched = await superadministrator.GetFromJsonAsync<InvitationDto>(invitation.Url, Signal9Json.Options, Ct);
+        var fetched = await _superadministrator.GetFromJsonAsync<InvitationDto>(invitation.Url, Signal9Json.Options, Ct);
         Assert.AreEqual(InvitationStatus.Expired, fetched!.Status);
     }
 

@@ -35,7 +35,7 @@ public sealed class RequestTelemetryTests : IDisposable
         using var auth = _factory.Auth.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
             services.ConfigureOpenTelemetryTracerProvider(tracing =>
                 tracing.AddProcessor(new SimpleActivityExportProcessor(new CapturingExporter(exported))))));
-        using var client = _factory.CreateClient();
+        using var client = _factory.CreateSuperadministratorClient();
         var tenant = await _factory.CreateTenantAsync(client, "Contoso");
         var roles = await client.GetFromJsonAsync<PagedResult<RoleDto>>("api/v1/roles", Signal9Json.Options, Ct);
         var created = await client.PostAsJsonAsync($"api/v1/tenants/{tenant.Id}/invitations",

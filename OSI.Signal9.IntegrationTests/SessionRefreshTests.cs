@@ -7,7 +7,6 @@ using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Contracts.Tenants;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
-using Npgsql;
 using OpenIddict.Server;
 using OSI.Signal9.Web.Bff;
 
@@ -390,11 +389,11 @@ public sealed class SessionRefreshTests : IDisposable
     }
 
     /// <summary>Waits for web's revocation at auth to have been answered.</summary>
-    private async Task RevokedAsync()
-    {
-        for (var waited = 0; !_factory.Web.AnsweredApiRequests.Any(u => u.AbsolutePath == "/connect/revoke") && waited < 100; waited++)
-            await Task.Delay(100, Ct);
-    }
+    private Task RevokedAsync() =>
+        _factory.Web.AnsweredApiRequests.CountAsync(IsRevocation).SignalledAsync("web's revocation answered at auth");
+
+    private static bool IsRevocation(Uri uri) => uri.AbsolutePath == "/connect/revoke";
+
 
     [TestMethod]
     public async Task An_hour_idle_ends_the_session_and_revokes_its_refresh_token_at_auth()
@@ -465,8 +464,7 @@ public sealed class SessionRefreshTests : IDisposable
         _factory.Time.Advance(TimeSpan.FromMinutes(61));
         var me = await browser.GetAsync(BffRoutes.User);
         // Until a revocation is attempted (and refused), the session isn't known to have ended at auth.
-        for (var waited = 0; !_factory.Web.ApiRequests.Any(r => r.Uri.AbsolutePath == "/connect/revoke") && waited < 100; waited++)
-            await Task.Delay(100, Ct);
+        await _factory.Web.ApiRequests.CountAsync(r => IsRevocation(r.Uri)).SignalledAsync("web's attempt to revoke");
         _factory.Web.Fault = null;
         _factory.Time.Advance(TimeSpan.FromMinutes(2));
         await RevokedAsync();
@@ -483,27 +481,22 @@ public sealed class SessionRefreshTests : IDisposable
         using var browser = await SignedInAsync();
         _factory.Web.Fault = RevocationUnavailable;
         await browser.FetchAsync(HttpMethod.Post, BffRoutes.Logout);
-        Assert.AreEqual(1L, await CountDashboardSessionsAsync(), "The unconfirmed revocation wasn't kept.");
 
-        // Past the refresh token's 12 hours and the last access token's lifetime, there's nothing left to revoke.
+        // Past the refresh token's 12 hours and the last access token's lifetime, there's nothing left to revoke: the
+        var sweep = _factory.Jobs.NextRunAsync(nameof(DashboardSessionSweeper));
         _factory.Time.Advance(TimeSpan.FromHours(12.5));
-        var remaining = await CountDashboardSessionsAsync();
-        for (var waited = 0; remaining > 0 && waited < 100; waited++)
-        {
-            await Task.Delay(100, Ct);
-            remaining = await CountDashboardSessionsAsync();
-        }
+        await sweep.SignalledAsync("the sweeper's run");
+        Assert.Contains(m => m.StartsWith("Giving up revoking dashboard session", StringComparison.Ordinal), _factory.Web.Logs);
+        var attempts = Revocations();
 
-        Assert.AreEqual(0L, remaining);
+        // Forgotten: however long the sweeper goes on, it never tries again.
+        var later = _factory.Jobs.NextRunAsync(nameof(DashboardSessionSweeper));
+        _factory.Time.Advance(TimeSpan.FromHours(1));
+        await later.SignalledAsync("the sweeper's next run");
+        Assert.AreEqual(attempts, Revocations(), "The sweeper still tries to revoke the forgotten session.");
     }
 
-    private async Task<long> CountDashboardSessionsAsync()
-    {
-        await using var connection = new NpgsqlConnection(_factory.ConnectionString);
-        await connection.OpenAsync(Ct);
-        await using var count = new NpgsqlCommand("""SELECT count(*) FROM "DashboardSessions" """, connection);
-        return (long)(await count.ExecuteScalarAsync(Ct))!;
-    }
+    private int Revocations() => _factory.Web.ApiRequests.Count(r => IsRevocation(r.Uri));
 
     [TestMethod]
     public async Task A_session_ends_after_12_hours_however_active()
@@ -526,6 +519,7 @@ public sealed class SessionRefreshTests : IDisposable
     public async Task Reaching_the_12_hour_cap_sends_the_person_back_to_entra()
     {
         using var browser = await SignedInAsync();
+        var signIns = _factory.Entra.SignIns;
 
         // Signing in again within the cap reuses auth's own session, without Entra.
         for (var elapsed = TimeSpan.Zero; elapsed < TimeSpan.FromHours(11.5); elapsed += TimeSpan.FromMinutes(50))
@@ -533,12 +527,12 @@ public sealed class SessionRefreshTests : IDisposable
             _factory.Time.Advance(TimeSpan.FromMinutes(50));
             await browser.SignInAsync(EntraUser.WithMfa());
         }
-        Assert.AreEqual(1, _factory.Entra.SignIns, "auth's session didn't last.");
+        Assert.AreEqual(signIns, _factory.Entra.SignIns, "auth's session didn't last.");
         _factory.Time.Advance(TimeSpan.FromMinutes(20));
         var landing = await browser.SignInAsync(EntraUser.WithMfa());
 
         Assert.AreEqual(HttpStatusCode.OK, landing.StatusCode);
-        Assert.AreEqual(2, _factory.Entra.SignIns, "auth's session outlived the 12-hour cap.");
+        Assert.AreEqual(signIns + 1, _factory.Entra.SignIns, "auth's session outlived the 12-hour cap.");
     }
 
     public void Dispose() => _factory.Dispose();

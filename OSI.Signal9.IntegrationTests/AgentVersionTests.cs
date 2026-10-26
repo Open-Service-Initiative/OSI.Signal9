@@ -33,7 +33,7 @@ public sealed class AgentVersionTests : IDisposable
                 ["AgentVersions:Maximum"] = "2.0.0",
             })
             : new Signal9ApiFactory();
-        _client = _factory.CreateClient();
+        _client = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;

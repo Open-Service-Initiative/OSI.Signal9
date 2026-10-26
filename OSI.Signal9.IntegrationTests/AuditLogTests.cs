@@ -25,7 +25,7 @@ public sealed class AuditLogTests : IDisposable
     {
         _testContext = testContext;
         // The fixture's own client stands in for a Superadministrator.
-        _superadministrator = _factory.CreateClient();
+        _superadministrator = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;
@@ -244,7 +244,7 @@ public sealed class AuditLogTests : IDisposable
     {
         var tree = await TreeAsync();
         using var technician = await PersonAsync(tree.Root, ("Technician", tree.Root));
-        using var noScope = await _factory.CreateClientAsync("tenants.read");
+        using var noScope = await _factory.CreateApplicationClientAsync(tree.Root, "tenants.read");
 
         var byTechnician = await technician.GetFromJsonAsync<PagedResult<AuditEntryDto>>("api/v1/audit-entries", Signal9Json.Options, Ct);
         var withoutScope = await noScope.GetAsync("api/v1/audit-entries", Ct);
@@ -289,7 +289,8 @@ public sealed class AuditLogTests : IDisposable
         var redirect = await browser.AuthorizeAsync(flow.AuthorizeRequest(), _factory.Entra, person);
 
         Assert.AreEqual("access_denied", CodeFlow.ErrorFrom(redirect));
-        var entry = (await TrailAsync(_superadministrator)).Single(e => e.Action == AuditActions.SignIn);
+        var entry = (await TrailAsync(_superadministrator)).Single(e => e.Action == AuditActions.SignIn
+            && e.Actor.Subject == $"{person.TenantId}:{person.ObjectId}");
         Assert.AreEqual(AuditOutcome.Failed, entry.Outcome);
         Assert.AreEqual("NoMfa", entry.Detail);
         Assert.AreEqual($"{person.TenantId}:{person.ObjectId}", entry.Actor.Subject);

@@ -8,6 +8,7 @@ namespace OSI.Signal9.Server.Hosting;
 /// A background job that runs every <paramref name="interval"/>, counting from when the host starts, on the injected
 /// <see cref="TimeProvider"/>, so tests drive it by advancing the clock. Each run gets a service scope of its own. A
 /// failed run is logged, and the next one tries again; stopping the host cancels the run in progress and ends the job.
+/// Each run is traced as a span named after the job (<see cref="BackgroundJobs"/>).
 /// </summary>
 public abstract class PeriodicJob(TimeSpan interval, IServiceScopeFactory scopes, TimeProvider time, ILogger logger)
     : BackgroundService
@@ -32,6 +33,7 @@ public abstract class PeriodicJob(TimeSpan interval, IServiceScopeFactory scopes
         {
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
+                using var run = BackgroundJobs.StartRun(GetType().Name);
                 try
                 {
                     await using var scope = scopes.CreateAsyncScope();
@@ -39,6 +41,7 @@ public abstract class PeriodicJob(TimeSpan interval, IServiceScopeFactory scopes
                 }
                 catch (Exception exception) when (!stoppingToken.IsCancellationRequested)
                 {
+                    run.Failed(exception);
                     logger.LogWarning(exception, "{Job} failed; the next run tries again.", GetType().Name);
                 }
             }

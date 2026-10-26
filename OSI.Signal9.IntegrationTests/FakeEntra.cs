@@ -77,13 +77,17 @@ public sealed class FakeEntra
     private readonly TimeProvider _time;
     private readonly RsaSecurityKey _signingKey = new(RSA.Create(2048)) { KeyId = "fake-entra-key" };
     private readonly ConcurrentDictionary<string, PendingCode> _codes = new();
-    private int _signIns;
+    private readonly ConcurrentDictionary<(Guid, Guid), ConcurrentQueue<string?>> _signIns = new();
 
-    /// <summary>How many times people signed in here.</summary>
-    public int SignIns => _signIns;
+    /// <summary>
+    /// The <c>prompt</c> of each authorize request <paramref name="user"/> signed in at here, in order (null when
+    /// absent): one per sign-in.
+    /// </summary>
+    public IReadOnlyList<string?> SignInsOf(EntraUser user) =>
+        [.. _signIns.GetValueOrDefault((user.TenantId, user.ObjectId)) ?? []];
 
-    /// <summary>The <c>prompt</c> of each authorize request people signed in at, in order (null when absent).</summary>
-    public ConcurrentQueue<string?> Prompts { get; } = new();
+    /// <summary>How many times anyone signed in here, the fixture's Superadministrator included.</summary>
+    public int SignIns => _signIns.Values.Sum(s => s.Count);
 
     private sealed record PendingCode(EntraUser User, string RedirectUri, string Nonce, string? Challenge,
         DateTimeOffset AuthenticatedAt);
@@ -93,18 +97,64 @@ public sealed class FakeEntra
     private readonly ConcurrentDictionary<(Guid, Guid), string[]> _roles = new();
     private readonly ConcurrentDictionary<((Guid, Guid) Home, Guid Directory), EntraUser> _accounts = new();
     private readonly ConcurrentDictionary<(Guid, Guid), EntraUser> _answersAs = new();
-    private int _refreshes;
+    private readonly List<((Guid, Guid) Person, DateTimeOffset At)> _refreshes = [];
+    private readonly List<((Guid, Guid) Person, int Count, TaskCompletionSource Asked)> _refreshWaiters = [];
 
-    /// <summary>How many times auth refreshed a person's tokens here.</summary>
-    public int Refreshes => _refreshes;
+    /// <summary>
+    /// When auth asked to refresh <paramref name="user"/>'s tokens here, by the fixture's clock: once per request, so
+    /// a retried refresh counts each time.
+    /// </summary>
+    public IReadOnlyList<DateTimeOffset> RefreshesOf(EntraUser user)
+    {
+        lock (_refreshes)
+            return [.. _refreshes.Where(r => r.Person == (user.TenantId, user.ObjectId)).Select(r => r.At)];
+    }
+
+    /// <summary>Completes once auth has asked to refresh <paramref name="user"/>'s tokens here <paramref name="count"/> times.</summary>
+    public Task RefreshedAsync(EntraUser user, int count = 1)
+    {
+        var person = (user.TenantId, user.ObjectId);
+        lock (_refreshes)
+        {
+            if (_refreshes.Count(r => r.Person == person) >= count)
+                return Task.CompletedTask;
+            var asked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _refreshWaiters.Add((person, count, asked));
+            return asked.Task;
+        }
+    }
+
+    private void RecordRefresh(EntraUser user)
+    {
+        var person = (user.TenantId, user.ObjectId);
+        lock (_refreshes)
+        {
+            _refreshes.Add((person, _time.GetUtcNow()));
+            var count = _refreshes.Count(r => r.Person == person);
+            foreach (var waiter in _refreshWaiters.Where(w => w.Person == person && w.Count <= count).ToList())
+            {
+                waiter.Asked.TrySetResult();
+                _refreshWaiters.Remove(waiter);
+            }
+        }
+    }
 
     /// <summary>The <c>scope</c> of each refresh auth made, in order.</summary>
     public ConcurrentQueue<string> RefreshScopes { get; } = new();
 
     /// <summary>
-    /// Stands in for Entra failing to answer a refresh: when it returns a response (or throws), auth gets that instead.
+    /// Stands in for Entra failing to answer refreshes of <paramref name="user"/>'s tokens: when
+    /// <paramref name="fault"/> returns a response (or throws), auth gets that instead. Null answers again.
     /// </summary>
-    public Func<HttpRequestMessage, HttpResponseMessage?>? RefreshFault { get; set; }
+    public void FailRefreshes(EntraUser user, Func<HttpRequestMessage, HttpResponseMessage?>? fault)
+    {
+        if (fault is null)
+            _refreshFaults.TryRemove((user.TenantId, user.ObjectId), out _);
+        else
+            _refreshFaults[(user.TenantId, user.ObjectId)] = fault;
+    }
+
+    private readonly ConcurrentDictionary<(Guid, Guid), Func<HttpRequestMessage, HttpResponseMessage?>> _refreshFaults = new();
 
     /// <summary>
     /// From now on, Entra refuses to refresh the person's tokens with <paramref name="error"/>, as when they're disabled,
@@ -148,9 +198,8 @@ public sealed class FakeEntra
         Assert.AreEqual("code", query["response_type"].ToString());
         Assert.AreEqual("S256", query["code_challenge_method"].ToString(), "auth must use PKCE upstream.");
 
-        Interlocked.Increment(ref _signIns);
         var prompt = query.TryGetValue("prompt", out var value) ? value.ToString() : null;
-        Prompts.Enqueue(prompt);
+        _signIns.GetOrAdd((user.TenantId, user.ObjectId), _ => new()).Enqueue(prompt);
         // prompt=login makes the person authenticate again, now; otherwise Entra's session signs them straight in.
         var authenticatedAt = prompt == "login" ? _time.GetUtcNow() : user.AuthenticatedAt ?? _time.GetUtcNow();
         var code = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32));
@@ -244,24 +293,29 @@ public sealed class FakeEntra
     private async Task<HttpResponseMessage> RefreshAsync(HttpRequestMessage request,
         Dictionary<string, Microsoft.Extensions.Primitives.StringValues> form, string tenant)
     {
-        Interlocked.Increment(ref _refreshes);
         RefreshScopes.Enqueue(form["scope"].ToString());
-        if (RefreshFault?.Invoke(request) is { } fault)
+        // A refresh token belongs to the home account: redeemed at one of the person's directories, Entra answers for
+        // their account in that directory, and auth always names the directory.
+        var known = _refreshTokens.TryGetValue(form["refresh_token"].ToString(), out var grant);
+        EntraUser? user = null;
+        var hasAccount = known && Guid.TryParse(tenant, out var directory)
+            && _accounts.TryGetValue((grant.User.HomeAccount, directory), out user);
+        if (hasAccount)
+            RecordRefresh(user!);
+        if (hasAccount && _refreshFaults.TryGetValue((user!.TenantId, user.ObjectId), out var failing)
+            && failing(request) is { } fault)
             return fault;
         if (!await IsCertificateAssertionAsync(form, request.RequestUri!))
             return Error("invalid_client", "The client must authenticate with its certificate credential.");
-        if (!_refreshTokens.TryGetValue(form["refresh_token"].ToString(), out var grant))
+        if (!known)
             return Error("invalid_grant", "AADSTS9002313: The refresh token is unknown.");
-        // A refresh token belongs to the home account: redeemed at one of the person's directories, Entra answers for
-        // their account in that directory, and auth always names the directory.
-        if (!Guid.TryParse(tenant, out var directory)
-            || !_accounts.TryGetValue((grant.User.HomeAccount, directory), out var user))
+        if (!hasAccount)
             return Error("invalid_request", $"AADSTS90002: Tenant '{tenant}' not found, or the person has no account there.");
-        if (_refusals.TryGetValue((user.TenantId, user.ObjectId), out var error))
+        if (_refusals.TryGetValue((user!.TenantId, user.ObjectId), out var error))
             return Error(error, error == "invalid_grant"
                 ? "AADSTS50057: The user account is disabled."
                 : "AADSTS50076: Due to a configuration change made by your administrator, you must use multi-factor authentication.");
-        return Tokens(user, grant.AuthenticatedAt, nonce: null, form["scope"].ToString());
+        return Tokens(user!, grant.AuthenticatedAt, nonce: null, form["scope"].ToString());
     }
 
     private HttpResponseMessage Tokens(EntraUser signedIn, DateTimeOffset authenticatedAt, string? nonce,

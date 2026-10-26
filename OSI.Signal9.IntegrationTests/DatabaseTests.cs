@@ -48,7 +48,7 @@ public sealed class DatabaseTests
     public async Task The_database_refuses_to_change_or_remove_audit_entries(string sql)
     {
         using var factory = new Signal9ApiFactory();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateSuperadministratorClient();
         await factory.CreateTenantAsync(client, "Contoso");
         await using var connection = new NpgsqlConnection(factory.ConnectionString);
         await connection.OpenAsync(TestContext.CancellationToken);

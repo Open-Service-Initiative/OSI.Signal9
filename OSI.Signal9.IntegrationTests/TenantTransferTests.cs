@@ -27,7 +27,7 @@ public sealed class TenantTransferTests : IDisposable
     public TenantTransferTests(TestContext testContext)
     {
         _testContext = testContext;
-        _superadministrator = _factory.CreateClient();
+        _superadministrator = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;
@@ -192,7 +192,7 @@ public sealed class TenantTransferTests : IDisposable
     public async Task A_maximum_depth_of_zero_refuses_any_transfer_beneath_another_tenant()
     {
         using var host = _factory.WithWebHostBuilder(builder => builder.UseSetting("TenantTree:MaxDepth", "0"));
-        using var superadministrator = host.CreateClient();
+        using var superadministrator = _factory.CreateSuperadministratorClient(host);
         var left = await _factory.CreateTenantAsync(superadministrator, "Left");
         var right = await _factory.CreateTenantAsync(superadministrator, "Right");
 

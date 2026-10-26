@@ -3,7 +3,6 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.WebUtilities;
-using Npgsql;
 using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Serialization;
@@ -123,8 +122,8 @@ public sealed class RecentMfaTests : IDisposable
             await browser.AuthorizeAsync(WithMaxAge(stepUp.AuthorizeRequest(), 900), _factory.Entra, user));
         var claims = await IntrospectAsync(token);
 
-        Assert.AreEqual(2, _factory.Entra.SignIns);
-        Assert.AreEqual("login", _factory.Entra.Prompts.Last());
+        Assert.HasCount(2, _factory.Entra.SignInsOf(user));
+        Assert.AreEqual("login", _factory.Entra.SignInsOf(user).Last());
         Assert.AreEqual(_factory.Time.GetUtcNow().ToUnixTimeSeconds(), claims.GetProperty("auth_time").GetInt64());
         Assert.IsGreaterThan(first.GetProperty("auth_time").GetInt64(), claims.GetProperty("auth_time").GetInt64());
     }
@@ -158,14 +157,6 @@ public sealed class RecentMfaTests : IDisposable
 
     private const string SessionCookie = "__Host-Http-signal9";
 
-    private async Task<long> CountDashboardSessionsAsync()
-    {
-        await using var connection = new NpgsqlConnection(_factory.ConnectionString);
-        await connection.OpenAsync(Ct);
-        await using var count = new NpgsqlCommand("""SELECT count(*) FROM "DashboardSessions" """, connection);
-        return (long)(await count.ExecuteScalarAsync(Ct))!;
-    }
-
     private static void AssertStepUpChallenge(HttpResponseMessage response)
     {
         Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -179,7 +170,7 @@ public sealed class RecentMfaTests : IDisposable
     [TestMethod]
     public async Task Mfa_older_than_15_minutes_gets_the_step_up_challenge_and_a_fresh_sign_in_succeeds()
     {
-        using var fixture = _factory.CreateClient();
+        using var fixture = _factory.CreateSuperadministratorClient();
         var tenant = await _factory.CreateTenantAsync(fixture, "Contoso");
         var (browser, flow) = await StartAsync();
         using var session = browser;
@@ -200,7 +191,7 @@ public sealed class RecentMfaTests : IDisposable
     [TestMethod]
     public async Task Mfa_exactly_15_minutes_old_is_still_recent()
     {
-        using var fixture = _factory.CreateClient();
+        using var fixture = _factory.CreateSuperadministratorClient();
         var tenant = await _factory.CreateTenantAsync(fixture, "Contoso");
         using var person = await _factory.CreatePersonClientAsync(
             Superadministrator(authenticatedAt: _factory.Time.GetUtcNow().AddMinutes(-15)), "tenants.delete");
@@ -213,7 +204,7 @@ public sealed class RecentMfaTests : IDisposable
     [TestMethod]
     public async Task Recent_mfa_is_judged_on_every_request_as_the_token_ages()
     {
-        using var fixture = _factory.CreateClient();
+        using var fixture = _factory.CreateSuperadministratorClient();
         var tenant = await _factory.CreateTenantAsync(fixture, "Contoso");
         using var person = await _factory.CreatePersonClientAsync(
             Superadministrator(authenticatedAt: _factory.Time.GetUtcNow().AddMinutes(-10)), "tenants.delete");
@@ -225,9 +216,9 @@ public sealed class RecentMfaTests : IDisposable
     [TestMethod]
     public async Task An_application_acting_as_itself_is_refused_without_a_step_up_challenge()
     {
-        // No person to send through MFA, and no MFA-approved grant yet (#63): it fails closed.
-        using var application = await _factory.CreateClientAsync("tenants.delete");
-        using var fixture = _factory.CreateClient();
+        // No person to send through MFA, and no API application's MFA-approved grant (#63): it fails closed.
+        using var application = await _factory.CreateUnregisteredClientAsync("tenants.delete");
+        using var fixture = _factory.CreateSuperadministratorClient();
         var tenant = await _factory.CreateTenantAsync(fixture, "Contoso");
 
         var response = await application.DeleteAsync($"api/v1/tenants/{tenant.Id}", Ct);
@@ -239,7 +230,7 @@ public sealed class RecentMfaTests : IDisposable
     [TestMethod]
     public async Task Running_a_script_needs_a_recent_mfa_but_predefined_commands_dont()
     {
-        using var fixture = _factory.CreateClient();
+        using var fixture = _factory.CreateSuperadministratorClient();
         var tenant = await _factory.CreateTenantAsync(fixture, "Contoso");
         using var agent = await _factory.EnrollAgentAsync(tenant.Id, "PC01");
         var commands = $"api/v1/devices/{agent.DeviceId}/commands";
@@ -248,7 +239,7 @@ public sealed class RecentMfaTests : IDisposable
             Superadministrator(authenticatedAt: _factory.Time.GetUtcNow().AddMinutes(-16)), "commands.execute", "terminal.execute");
         using var recent = await _factory.CreatePersonClientAsync(
             Superadministrator(authenticatedAt: _factory.Time.GetUtcNow().AddMinutes(-1)), "commands.execute", "terminal.execute");
-        using var application = await _factory.CreateClientAsync("commands.execute", "terminal.execute");
+        using var application = await _factory.CreateApplicationClientAsync(tenant.Id, "commands.execute", "terminal.execute");
 
         var staleScript = await stale.PostAsJsonAsync(commands, script, Signal9Json.Options, Ct);
         var predefined = await stale.PostAsJsonAsync(commands,
@@ -259,11 +250,11 @@ public sealed class RecentMfaTests : IDisposable
         AssertStepUpChallenge(staleScript);
         Assert.AreEqual(HttpStatusCode.Created, predefined.StatusCode, await predefined.Content.ReadAsStringAsync(Ct));
         Assert.AreEqual(HttpStatusCode.Created, recentScript.StatusCode, await recentScript.Content.ReadAsStringAsync(Ct));
-        // An application acting as itself without an MFA-approved grant of terminal.execute fails closed.
-        Assert.AreEqual(HttpStatusCode.Forbidden, applicationScript.StatusCode);
-        Assert.IsFalse(applicationScript.Headers.WwwAuthenticate.ToString().Contains("insufficient_user_authentication", StringComparison.Ordinal));
+        // An application acting as itself has no person to step up: a person granted it terminal.execute with a recent
+        // MFA (the fixture's Superadministrator, registering it), and it authenticates with private_key_jwt.
+        Assert.AreEqual(HttpStatusCode.Created, applicationScript.StatusCode, await applicationScript.Content.ReadAsStringAsync(Ct));
         var queued = await fixture.GetFromJsonAsync<PagedResult<CommandDto>>(commands, Signal9Json.Options, Ct);
-        Assert.AreEqual(1, queued!.Items.Count(c => c.Type == CommandType.RunScript));
+        Assert.AreEqual(2, queued!.Items.Count(c => c.Type == CommandType.RunScript));
     }
 
     [TestMethod]
@@ -298,12 +289,13 @@ public sealed class RecentMfaTests : IDisposable
     [TestMethod]
     public async Task The_dashboard_steps_up_through_web_and_then_the_action_succeeds()
     {
-        using var fixture = _factory.CreateClient();
+        using var fixture = _factory.CreateSuperadministratorClient();
         var tenant = await _factory.CreateTenantAsync(fixture, "Contoso");
         var person = Superadministrator(authenticatedAt: _factory.Time.GetUtcNow().AddMinutes(-16));
         using var browser = new DashboardBrowser(_factory);
         Assert.AreEqual(HttpStatusCode.OK, (await browser.SignInAsync(person, "/tenants")).StatusCode);
         var sessionCookie = browser.WebCookies[SessionCookie];
+        var before = browser.WebCookies.ToDictionary();
 
         var refused = await browser.FetchAsync(HttpMethod.Delete, $"api/v1/tenants/{tenant.Id}");
         var stillSignedIn = await browser.GetAsync(OSI.Signal9.Contracts.Bff.BffRoutes.User);
@@ -315,12 +307,14 @@ public sealed class RecentMfaTests : IDisposable
         Assert.AreEqual(HttpStatusCode.OK, stillSignedIn.StatusCode);
         // web asked auth for max_age=900, and auth made Entra authenticate the person again.
         Assert.AreEqual(HttpStatusCode.OK, landing.StatusCode);
-        Assert.AreEqual(2, _factory.Entra.SignIns);
-        Assert.AreEqual("login", _factory.Entra.Prompts.Last());
+        Assert.HasCount(2, _factory.Entra.SignInsOf(person));
+        Assert.AreEqual("login", _factory.Entra.SignInsOf(person).Last());
         Assert.AreEqual(HttpStatusCode.NoContent, deleted.StatusCode, await deleted.Content.ReadAsStringAsync(Ct));
-        // The step-up replaced the session it came from.
+        // The step-up replaced the session it came from, which no longer works.
         Assert.AreNotEqual(sessionCookie, browser.WebCookies[SessionCookie]);
-        Assert.AreEqual(1L, await CountDashboardSessionsAsync());
+        browser.SetWebCookies(before);
+        Assert.AreEqual(HttpStatusCode.Unauthorized, (await browser.GetAsync(OSI.Signal9.Contracts.Bff.BffRoutes.User)).StatusCode,
+            "The session the step-up replaced still works.");
     }
 
     /// <summary>Walks a sign-in at an Entra that ignores <c>prompt=login</c> and reports the old authentication time.</summary>

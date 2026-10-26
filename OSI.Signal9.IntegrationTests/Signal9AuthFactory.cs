@@ -60,7 +60,7 @@ public sealed class Signal9AuthFactory : WebApplicationFactory<AuthHost>
             services.Configure<OpenIdConnectOptions>(OpenIdConnectDefaults.AuthenticationScheme,
                 options => options.BackchannelHttpHandler = Entra.CreateHandler());
 
-            services.AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(Logs));
+            services.AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(Logs.Enqueue));
 
             foreach (var quartz in services.Where(IsQuartzHostedService).ToList())
                 services.Remove(quartz);
@@ -73,15 +73,15 @@ public sealed class Signal9AuthFactory : WebApplicationFactory<AuthHost>
 }
 
 /// <summary>Keeps every entry a host logs at or above a level (warnings by default), for tests that check what was logged.</summary>
-internal sealed class CapturingLoggerProvider(ConcurrentQueue<string> logs, LogLevel minimum = LogLevel.Warning) : ILoggerProvider
+internal sealed class CapturingLoggerProvider(Action<string> log, LogLevel minimum = LogLevel.Warning) : ILoggerProvider
 {
-    public ILogger CreateLogger(string categoryName) => new Logger(logs, minimum);
+    public ILogger CreateLogger(string categoryName) => new Logger(log, minimum);
 
     public void Dispose()
     {
     }
 
-    private sealed class Logger(ConcurrentQueue<string> logs, LogLevel minimum) : ILogger
+    private sealed class Logger(Action<string> log, LogLevel minimum) : ILogger
     {
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
@@ -91,7 +91,7 @@ internal sealed class CapturingLoggerProvider(ConcurrentQueue<string> logs, LogL
             Func<TState, Exception?, string> formatter)
         {
             if (IsEnabled(logLevel))
-                logs.Enqueue(exception is null ? formatter(state, exception) : $"{formatter(state, exception)} {exception.Message}");
+                log(exception is null ? formatter(state, exception) : $"{formatter(state, exception)} {exception.Message}");
         }
     }
 }

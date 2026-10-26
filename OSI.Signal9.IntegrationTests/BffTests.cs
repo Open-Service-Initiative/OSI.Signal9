@@ -60,7 +60,7 @@ public sealed partial class BffTests : IDisposable
     [TestMethod]
     public async Task A_person_with_a_role_assignment_uses_the_dashboard_end_to_end()
     {
-        using var fixture = _factory.CreateClient();
+        using var fixture = _factory.CreateSuperadministratorClient();
         var contoso = await _factory.CreateTenantAsync(fixture, "Contoso");
         var site = await _factory.CreateTenantAsync(fixture, "Contoso-Site", parentTenantId: contoso.Id);
         var other = await _factory.CreateTenantAsync(fixture, "Fabrikam");

@@ -30,7 +30,7 @@ public sealed class ConditionalRequestsTests : IDisposable
     public ConditionalRequestsTests(TestContext testContext)
     {
         _testContext = testContext;
-        _client = _factory.CreateClient();
+        _client = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;
@@ -354,7 +354,7 @@ public sealed class ConditionalRequestsTests : IDisposable
         var etag = await GetETagAsync($"api/v1/tenants/{tenant.Id}");
 
         using var racing = RaceWith($"""UPDATE "Tenants" SET "Name" = 'Concurrent' WHERE "Id" = '{tenant.Id}'""");
-        using var client = racing.CreateClient();
+        using var client = _factory.CreateSuperadministratorClient(racing);
         var conditional = await PatchTenantAsync(client, tenant.Id, "Lost update", ifMatch: etag);
         var unconditional = await PatchTenantAsync(client, tenant.Id, "Lost update", ifMatch: null);
 
@@ -390,7 +390,7 @@ public sealed class ConditionalRequestsTests : IDisposable
         var etag = await GetETagAsync($"api/v1/devices/{agent.DeviceId}");
 
         using var racing = RaceWith($"""UPDATE "Devices" SET "GroupName" = 'Concurrent' WHERE "Id" = '{agent.DeviceId}'""");
-        using var client = racing.CreateClient();
+        using var client = _factory.CreateSuperadministratorClient(racing);
         var patch = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/devices/{agent.DeviceId}")
         {
             Content = new StringContent("""{ "groupName": "Lost update" }""", System.Text.Encoding.UTF8, "application/merge-patch+json"),
@@ -416,7 +416,7 @@ public sealed class ConditionalRequestsTests : IDisposable
         var command = await created.Content.ReadFromJsonAsync<CommandDto>(Signal9Json.Options, Ct);
 
         using var racing = RaceWith($"""UPDATE "Commands" SET "Status" = 'Completed' WHERE "Id" = '{command!.Id}'""");
-        using var client = racing.CreateClient();
+        using var client = _factory.CreateSuperadministratorClient(racing);
         var cancel = new HttpRequestMessage(HttpMethod.Post, $"{url}:cancel");
         cancel.Headers.TryAddWithoutValidation("If-Match", AssertStrongETag(created));
         var response = await client.SendAsync(cancel, Ct);

@@ -32,7 +32,7 @@ public sealed class TenantScopeTests : IDisposable
     public TenantScopeTests(TestContext testContext)
     {
         _testContext = testContext;
-        _client = _factory.CreateClient();
+        _client = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;

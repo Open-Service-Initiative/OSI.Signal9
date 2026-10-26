@@ -139,7 +139,7 @@ public sealed class ScopeTests : IDisposable
     [TestMethod]
     public async Task A_token_missing_the_scope_gets_403_problem_details_naming_the_scope()
     {
-        using var api = await _factory.CreateClientAsync("devices.read");
+        using var api = await _factory.CreatePersonClientAsync(_factory.Superadministrator(), "devices.read");
 
         var response = await api.GetAsync("api/v1/tenants", Ct);
 
@@ -200,17 +200,17 @@ public sealed class ScopeTests : IDisposable
     {
         // The dashboard hub accepts either of its two scopes, so neither may be in the token that lacks the scope.
         string[] alternatives = path.StartsWith("hubs/dashboard", StringComparison.Ordinal) ? ["devices.read", "telemetry.read"] : [scope];
-        // Deleting a tenant also needs a person with a recent MFA (#120), which an application acting as itself isn't.
+        // A Superadministrator who signed in with only that scope, or without it, reaches anything a role could grant.
         // The agent scope works only for an enrolled agent, acting as itself.
+        using var superadministrator = _factory.CreateSuperadministratorClient();
         using var agent = scope == "agent"
-            ? await _factory.EnrollAgentAsync((await _factory.CreateTenantAsync(_factory.CreateClient(), $"T{Guid.NewGuid():N}")).Id)
+            ? await _factory.EnrollAgentAsync((await _factory.CreateTenantAsync(superadministrator, $"T{Guid.NewGuid():N}")).Id)
             : null;
         path = agent is null ? path : path.Replace(AnyId, agent.Id.ToString(), StringComparison.Ordinal);
         using var withScope = agent is not null ? Signal9ApiFactory.AsAgent(_factory.Server, agent)
-            : method == "DELETE" && path.StartsWith("api/v1/tenants/", StringComparison.Ordinal)
-            ? await _factory.CreatePersonClientAsync(_factory.Superadministrator(), scope)
-            : await _factory.CreateClientAsync(scope);
-        using var withEverythingElse = await _factory.CreateClientAsync(GrantableScopes.Except(alternatives).ToArray());
+            : await _factory.CreatePersonClientAsync(_factory.Superadministrator(), scope);
+        using var withEverythingElse = await _factory.CreatePersonClientAsync(_factory.Superadministrator(),
+            Signal9ApiFactory.PersonScopes.Except(alternatives).ToArray());
 
         var allowed = await withScope.SendAsync(Request(method, path), Ct);
         var refused = await withEverythingElse.SendAsync(Request(method, path), Ct);
@@ -223,12 +223,12 @@ public sealed class ScopeTests : IDisposable
     [TestMethod]
     public async Task Running_a_script_needs_terminal_execute_as_well_as_commands_execute()
     {
-        using var admin = _factory.CreateClient();
+        using var admin = _factory.CreateSuperadministratorClient();
         var tenant = await _factory.CreateTenantAsync(admin, "Contoso");
         using var agent = await _factory.EnrollAgentAsync(tenant.Id, "PC01");
         var commands = $"api/v1/devices/{agent.DeviceId}/commands";
-        using var commandsOnly = await _factory.CreateClientAsync("commands.execute");
-        using var terminalOnly = await _factory.CreateClientAsync("terminal.execute");
+        using var commandsOnly = await _factory.CreateApplicationClientAsync(tenant.Id, "commands.execute");
+        using var terminalOnly = await _factory.CreateApplicationClientAsync(tenant.Id, "terminal.execute");
         // Running code also needs a person's recent MFA (RecentMfaTests).
         using var both = await _factory.CreatePersonClientAsync(_factory.Superadministrator(), "commands.execute", "terminal.execute");
 

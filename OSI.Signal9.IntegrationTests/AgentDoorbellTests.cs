@@ -29,7 +29,7 @@ public sealed class AgentDoorbellTests : IDisposable
     public AgentDoorbellTests(TestContext testContext)
     {
         _testContext = testContext;
-        _client = _factory.CreateClient();
+        _client = _factory.CreateSuperadministratorClient();
     }
 
     private CancellationToken Ct => _testContext.CancellationToken;
@@ -84,14 +84,15 @@ public sealed class AgentDoorbellTests : IDisposable
         await QueueCommandAsync(agent.DeviceId);
 
         await rung.Task.WaitAsync(TimeSpan.FromSeconds(10), Ct);
-        await Task.Delay(200, Ct);
+        // A round trip on the connection: any doorbell api rang before it has arrived.
+        await Assert.ThrowsExactlyAsync<HubException>(() => hub.InvokeAsync("Ping", Ct));
         Assert.AreEqual(1, rings);
     }
 
     [TestMethod]
     public async Task The_agent_hub_refuses_a_token_that_belongs_to_no_agent()
     {
-        using var application = await _factory.CreateClientAsync(OSI.Signal9.Server.Identity.Scopes.Agent);
+        using var application = await _factory.CreateUnregisteredClientAsync(OSI.Signal9.Server.Identity.Scopes.Agent);
         await using var hub = Build(application.DefaultRequestHeaders.Authorization!.Parameter!, certificate: null);
 
         await Assert.ThrowsAsync<Exception>(async () =>
