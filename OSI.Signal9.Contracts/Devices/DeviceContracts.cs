@@ -62,3 +62,14 @@ public sealed record UpdateDeviceRequest
     /// <summary>Planned downtime: the device raises no alerts while it is on.</summary>
     public bool MaintenanceMode { get; init; }
 }
+
+/// <summary>
+/// Moves a device to another tenant, sent to POST /api/v1/devices/{deviceId}:transfer. Its agent, telemetry and command
+/// history go with it. Needs <c>devices.transfer</c> at both the device's tenant and <see cref="TenantId"/>.
+/// </summary>
+public sealed record TransferDeviceRequest
+{
+    /// <summary>The tenant the device moves to.</summary>
+    [Required]
+    public Guid? TenantId { get; init; }
+}

@@ -70,6 +70,8 @@
                       IconStart="@(new Icons.Regular.Size20.Info())" OnClick="@(() => QueueAsync(context, CommandType.CollectSystemInfo))" />
         <FluentButton Id="@($"restart-{context.Id}")" IconOnly="true" Title="Restart machine" Appearance="ButtonAppearance.Subtle"
                       IconStart="@(new Icons.Regular.Size20.ArrowClockwise())" OnClick="@(() => QueueAsync(context, CommandType.RestartMachine))" />
+        <FluentButton Id="@($"transfer-{context.Id}")" IconOnly="true" Title="Transfer to another tenant" Appearance="ButtonAppearance.Subtle"
+                      IconStart="@(new Icons.Regular.Size20.ArrowSwap())" OnClick="@(() => TransferAsync(context))" />
         <FluentButton Id="@($"delete-{context.Id}")" IconOnly="true" Title="Delete" Appearance="ButtonAppearance.Subtle"
                       IconStart="@(new Icons.Regular.Size20.Delete())" OnClick="@(() => DeleteAsync(context))" />
     </TemplateColumn>
@@ -135,6 +137,35 @@
             return;
 
         await RunAsync(async () => Replace(await Api.UpdateDeviceAsync(device.Id, request)), $"Saved {device.MachineName}.");
+    }
+
+    private async Task TransferAsync(DeviceDto device)
+    {
+        notice = null;
+        IReadOnlyList<TenantDto> tenants;
+        try
+        {
+            // TODO: lists only the first 100 tenants, as the other tenant pickers do.
+            tenants = (await Api.ListTenantsAsync(1, 100)).Items;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+            return;
+        }
+
+        var result = await Dialogs.ShowDialogAsync<DeviceTransferDialog>(options =>
+        {
+            options.Header.Title = $"Transfer {device.MachineName}";
+            options.Parameters[nameof(DeviceTransferDialog.Device)] = device;
+            options.Parameters[nameof(DeviceTransferDialog.Tenants)] = tenants;
+        });
+        if (result.Cancelled || result.Value is not TransferDeviceRequest request)
+            return;
+
+        var name = tenants.FirstOrDefault(t => t.Id == request.TenantId)?.Name;
+        await RunAsync(async () => Replace(await Api.TransferDeviceAsync(device.Id, request)),
+            $"Transferred {device.MachineName} to {name}.");
     }
 
     private async Task QueueAsync(DeviceDto device, CommandType type)

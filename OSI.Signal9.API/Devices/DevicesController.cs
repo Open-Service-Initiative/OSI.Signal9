@@ -1,6 +1,9 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using OSI.Signal9.API.Audit;
 using OSI.Signal9.API.Authorization;
+using OSI.Signal9.API.Tenants;
+using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Server.Identity;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -21,6 +24,7 @@ namespace OSI.Signal9.API.Devices;
 public sealed class DevicesController(
     Signal9DbContext db,
     DevicePresence presence,
+    CallerAudit audit,
     IHubContext<DashboardHub, IDashboardHubClient> dashboard) : ControllerBase
 {
     /// <summary>Lists devices across tenants, with optional filters.</summary>
@@ -109,6 +113,121 @@ public sealed class DevicesController(
         this.SetETag(device.ETag(presence));
         return dto;
     }
+
+    /// <summary>
+    /// Moves a device to another tenant (story 75). Its agent, telemetry and command history go with it, so from then on
+    /// they're visible from the new tenant's subtree and not the old one's. Needs <c>devices.transfer</c> at both
+    /// tenants: a device the caller can't transfer reads as missing (404), and so does a destination (400).
+    /// </summary>
+    /// <response code="400">The destination tenant is missing, or the caller can't transfer devices into it.</response>
+    /// <response code="409">The device is already in that tenant, the tenant is at its device limit, or the device would
+    /// join another root tenant tree that already holds a device for the same hardware (one device per machine per root
+    /// tree).</response>
+    [RequireScope(Scopes.Devices.Transfer)]
+    [HttpPost("{deviceId:guid}:transfer")]
+    [OptimisticConcurrency]
+    [Consumes("application/json")]
+    [ProducesResponseType<DeviceDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status412PreconditionFailed)]
+    public async Task<ActionResult<DeviceDto>> Transfer(Guid deviceId, TransferDeviceRequest request, CancellationToken cancellationToken)
+    {
+        // Under the tenant tree's lock, so neither a tree change nor another transfer can alter the destination's root
+        // tree between the hardware check and the move. Inside the execution strategy, as every explicit transaction is.
+        var attempt = 0;
+        var result = await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            if (attempt++ > 0)
+                db.ChangeTracker.Clear();
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({TenantTree.LockKey})", cancellationToken);
+            var (refused, device) = await MoveAsync(deviceId, request.TenantId!.Value, cancellationToken);
+            if (refused is not null)
+                return (refused, device);
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return (refused, device);
+        });
+        if (result.refused is not null)
+            return result.refused;
+
+        var moved = result.device!;
+        var dto = moved.ToDto(presence);
+        await dashboard.Clients.All.DeviceChanged(dto);
+        this.SetETag(moved.ETag(presence));
+        return dto;
+    }
+
+    // Moves the device to the tenant, with the audit entries recording it, unless the request is refused.
+    private async Task<(ActionResult? refused, Device? device)> MoveAsync(Guid deviceId, Guid tenantId, CancellationToken cancellationToken)
+    {
+        var device = await db.Devices.Include(d => d.ActiveAgent).SingleOrDefaultAsync(d => d.Id == deviceId, cancellationToken);
+        if (device is null)
+            return (NotFound(), null);
+        if (this.Preconditions(device.ETag(presence)) is { } failed)
+            return (failed, null);
+
+        // A tenant the caller can't transfer devices into is treated as missing, so nothing is learned about it.
+        var tenant = await db.Tenants.SingleOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+        if (tenant is null)
+        {
+            ModelState.AddModelError(nameof(TransferDeviceRequest.TenantId), "Tenant does not exist.");
+            return (ValidationProblem(ModelState), null);
+        }
+        if (tenant.Id == device.TenantId)
+            return (Conflict("Already in that tenant", "The device already belongs to that tenant."), null);
+        // The caller can transfer into the tenant, so they see all of its devices.
+        if (await db.Devices.CountAsync(d => d.TenantId == tenant.Id, cancellationToken) >= tenant.MaxDevices)
+            return (Conflict("Device limit reached", $"Tenant '{tenant.Name}' allows at most {tenant.MaxDevices} devices."), null);
+        if (await HardwareTakenAsync(device, tenant.Id, cancellationToken))
+            return (Conflict("Machine already in that tenant tree",
+                "The destination's root tenant tree already holds a device for the same hardware."), null);
+
+        var from = device.TenantId;
+        device.TenantId = tenant.Id;
+        foreach (var (at, detail) in new[] { (from, $"to tenant {tenant.Id}"), (tenant.Id, $"from tenant {from}") })
+            audit.Record(new AuditEntry
+            {
+                Action = AuditActions.DeviceTransferred,
+                TenantId = at,
+                TargetType = "device",
+                TargetId = device.Id,
+                DeviceId = device.Id,
+                Detail = detail,
+            });
+        return (null, device);
+    }
+
+    /// <summary>
+    /// Whether moving <paramref name="device"/> into <paramref name="tenantId"/> takes it into another root tenant tree
+    /// that already holds a device sharing its SMBIOS UUID, or its manufacturer and serial (the identifiers #131
+    /// matches on), wherever in that tree it is: one device per machine per root tree.
+    /// </summary>
+    private async Task<bool> HardwareTakenAsync(Device device, Guid tenantId, CancellationToken cancellationToken)
+    {
+        var (uuid, manufacturer, serial) = (device.SmbiosUuid, device.Manufacturer, device.SerialNumber);
+        if (uuid is null && (manufacturer is null || serial is null))
+            return false;
+        var root = await RootOfAsync(tenantId, cancellationToken);
+        if (root == await RootOfAsync(device.TenantId, cancellationToken))
+            return false;
+
+        return await db.Devices.IgnoreTenantScope(TenantScopeBypass.DeviceTransferHardwareCheck)
+            .AnyAsync(d => d.Id != device.Id
+                && db.TenantClosures.Any(c => c.AncestorId == root && c.DescendantId == d.TenantId)
+                && ((uuid != null && d.SmbiosUuid == uuid)
+                    || (serial != null && manufacturer != null && d.SerialNumber == serial && d.Manufacturer == manufacturer)),
+                cancellationToken);
+    }
+
+    private Task<Guid> RootOfAsync(Guid tenantId, CancellationToken cancellationToken) =>
+        db.TenantClosures.Where(c => c.DescendantId == tenantId)
+            .OrderByDescending(c => c.Depth).Select(c => c.AncestorId).FirstAsync(cancellationToken);
+
+    private ObjectResult Conflict(string title, string detail) =>
+        Problem(statusCode: StatusCodes.Status409Conflict, title: title, detail: detail);
 
     /// <summary>Deletes a device along with its agents, commands and telemetry.</summary>
     // TODO(#89): deletion becomes anonymised erasure that keeps an anonymous record for alerts and history.

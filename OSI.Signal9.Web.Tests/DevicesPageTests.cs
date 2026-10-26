@@ -165,6 +165,60 @@ public sealed class DevicesPageTests : DashboardTestContext
     }
 
     [TestMethod]
+    public void Transfer_posts_the_chosen_tenant_to_the_transfer_action()
+    {
+        var id = Guid.NewGuid();
+        var contoso = Tenant("Contoso");
+        var fabrikam = Tenant("Fabrikam");
+        var device = Device("WS-001", DeviceStatus.Online, id) with { TenantId = contoso.Id };
+        Http.SignedInAs("Ada", request => (request.Method.Method, request.RequestUri!.AbsolutePath) switch
+        {
+            ("GET", "/api/v1/devices") => FakeHttp.Json(HttpStatusCode.OK, Page(device)),
+            ("GET", "/api/v1/tenants") => FakeHttp.Json(HttpStatusCode.OK, Page(contoso, fabrikam)),
+            ("POST", var p) when p.EndsWith(":transfer") => FakeHttp.Json(HttpStatusCode.OK, device with { TenantId = fabrikam.Id }),
+            _ => null,
+        });
+        var app = RenderApp("/devices");
+
+        app.WaitForElement($"#transfer-{id}").Click();
+        var dialog = app.WaitForElement("fluent-dialog");
+        Assert.Contains("WS-001", dialog.TextContent);
+        // The device's own tenant isn't a destination.
+        Assert.IsEmpty(app.FindAll($"#transfer-tenant fluent-option[value='{contoso.Id}']"));
+        Choose(app, "transfer-tenant", fabrikam.Id);
+        app.Find("fluent-dialog fluent-button[appearance=primary]").Click();
+
+        var path = $"/api/v1/devices/{id}:transfer";
+        app.WaitForAssertion(() => Assert.IsTrue(Http.Requests.Any(r => r.Method == HttpMethod.Post && r.PathAndQuery == path)));
+        var post = Http.Requests.Single(r => r.Method == HttpMethod.Post && r.PathAndQuery == path);
+        Assert.AreEqual(fabrikam.Id, JsonSerializer.Deserialize<TransferDeviceRequest>(post.Body!, Signal9Json.Options)!.TenantId);
+        app.WaitForAssertion(() => Assert.Contains("Transferred WS-001 to Fabrikam.", app.Find(".notice-bar").TextContent));
+    }
+
+    [TestMethod]
+    public void A_refused_transfer_shows_the_problem()
+    {
+        var id = Guid.NewGuid();
+        var fabrikam = Tenant("Fabrikam");
+        Http.SignedInAs("Ada", request => (request.Method.Method, request.RequestUri!.AbsolutePath) switch
+        {
+            ("GET", "/api/v1/devices") => FakeHttp.Json(HttpStatusCode.OK, Page(Device("WS-001", DeviceStatus.Online, id))),
+            ("GET", "/api/v1/tenants") => FakeHttp.Json(HttpStatusCode.OK, Page(fabrikam)),
+            ("POST", var p) when p.EndsWith(":transfer") => FakeHttp.Problem(HttpStatusCode.Conflict, "Machine already in that tenant tree",
+                "The destination's root tenant tree already holds a device for the same hardware."),
+            _ => null,
+        });
+        var app = RenderApp("/devices");
+
+        app.WaitForElement($"#transfer-{id}").Click();
+        app.WaitForElement("fluent-dialog");
+        Choose(app, "transfer-tenant", fabrikam.Id);
+        app.Find("fluent-dialog fluent-button[appearance=primary]").Click();
+
+        app.WaitForAssertion(() => Assert.Contains("already holds a device for the same hardware", app.Find(".error-bar").TextContent));
+    }
+
+    [TestMethod]
     public void Collect_system_info_queues_the_command()
     {
         var id = Guid.NewGuid();
@@ -201,5 +255,12 @@ public sealed class DevicesPageTests : DashboardTestContext
 
         app.WaitForAssertion(() => Assert.IsTrue(Http.Requests.Any(r =>
             r.PathAndQuery == "/api/v1/devices?page=1&pageSize=25&status=Offline&search=10.0%200")));
+    }
+
+    private static void Choose(Bunit.IRenderedComponent<OSI.Signal9.Web.Client.Routes> app, string selectId, Guid value)
+    {
+        var option = app.WaitForElement($"#{selectId} fluent-option[value='{value}']");
+        app.Find($"#{selectId}").TriggerEvent("ondropdownchange",
+            new Microsoft.FluentUI.AspNetCore.Components.DropdownEventArgs { Id = selectId, SelectedOptions = option.Id! });
     }
 }

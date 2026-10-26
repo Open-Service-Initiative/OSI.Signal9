@@ -65,6 +65,11 @@ public sealed class Signal9ApiClient(HttpClient http, BffAuthenticationStateProv
     public Task DeleteDeviceAsync(Guid deviceId, CancellationToken cancellationToken = default) =>
         SendAsync<object>(HttpMethod.Delete, $"api/v1/devices/{deviceId}", null, cancellationToken);
 
+    /// <summary>Moves the device to another tenant, with its agent and history (story 75).</summary>
+    public Task<DeviceDto> TransferDeviceAsync(Guid deviceId, TransferDeviceRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<DeviceDto>(HttpMethod.Post, $"api/v1/devices/{deviceId}:transfer",
+            JsonContent.Create(request, options: Signal9Json.Options), cancellationToken);
+
     public Task<CommandDto> QueueCommandAsync(Guid deviceId, CreateCommandRequest request, CancellationToken cancellationToken = default) =>
         SendAsync<CommandDto>(HttpMethod.Post, $"api/v1/devices/{deviceId}/commands",
             JsonContent.Create(request, options: Signal9Json.Options), cancellationToken);

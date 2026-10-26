@@ -135,6 +135,14 @@ public enum TenantScopeBypass
     /// </summary>
     [NotAudited("Reads only the tenant a transfer names, and the transfer is audited.")]
     TenantTransferMove,
+
+    /// <summary>
+    /// Checking that a device transferred into another root tenant tree doesn't join a device for the same hardware
+    /// there (one device per machine per root tree), including devices outside the caller's reach. Only whether one
+    /// exists is read, never which.
+    /// </summary>
+    [NotAudited("Answers only yes or no, and the transfer it guards is audited.")]
+    DeviceTransferHardwareCheck,
 }
 
 /// <summary>Each use of this <see cref="TenantScopeBypass"/> is recorded in the audit log.</summary>

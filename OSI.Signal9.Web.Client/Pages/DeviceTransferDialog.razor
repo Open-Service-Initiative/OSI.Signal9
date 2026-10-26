@@ -1,0 +1,33 @@
+@inherits FluentDialogInstance
+
+<FluentDialogBody>
+    <div class="dialog-form">
+        <FluentText>Move @Device.MachineName to another tenant. Its agent, telemetry and command history go with it, and people at its current tenant lose access to it.</FluentText>
+        <FluentSelect Id="transfer-tenant" TOption="string" TValue="string" Label="New tenant" Required="true" @bind-Value="TenantId">
+            <FluentOption TValue="string" Value="@string.Empty">Choose a tenant</FluentOption>
+            @foreach (var tenant in Tenants.Where(t => t.Id != Device.TenantId))
+            {
+                <FluentOption TValue="string" Value="@tenant.Id.ToString()">@tenant.Name</FluentOption>
+            }
+        </FluentSelect>
+    </div>
+</FluentDialogBody>
+
+@code {
+    [Parameter] public DeviceDto Device { get; set; } = default!;
+
+    [Parameter] public IReadOnlyList<TenantDto> Tenants { get; set; } = [];
+
+    private string? TenantId { get; set; } = string.Empty;
+
+    protected override void OnInitializeDialog(DialogOptionsHeader header, DialogOptionsFooter footer)
+    {
+        footer.PrimaryAction.Label = "Transfer";
+        footer.SecondaryAction.Label = "Cancel";
+    }
+
+    // A missing tenant is sent as such, so the API's validation problem explains it.
+    protected override Task OnActionClickedAsync(bool primary) => primary
+        ? DialogInstance.CloseAsync(new TransferDeviceRequest { TenantId = Guid.TryParse(TenantId, out var tenant) ? tenant : null })
+        : DialogInstance.CancelAsync();
+}

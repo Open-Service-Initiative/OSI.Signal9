@@ -187,6 +187,13 @@ public static class AuditActions
     /// </summary>
     public const string AgentCertificateRotated = "agent.certificate-rotated";
 
+    /// <summary>
+    /// A person moved a device to another tenant (story 75). Recorded twice, so both sides can read it: at the tenant it
+    /// left, with <see cref="AuditEntryDto.Detail"/> <c>to tenant {id}</c>, and at the tenant it joined, with
+    /// <c>from tenant {id}</c>.
+    /// </summary>
+    public const string DeviceTransferred = "device.transferred";
+
     public const string CommandCreated = "command.created";
     public const string CommandCancelled = "command.cancelled";
 
