@@ -181,6 +181,25 @@ public sealed class RateLimitingTests
     }
 
     [TestMethod]
+    public async Task Invitation_redemption_limit_is_per_ip()
+    {
+        using var factory = new Signal9ApiFactory(settings: Limit("InvitationRedemption", 2));
+        using var auth = factory.Auth.CreateClient();
+        // Guessing references is what the limit slows down: an unknown one is simply not found.
+        const string link = "invitations/s9i_not-a-real-reference";
+
+        Assert.AreEqual(HttpStatusCode.NotFound, (await GetAsync(auth, link)).StatusCode);
+        Assert.AreEqual(HttpStatusCode.NotFound, (await GetAsync(auth, link)).StatusCode);
+        var limited = await GetAsync(auth, link);
+        var otherIp = await GetAsync(auth, link, ip: "198.51.100.7");
+        var otherEndpoint = await GetAsync(auth, ".well-known/openid-configuration");
+
+        Assert.AreEqual(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.AreEqual(HttpStatusCode.NotFound, otherIp.StatusCode);
+        Assert.AreEqual(HttpStatusCode.OK, otherEndpoint.StatusCode);
+    }
+
+    [TestMethod]
     public async Task Api_limit_is_per_caller()
     {
         using var factory = new Signal9ApiFactory(settings: Limit("Api", 2));

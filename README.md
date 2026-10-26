@@ -149,6 +149,11 @@ A `tls_client_auth` client registers exactly one RFC 8705 subject (`tls_client_a
 | `/api/v1/agents/{agentId}/telemetry` | `POST` (sent by the agent; stored on its device) |
 | `/api/v1/tenants/{tenantId}/agents` | `GET` (paged, newest enrollment first; the tenant's "recently enrolled" feed, `includeDescendants` defaults to `true`) |
 | `/api/v1/tenants/{tenantId}/enrollment-tokens` | `GET` (paged), `POST`; each token shows its use count and last use |
+| `/api/v1/tenants/{tenantId}/invitations` | `GET` (paged, newest first, `includeDescendants` defaults to `true`), `POST` (one role at the tenant, optionally for an existing `userId` or pinned to an Entra directory `entraTenantId`; the response carries the link, once) |
+| `/api/v1/tenants/{tenantId}/invitations/{invitationId}` | `GET` |
+| `/api/v1/tenants/{tenantId}/invitations/{invitationId}:revoke` | `POST` (409 once redeemed or revoked) |
+
+An invitation offers one role at one tenant to whoever redeems its link, which carries only an opaque reference and works once, within 72 hours. Signal9 sends no email: share the link yourself. The person opens it on auth, signs in with Entra and accepts; that creates their user, owned by the invitation's tenant, if they have none. Invitations are matched only by Entra identity (`tid`, `oid`), never by email.
 
 Single resources and write responses carry a strong `ETag`. Send it back in `If-Match` on a `PUT`, `PATCH`, `DELETE` or `:action` to get `412 Precondition Failed` instead of overwriting someone else's change, and in `If-None-Match` on a `GET` to get `304 Not Modified` when nothing changed.
 
@@ -170,6 +175,7 @@ Rate limiting is off until configured. Each policy has a `RateLimiting:<policy>`
 | `Api` | api's resources and hubs | caller (the access token's subject), or client IP without a token |
 | `Enrollment` | agent enrollment on api | client IP |
 | `EnrollmentToken` | agent enrollment on api | enrollment token |
+| `InvitationRedemption` | invitation links on auth | client IP |
 
 ```json
 "RateLimiting": { "Token": { "PermitLimit": 20, "Window": "00:01:00" } }

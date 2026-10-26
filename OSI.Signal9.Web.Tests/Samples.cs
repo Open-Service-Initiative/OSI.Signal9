@@ -4,6 +4,7 @@ using OSI.Signal9.Contracts.ApiApplications;
 using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Devices;
 using OSI.Signal9.Contracts.Enrollment;
+using OSI.Signal9.Contracts.Invitations;
 using OSI.Signal9.Contracts.Roles;
 using OSI.Signal9.Contracts.Tenants;
 using OSI.Signal9.Contracts.Users;
@@ -55,6 +56,14 @@ internal static class Samples
         var tokenId = id ?? Guid.NewGuid();
         return new(tokenId, tenantId, $"/api/v1/tenants/{tenantId}/enrollment-tokens/{tokenId}", name, maxUses, null, status,
             Now, null, status == EnrollmentTokenStatus.Revoked ? Now : null, useCount, lastUsedAt, secret);
+    }
+
+    public static InvitationDto Invitation(Guid tenantId, Guid roleId, Guid? id = null,
+        InvitationStatus status = InvitationStatus.Pending, Guid? userId = null, Guid? entraTenantId = null, string? link = null)
+    {
+        var invitationId = id ?? Guid.NewGuid();
+        return new(invitationId, tenantId, $"/api/v1/tenants/{tenantId}/invitations/{invitationId}", roleId, userId, entraTenantId,
+            status, Now, Now.AddHours(72), null, null, status == InvitationStatus.Revoked ? Now : null, link);
     }
 
     public static ApiApplicationDto ApiApplication(string name, Guid tenantId, Guid roleId, string method, Guid? id = null,

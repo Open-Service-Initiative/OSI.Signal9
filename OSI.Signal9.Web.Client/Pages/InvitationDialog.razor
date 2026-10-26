@@ -1,0 +1,75 @@
+@inherits FluentDialogInstance
+
+<FluentDialogBody>
+    <div class="dialog-form">
+        <FluentSelect Id="invitation-role" TOption="string" TValue="string" Label="Role" Required="true" @bind-Value="RoleId">
+            <FluentOption TValue="string" Value="@string.Empty">Choose a role</FluentOption>
+            @foreach (var role in Roles)
+            {
+                <FluentOption TValue="string" Value="@role.Id.ToString()">@role.Name</FluentOption>
+            }
+        </FluentSelect>
+        <FluentSelect Id="invitation-user" TOption="string" TValue="string" Label="For an existing user" @bind-Value="UserId">
+            <FluentOption TValue="string" Value="@string.Empty">Anyone with the link</FluentOption>
+            @foreach (var user in Users)
+            {
+                <FluentOption TValue="string" Value="@user.Id.ToString()">@user.DisplayName</FluentOption>
+            }
+        </FluentSelect>
+        <FluentTextInput Id="invitation-directory" Label="Only from Entra directory (tenant ID)" Placeholder="Any directory"
+                         @bind-Value="directory" />
+        @if (directoryInvalid)
+        {
+            <FluentText Id="invitation-directory-error" Class="field-error">Enter the directory's tenant ID, a GUID, or leave it blank.</FluentText>
+        }
+        <FluentText>
+            The role covers this tenant and every tenant beneath it. The link works once, for 72 hours, and is matched by
+            Entra sign-in only, never by email.
+        </FluentText>
+    </div>
+</FluentDialogBody>
+
+@code {
+    [Parameter] public IReadOnlyList<UserDto> Users { get; set; } = [];
+
+    [Parameter] public IReadOnlyList<RoleDto> Roles { get; set; } = [];
+
+    private string? RoleId { get; set; } = string.Empty;
+
+    private string? UserId { get; set; } = string.Empty;
+
+    private string? directory;
+    private bool directoryInvalid;
+
+    protected override void OnInitializeDialog(DialogOptionsHeader header, DialogOptionsFooter footer)
+    {
+        footer.PrimaryAction.Label = "Invite";
+        footer.SecondaryAction.Label = "Cancel";
+    }
+
+    // Blank fields mean anyone, from any directory. A pin that isn't a directory ID is refused here rather than dropped,
+    // which would invite everyone. The API validates the rest.
+    protected override async Task OnActionClickedAsync(bool primary)
+    {
+        if (!primary)
+        {
+            await DialogInstance.CancelAsync();
+            return;
+        }
+
+        Guid? pinned = null;
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            directoryInvalid = !Guid.TryParse(directory, out var id);
+            if (directoryInvalid)
+                return;
+            pinned = id;
+        }
+        await DialogInstance.CloseAsync(new CreateInvitationRequest
+        {
+            RoleId = Guid.TryParse(RoleId, out var role) ? role : null,
+            UserId = Guid.TryParse(UserId, out var user) ? user : null,
+            EntraTenantId = pinned,
+        });
+    }
+}

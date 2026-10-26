@@ -38,6 +38,9 @@ public static class RateLimiting
     /// <summary>Agent enrollment, per client IP.</summary>
     public const string Enrollment = "Enrollment";
 
+    /// <summary>Invitation redemption at auth, per client IP (#121).</summary>
+    public const string InvitationRedemption = "InvitationRedemption";
+
     /// <summary>
     /// Agent enrollment, per enrollment token. The token is in the request body, which the middleware can't read, so
     /// the endpoint acquires the permit itself from <see cref="RequestRateLimits"/>.
@@ -67,6 +70,7 @@ public static class RateLimiting
         services.AddRateLimitPolicy(Authorize, ClientIp);
         services.AddRateLimitPolicy(Api, Caller);
         services.AddRateLimitPolicy(Enrollment, ClientIp);
+        services.AddRateLimitPolicy(InvitationRedemption, ClientIp);
         AddLimitOptions(services, EnrollmentToken);
         services.AddSingleton<RequestRateLimits>();
         return services;

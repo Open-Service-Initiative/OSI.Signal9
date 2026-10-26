@@ -30,6 +30,8 @@ builder.Services.AddAntiforgery(options =>
 });
 
 var identity = builder.Configuration.GetIdentityOptions();
+// An accepted invitation links to the dashboard, when web's address is configured (#121).
+builder.Services.AddSingleton(identity);
 
 // auth serves discovery and advertises api's RFC 8705 mTLS aliases. OpenIddict only advertises an alias for an
 // endpoint the host has itself, so auth also has token, revocation and introspection endpoints, for clients that
@@ -69,6 +71,7 @@ app.UseAuthorization();
 app.MapAuthorizationEndpoint().RequireRateLimiting(RateLimiting.Authorize);
 app.MapTokenEndpoint().RequireRateLimiting(RateLimiting.Token);
 app.MapFrontChannelLogout().RequireRateLimiting(RateLimiting.Authorize);
+app.MapInvitationRedemption().RequireRateLimiting(RateLimiting.InvitationRedemption);
 
 app.Run();
 

@@ -136,12 +136,14 @@ public static class EntraSignIn
 
     /// <summary>
     /// Sends the browser back to the authorize request it came from, which answers the client with
-    /// <c>access_denied</c> (RFC 6749 §4.1.2.1). Without that request there's no client to tell.
+    /// <c>access_denied</c> (RFC 6749 §4.1.2.1), or to the invitation it came to redeem, which shows the person why.
+    /// Without either there's no one to tell.
     /// </summary>
     private static bool ReturnRejected(HttpContext context, AuthenticationProperties? properties, Rejection rejection)
     {
         if (properties?.RedirectUri is not { } returnUrl
-            || !returnUrl.StartsWith(AuthorizationEndpoint.ReturnPath, StringComparison.Ordinal))
+            || !(returnUrl.StartsWith(AuthorizationEndpoint.ReturnPath, StringComparison.Ordinal)
+                || returnUrl.StartsWith(InvitationRedemption.ReturnPath, StringComparison.Ordinal)))
             return false;
 
         context.Response.Redirect(QueryHelpers.AddQueryString(returnUrl, RejectionParameter, rejection.ToString()));

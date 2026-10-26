@@ -137,6 +137,14 @@ public static class AuditActions
     public const string EnrollmentTokenRotated = "enrollment-token.rotated";
     public const string EnrollmentTokenRevoked = "enrollment-token.revoked";
 
+    public const string InvitationCreated = "invitation.created";
+
+    /// <summary>
+    /// Someone redeemed an invitation at auth, or tried to and was refused (outcome <c>Failed</c>, with the reason).
+    /// </summary>
+    public const string InvitationRedeemed = "invitation.redeemed";
+    public const string InvitationRevoked = "invitation.revoked";
+
     /// <summary>An API application was registered at a tenant.</summary>
     public const string ApiApplicationRegistered = "api-application.registered";
 

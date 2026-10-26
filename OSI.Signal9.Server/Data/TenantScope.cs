@@ -151,6 +151,14 @@ public enum TenantScopeBypass
     /// </summary>
     [NotAudited("Answers only whether the caller may edit the user; the edit it guards is audited.")]
     UserRoleAssignmentGuard,
+
+    /// <summary>
+    /// A person redeeming an invitation at auth (#121): finding the invitation by its reference's hash, naming its tenant
+    /// and role on the offer, and finding or creating the person's own user and the role assignment. The person has no
+    /// role assignments yet; the invitation is their only authority, as an enrollment token is an agent's.
+    /// </summary>
+    [NotAudited("Reaches only the presented invitation and the redeeming person's own user, and each redemption is audited.")]
+    InvitationRedemption,
 }
 
 /// <summary>Each use of this <see cref="TenantScopeBypass"/> is recorded in the audit log.</summary>

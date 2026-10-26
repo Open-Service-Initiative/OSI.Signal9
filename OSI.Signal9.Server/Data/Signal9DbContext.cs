@@ -33,6 +33,7 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
     public DbSet<RoleAssignment> RoleAssignments => Set<RoleAssignment>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<EnrollmentToken> EnrollmentTokens => Set<EnrollmentToken>();
+    public DbSet<Invitation> Invitations => Set<Invitation>();
     public DbSet<ApiApplication> ApiApplications => Set<ApiApplication>();
     public DbSet<SignInSession> SignInSessions => Set<SignInSession>();
     public DbSet<EndedEntraSession> EndedEntraSessions => Set<EndedEntraSession>();
@@ -267,6 +268,20 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
             token.HasIndex(t => t.SecretHash).IsUnique();
             token.HasIndex(t => t.TenantId);
             token.HasOne<Tenant>().WithMany().HasForeignKey(t => t.TenantId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Deleting a tenant revokes its invitations by deleting them (#63, Tenant deletion), as does deleting the user
+        // one is for.
+        modelBuilder.Entity<Invitation>(invitation =>
+        {
+            invitation.Property(i => i.Version).IsRowVersion();
+            invitation.Property(i => i.ReferenceHash).HasMaxLength(32);
+            invitation.HasIndex(i => i.ReferenceHash).IsUnique();
+            invitation.HasIndex(i => i.TenantId);
+            invitation.HasOne<Tenant>().WithMany().HasForeignKey(i => i.TenantId).OnDelete(DeleteBehavior.Cascade);
+            invitation.HasOne<Role>().WithMany().HasForeignKey(i => i.RoleId).OnDelete(DeleteBehavior.Restrict);
+            invitation.HasOne<User>().WithMany().HasForeignKey(i => i.UserId).OnDelete(DeleteBehavior.Cascade);
+            invitation.HasOne<User>().WithMany().HasForeignKey(i => i.RedeemedByUserId).OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<ApiApplication>(application =>

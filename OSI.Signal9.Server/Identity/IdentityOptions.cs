@@ -16,8 +16,8 @@ public sealed class IdentityOptions
     public Uri ApiUri { get; set; } = null!;
 
     /// <summary>
-    /// The base address of the <c>web</c> host, the dashboard's backend-for-frontend. Only web reads it, to register its
-    /// redirect URI.
+    /// The base address of the <c>web</c> host, the dashboard's backend-for-frontend. web reads it to register its
+    /// redirect URI, and auth to link to the dashboard once an invitation is accepted.
     /// </summary>
     public Uri? WebUri { get; set; }
 

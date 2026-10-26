@@ -46,7 +46,10 @@ var web = builder.AddProject<Projects.OSI_Signal9_Web>("web")
 
 var issuer = ReferenceExpression.Create($"{auth.GetEndpoint("https")}/");
 var apiUri = ReferenceExpression.Create($"{api.GetEndpoint("https")}/");
-web.WithEnvironment("Identity__WebUri", ReferenceExpression.Create($"{web.GetEndpoint("https")}/"));
+var webUri = ReferenceExpression.Create($"{web.GetEndpoint("https")}/");
+web.WithEnvironment("Identity__WebUri", webUri);
+// An accepted invitation on auth links to the dashboard (#121).
+auth.WithEnvironment("Identity__WebUri", webUri);
 foreach (var host in new IResourceBuilder<ProjectResource>[] { auth, api, web })
 {
     host.WithEnvironment("Identity__Issuer", issuer)

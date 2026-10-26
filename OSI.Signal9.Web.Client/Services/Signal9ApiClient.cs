@@ -9,6 +9,7 @@ using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Devices;
 using OSI.Signal9.Contracts.Enrollment;
+using OSI.Signal9.Contracts.Invitations;
 using OSI.Signal9.Contracts.Roles;
 using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Contracts.Tenants;
@@ -141,6 +142,24 @@ public sealed class Signal9ApiClient(HttpClient http, BffAuthenticationStateProv
     /// <summary>A lifecycle action on the token at its canonical <paramref name="url"/>: <c>rotate</c> or <c>revoke</c>.</summary>
     public Task<EnrollmentTokenDto> TransitionEnrollmentTokenAsync(string url, string action, CancellationToken cancellationToken = default) =>
         SendAsync<EnrollmentTokenDto>(HttpMethod.Post, $"{url.TrimStart('/')}:{action}", null, cancellationToken);
+
+    // Invitations
+
+    /// <summary>The tenant's invitations and its descendants', newest first.</summary>
+    public Task<PagedResult<InvitationDto>> ListInvitationsAsync(Guid tenantId, int page, int pageSize,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<PagedResult<InvitationDto>>(HttpMethod.Get,
+            $"api/v1/tenants/{tenantId}/invitations?page={page}&pageSize={pageSize}", null, cancellationToken);
+
+    /// <summary>Invites a person; the result carries the link, the only time it's shown.</summary>
+    public Task<InvitationDto> CreateInvitationAsync(Guid tenantId, CreateInvitationRequest request,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<InvitationDto>(HttpMethod.Post, $"api/v1/tenants/{tenantId}/invitations",
+            JsonContent.Create(request, options: Signal9Json.Options), cancellationToken);
+
+    /// <summary>Revokes the invitation at its canonical <paramref name="url"/>.</summary>
+    public Task<InvitationDto> RevokeInvitationAsync(string url, CancellationToken cancellationToken = default) =>
+        SendAsync<InvitationDto>(HttpMethod.Post, $"{url.TrimStart('/')}:revoke", null, cancellationToken);
 
     // Tenant transfers
 

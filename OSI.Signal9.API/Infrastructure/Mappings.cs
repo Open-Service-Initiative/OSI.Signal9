@@ -5,6 +5,7 @@ using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Devices;
 using OSI.Signal9.Contracts.Enrollment;
+using OSI.Signal9.Contracts.Invitations;
 using OSI.Signal9.Contracts.Telemetry;
 using OSI.Signal9.Contracts.Tenants;
 using OSI.Signal9.Contracts.Roles;
@@ -43,6 +44,31 @@ internal static class Mappings
     /// <summary>A token's status depends on the time as well as its row, so the ETag covers both.</summary>
     public static EntityTagHeaderValue ETag(this EnrollmentToken token, DateTime now) =>
         ConditionalRequests.ETag(token.Version, token.StatusAt(now));
+
+    public static EntityTagHeaderValue ETag(this Invitation invitation, DateTime now) =>
+        ConditionalRequests.ETag(invitation.Version, invitation.StatusAt(now));
+
+    public static InvitationStatus StatusAt(this Invitation invitation, DateTime now) =>
+        invitation.RedeemedAt is not null ? InvitationStatus.Redeemed
+        : invitation.RevokedAt is not null ? InvitationStatus.Revoked
+        : invitation.ExpiresAt <= now ? InvitationStatus.Expired
+        : InvitationStatus.Pending;
+
+    /// <param name="link">The link to redeem it, only in the response that creates it.</param>
+    public static InvitationDto ToDto(this Invitation invitation, DateTime now, Uri? link = null) => new(
+        invitation.Id,
+        invitation.TenantId,
+        $"/api/v1/tenants/{invitation.TenantId}/invitations/{invitation.Id}",
+        invitation.RoleId,
+        invitation.UserId,
+        invitation.EntraTenantId,
+        invitation.StatusAt(now),
+        invitation.CreatedAt.AsUtcOffset(),
+        invitation.ExpiresAt.AsUtcOffset(),
+        invitation.RedeemedAt.AsUtcOffset(),
+        invitation.RedeemedByUserId,
+        invitation.RevokedAt.AsUtcOffset(),
+        link?.ToString());
 
     public static EnrollmentTokenStatus StatusAt(this EnrollmentToken token, DateTime now) =>
         token.RevokedAt is not null ? EnrollmentTokenStatus.Revoked

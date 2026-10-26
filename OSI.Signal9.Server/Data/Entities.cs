@@ -307,6 +307,43 @@ public sealed class EnrollmentToken : ITenantOwned
 }
 
 /// <summary>
+/// A single-use offer of one role assignment, <see cref="RoleId"/> at <see cref="TenantId"/> (#121, stories 28-37),
+/// redeemed at auth after Entra sign-in. Its link carries only an opaque 256-bit reference, of which only a SHA-256 hash
+/// is stored, so a link can't be forged or altered and a stolen database redeems nothing. It's never matched by email:
+/// only <see cref="UserId"/> and <see cref="EntraTenantId"/> narrow who can redeem it.
+/// </summary>
+public sealed class Invitation : ITenantOwned
+{
+    /// <summary>How long an invitation can be redeemed for (story 32).</summary>
+    public static readonly TimeSpan Lifetime = TimeSpan.FromHours(72);
+
+    public Guid Id { get; set; }
+
+    /// <summary>Row version (PostgreSQL <c>xmin</c>): the concurrency token behind the ETag, and what makes it single use.</summary>
+    public uint Version { get; set; }
+
+    /// <summary>The tenant the role is offered at.</summary>
+    public Guid TenantId { get; set; }
+    public Guid RoleId { get; set; }
+
+    /// <summary>The existing user it's for, if any: only their Entra identity can redeem it (story 35).</summary>
+    public Guid? UserId { get; set; }
+
+    /// <summary>The Entra directory (<c>tid</c>) it's pinned to, if any (story 33).</summary>
+    public Guid? EntraTenantId { get; set; }
+
+    /// <summary>SHA-256 of the reference's UTF-8 bytes; unique, so redemption finds the invitation by it.</summary>
+    public required byte[] ReferenceHash { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+    public DateTime? RedeemedAt { get; set; }
+
+    /// <summary>The user who redeemed it; cleared if that user is later deleted.</summary>
+    public Guid? RedeemedByUserId { get; set; }
+    public DateTime? RevokedAt { get; set; }
+}
+
+/// <summary>
 /// One entry of the append-only audit log (#115). Stored at <see cref="TenantId"/>, the tenant where the event happened,
 /// or at no tenant for a deployment-level event. It isn't owned by its tenant, so it outlives it, and it refers to
 /// devices, users and roles by ID only: names are resolved when it's read, so erasing a device leaves just its ID.

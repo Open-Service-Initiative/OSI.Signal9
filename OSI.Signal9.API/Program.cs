@@ -39,6 +39,8 @@ builder.Services.AddControllers()
     .AddJsonOptions(options => Signal9Json.Configure(options.JsonSerializerOptions));
 builder.Services.AddExceptionHandler<ConcurrencyConflictHandler>();
 var identity = builder.Configuration.GetIdentityOptions();
+// Invitation links point at auth, the issuer's host (#121).
+builder.Services.AddSingleton(identity);
 builder.Services.AddOpenApi(options => options
     // Relative, so "try it" calls whichever host served the document: api itself, or web's /docs, where calls go out
     // with the signed-in person's session (story 133).
