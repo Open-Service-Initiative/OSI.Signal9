@@ -219,15 +219,31 @@
             devices[index] = device;
     }
 
-    private Task OnDeviceChanged(DeviceDto device) => InvokeAsync(() =>
+    // A notice says only that a device changed; a listed one is fetched again through web.
+    private Task OnDeviceChanged(DeviceNotice notice) => InvokeAsync(async () =>
     {
-        Replace(device);
-        StateHasChanged();
+        if (!devices.Any(d => d.Id == notice.DeviceId))
+            return;
+        try
+        {
+            Replace(await Api.GetDeviceAsync(notice.Url));
+            StateHasChanged();
+        }
+        catch (ApiException ex) when (ex.Status == System.Net.HttpStatusCode.NotFound)
+        {
+            // Deleted, or moved out of the person's reach.
+            devices.RemoveAll(d => d.Id == notice.DeviceId);
+            StateHasChanged();
+        }
+        catch (ApiException)
+        {
+            // The next load shows it as it is.
+        }
     });
 
-    private Task OnDeviceDeleted(Guid deviceId) => InvokeAsync(() =>
+    private Task OnDeviceDeleted(DeviceNotice notice) => InvokeAsync(() =>
     {
-        if (devices.RemoveAll(d => d.Id == deviceId) > 0)
+        if (devices.RemoveAll(d => d.Id == notice.DeviceId) > 0)
             StateHasChanged();
     });
 

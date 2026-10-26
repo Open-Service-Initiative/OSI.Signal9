@@ -25,7 +25,7 @@ public sealed record TelemetryQuery : PageQuery
 public sealed class TelemetryController(
     Signal9DbContext db,
     TimeProvider time,
-    IHubContext<DashboardHub, IDashboardHubClient> dashboard) : ControllerBase
+    DashboardEvents dashboard) : ControllerBase
 {
     /// <summary>Lists a device's telemetry samples, newest first, across all the agents it has had.</summary>
     [RequireScope(Scopes.Telemetry.Read)]
@@ -106,7 +106,7 @@ public sealed class TelemetryController(
         await db.RecordCheckInAsync(device.ActiveAgentId!.Value, now, cancellationToken);
 
         var dto = sample.ToDto();
-        await dashboard.Clients.All.TelemetryReceived(dto);
+        await dashboard.TelemetryReceivedAsync(device.TenantId, device.Id, sample.Id, cancellationToken);
         this.SetETag(sample.ETag());
         return CreatedAtRoute(nameof(GetSample), new { deviceId = device.Id, sampleId = sample.Id }, dto);
     }

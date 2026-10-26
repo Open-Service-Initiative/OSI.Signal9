@@ -1,7 +1,3 @@
-using OSI.Signal9.Contracts.Devices;
-using OSI.Signal9.Contracts.Commands;
-using OSI.Signal9.Contracts.Telemetry;
-
 namespace OSI.Signal9.Contracts.Hubs;
 
 public static class HubRoutes
@@ -9,7 +5,7 @@ public static class HubRoutes
     /// <summary>Agents connect here with ?agentId={id} to hear the doorbell.</summary>
     public const string Agents = "/hubs/agents";
 
-    /// <summary>The web dashboard connects here to receive live updates.</summary>
+    /// <summary>The dashboard connects here, through web, to hear what changes in the tenants it can see.</summary>
     public const string Dashboard = "/hubs/dashboard";
 }
 
@@ -23,11 +19,26 @@ public interface IAgentHubClient
     Task WorkAvailable();
 }
 
-/// <summary>Methods the API invokes on connected dashboards.</summary>
+/// <summary>
+/// What the API tells connected dashboards: small notices that something changed, never its details (ADR-0009). The
+/// dashboard fetches what it needs from the notice's canonical URL, through web, where every read is authorized.
+/// </summary>
 public interface IDashboardHubClient
 {
-    Task DeviceChanged(DeviceDto device);
-    Task DeviceDeleted(Guid deviceId);
-    Task TelemetryReceived(TelemetrySampleDto sample);
-    Task CommandChanged(CommandDto command);
+    Task DeviceChanged(DeviceNotice notice);
+    Task DeviceDeleted(DeviceNotice notice);
+    Task TelemetryReceived(TelemetryNotice notice);
+    Task CommandChanged(CommandNotice notice);
 }
+
+/// <summary>A device changed or was deleted.</summary>
+/// <param name="Url">The device's canonical URL.</param>
+public sealed record DeviceNotice(Guid DeviceId, string Url);
+
+/// <summary>A command was queued or changed.</summary>
+/// <param name="Url">The command's canonical URL.</param>
+public sealed record CommandNotice(Guid DeviceId, Guid CommandId, string Url);
+
+/// <summary>A device sent a telemetry sample.</summary>
+/// <param name="Url">The sample's canonical URL.</param>
+public sealed record TelemetryNotice(Guid DeviceId, Guid SampleId, string Url);

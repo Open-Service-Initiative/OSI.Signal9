@@ -79,9 +79,3 @@ public sealed class AgentHubConnections
             connection.Abort();
     }
 }
-
-/// <summary>
-/// Server-to-client only: the dashboard listens for device, telemetry and command changes. Either scope is enough (#63).
-/// </summary>
-[RequireScope(Scopes.Devices.Read, Scopes.Telemetry.Read)]
-public sealed class DashboardHub : Hub<IDashboardHubClient>;

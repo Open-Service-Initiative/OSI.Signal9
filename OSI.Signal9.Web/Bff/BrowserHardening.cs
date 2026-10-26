@@ -1,13 +1,16 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Http.Features;
 using OSI.Signal9.Contracts.Bff;
+using OSI.Signal9.Contracts.Hubs;
+using OSI.Signal9.Server.Identity;
 
 namespace OSI.Signal9.Web.Bff;
 
 /// <summary>
-/// What web asks of browsers (story 130, story 47): a strict Content Security Policy, and a custom header on every
-/// state-changing request. There's no CORS anywhere, so a cross-site page can neither send that header nor read a
+/// What web asks of browsers (story 130, story 47): a strict Content Security Policy, a custom header on every
+/// state-changing request, and web's own <c>Origin</c> on the dashboard hub's handshake. There's no CORS anywhere, so a cross-site page can neither send that header nor read a
 /// response (RFC 10017 §6.1).
 /// </summary>
 public static class BrowserHardening
@@ -92,4 +95,52 @@ public static class BrowserHardening
                 },
             });
         });
+
+    /// <summary>
+    /// Refuses a dashboard hub request from any origin but web's own (story 47; RFC 6455 §10.2), with 403 like a
+    /// missing CSRF header. A WebSocket handshake can't carry the CSRF header, so it must carry web's
+    /// <c>Origin</c>, which browsers always send on one (RFC 6455 §4.1). Any other hub request that names an origin
+    /// must name web's. A same-origin GET (long polling, server-sent events) names none, and only continues a
+    /// connection begun with a negotiate, which needs the CSRF header.
+    /// </summary>
+    public static IApplicationBuilder UseHubOrigin(this IApplicationBuilder app)
+    {
+        var webUri = app.ApplicationServices.GetRequiredService<IConfiguration>().GetIdentityOptions().WebUri
+            ?? throw new InvalidOperationException("Identity:WebUri must give web's public address.");
+        // The origin's ASCII serialization (RFC 6454 §6.2): scheme, host and any non-default port.
+        var origin = webUri.GetLeftPart(UriPartial.Authority);
+        return app.Use(async (context, next) =>
+        {
+            if (!context.Request.Path.StartsWithSegments(HubRoutes.Dashboard))
+            {
+                await next(context);
+                return;
+            }
+
+            var sent = context.Request.Headers.Origin;
+            if (sent.Count == 1 ? string.Equals(sent[0], origin, StringComparison.OrdinalIgnoreCase)
+                : sent.Count == 0 && !IsWebSocketHandshake(context))
+            {
+                await next(context);
+                return;
+            }
+
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.RequestServices.GetRequiredService<IProblemDetailsService>().WriteAsync(new ProblemDetailsContext
+            {
+                HttpContext = context,
+                ProblemDetails =
+                {
+                    Status = StatusCodes.Status403Forbidden,
+                    Title = "Cross-origin hub request",
+                    Detail = "The dashboard hub accepts connections from the dashboard's own origin only.",
+                },
+            });
+        });
+    }
+
+    // An HTTP/1.1 upgrade (RFC 6455) or an HTTP/2 extended CONNECT (RFC 8441) to a WebSocket.
+    private static bool IsWebSocketHandshake(HttpContext context) =>
+        context.Request.Headers.Upgrade.Any(u => string.Equals(u, "websocket", StringComparison.OrdinalIgnoreCase))
+        || context.Features.Get<IHttpExtendedConnectFeature>()?.IsExtendedConnect == true;
 }

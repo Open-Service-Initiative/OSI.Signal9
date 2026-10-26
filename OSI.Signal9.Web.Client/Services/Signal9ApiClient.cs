@@ -60,6 +60,9 @@ public sealed class Signal9ApiClient(HttpClient http, BffAuthenticationStateProv
     }
 
     /// <summary>Sends every editable field as a JSON merge patch.</summary>
+    public Task<DeviceDto> GetDeviceAsync(string url, CancellationToken cancellationToken = default) =>
+        SendAsync<DeviceDto>(HttpMethod.Get, url.TrimStart('/'), null, cancellationToken);
+
     public Task<DeviceDto> UpdateDeviceAsync(Guid deviceId, UpdateDeviceRequest request, CancellationToken cancellationToken = default) =>
         SendAsync<DeviceDto>(HttpMethod.Patch, $"api/v1/devices/{deviceId}", Patch(request), cancellationToken);
 

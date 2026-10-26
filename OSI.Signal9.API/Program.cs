@@ -55,6 +55,12 @@ builder.Services.AddOpenApi(options => options
     .AddOperationTransformer<RecentMfaResponses>()
     .AddOperationTransformer<ConditionalOperationTransformer>());
 builder.Services.AddSingleton<AgentHubConnections>();
+builder.Services.AddOptions<DashboardHubOptions>().BindConfiguration(DashboardHubOptions.SectionName)
+    .ValidateDataAnnotations().ValidateOnStart();
+builder.Services.AddSingleton<DashboardConnections>();
+builder.Services.AddScoped<DashboardAccess>();
+builder.Services.AddScoped<DashboardEvents>();
+builder.Services.AddHostedService<DashboardAccessSweeper>();
 builder.Services.AddSignalR()
     .AddJsonProtocol(options => Signal9Json.Configure(options.PayloadSerializerOptions));
 
@@ -114,10 +120,11 @@ app.MapTokenEndpoint().RequireRateLimiting(RateLimiting.Token);
 // The API description is public (story 132): it shows what each call needs, never data.
 app.MapOpenApi(ApiDocs.DocumentPattern).AllowAnonymous().RequireRateLimiting(RateLimiting.Api);
 app.MapControllers().RequireRateLimitingUnlessNamed(RateLimiting.Api);
-// The agent hub closes a connection when its access token expires; the agent reconnects with a fresh one (story 115).
+// Both hubs close a connection when its access token expires; the client reconnects with a fresh one (story 115).
 app.MapHub<AgentHub>(HubRoutes.Agents, options => options.CloseOnAuthenticationExpiration = true)
     .RequireRateLimiting(RateLimiting.Api);
-app.MapHub<DashboardHub>(HubRoutes.Dashboard).RequireRateLimiting(RateLimiting.Api);
+app.MapHub<DashboardHub>(HubRoutes.Dashboard, options => options.CloseOnAuthenticationExpiration = true)
+    .RequireRateLimiting(RateLimiting.Api);
 
 app.Run();
 

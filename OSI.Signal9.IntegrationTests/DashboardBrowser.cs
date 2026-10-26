@@ -18,12 +18,14 @@ public sealed class DashboardBrowser : IDisposable
     private readonly Signal9ApiFactory _factory;
     private readonly Dictionary<string, Dictionary<string, string>> _cookies = [];
     private HttpMessageInvoker _web;
+    private Signal9WebFactory _webHost;
     private readonly HttpMessageInvoker _auth;
 
     public DashboardBrowser(Signal9ApiFactory factory, Signal9WebFactory? web = null)
     {
         _factory = factory;
-        _web = new HttpMessageInvoker((web ?? factory.Web).Server.CreateHandler());
+        _webHost = web ?? factory.Web;
+        _web = new HttpMessageInvoker(_webHost.Server.CreateHandler());
         _auth = new HttpMessageInvoker(factory.Auth.Server.CreateHandler());
     }
 
@@ -37,7 +39,29 @@ public sealed class DashboardBrowser : IDisposable
     public void UseWebReplica(Signal9WebFactory replica)
     {
         _web.Dispose();
+        _webHost = replica;
         _web = new HttpMessageInvoker(replica.Server.CreateHandler());
+    }
+
+    /// <summary>
+    /// A handler for the dashboard's hub connection to web, sending the browser's current cookies for web, and the
+    /// <c>Origin</c> a browser adds (none, as on a same-origin GET, when null).
+    /// </summary>
+    public HttpMessageHandler HubHandler(string? origin = Signal9WebFactory.Origin) =>
+        new HubRequests(this, origin) { InnerHandler = _webHost.Server.CreateHandler() };
+
+    private sealed class HubRequests(DashboardBrowser browser, string? origin) : DelegatingHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            request.Headers.Add(Signal9ApiFactory.ClientIpHeader, "203.0.113.1");
+            var jar = browser.Jar(WebHost);
+            if (jar.Count > 0)
+                request.Headers.Add("Cookie", string.Join("; ", jar.Select(c => $"{c.Key}={c.Value}")));
+            if (origin is not null && request.Method != HttpMethod.Get)
+                request.Headers.Add("Origin", origin);
+            return base.SendAsync(request, cancellationToken);
+        }
     }
 
     /// <summary>

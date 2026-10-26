@@ -32,7 +32,7 @@ public sealed class CommandsController(
     TimeProvider time,
     CallerAudit audit,
     IHubContext<AgentHub, IAgentHubClient> agents,
-    IHubContext<DashboardHub, IDashboardHubClient> dashboard) : ControllerBase
+    DashboardEvents dashboard) : ControllerBase
 {
     /// <summary>Lists a device's commands, newest first. Agents fetch their work from their own pending-commands list.</summary>
     [RequireScope(Scopes.Commands.Read)]
@@ -118,7 +118,7 @@ public sealed class CommandsController(
         var dto = command.ToDto();
         if (device.ActiveAgent is { } agent && agent.Status() == Contracts.Agents.AgentStatus.Active)
             await agents.Clients.Group(AgentHub.GroupFor(agent.Id)).WorkAvailable();
-        await dashboard.Clients.All.CommandChanged(dto);
+        await dashboard.CommandChangedAsync(device.TenantId, dto, cancellationToken);
         this.SetETag(command.ETag());
         return CreatedAtRoute(nameof(GetCommand), new { deviceId, commandId = command.Id }, dto);
     }
@@ -199,7 +199,7 @@ public sealed class CommandsController(
         await db.SaveChangesAsync(cancellationToken);
 
         var dto = command.ToDto();
-        await dashboard.Clients.All.CommandChanged(dto);
+        await dashboard.CommandChangedAsync(device.TenantId, dto, cancellationToken);
         this.SetETag(command.ETag());
         return dto;
     }

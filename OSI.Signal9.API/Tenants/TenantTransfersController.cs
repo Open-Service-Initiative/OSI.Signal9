@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Net.Http.Headers;
 using OSI.Signal9.API.Audit;
 using OSI.Signal9.API.Authorization;
+using OSI.Signal9.API.Hubs;
 using OSI.Signal9.API.Infrastructure;
 using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Audit;
@@ -19,7 +20,8 @@ namespace OSI.Signal9.API.Tenants;
 /// </summary>
 [ApiController]
 [Route("api/v1/tenants/{tenantId:guid}/transfers")]
-public sealed class TenantTransfersController(Signal9DbContext db, TenantTree tree, CallerAudit audit, TimeProvider time)
+public sealed class TenantTransfersController(
+    Signal9DbContext db, TenantTree tree, CallerAudit audit, TimeProvider time, DashboardAccess dashboard)
     : ControllerBase
 {
     /// <summary>
@@ -187,6 +189,9 @@ public sealed class TenantTransfersController(Signal9DbContext db, TenantTree tr
         switch (moved)
         {
             case TenantTreeError.None:
+                // Who hears the subtree follows at once, since events go by the live tree; regrouping only keeps a
+                // connection from joining a tenant now beneath another of its own, and hearing its events twice.
+                await dashboard.RecheckAllAsync(cancellationToken);
                 var names = await NamesAsync([accepted!], cancellationToken);
                 this.SetETag(ETag(accepted!, names));
                 return ToDto(accepted!, names);

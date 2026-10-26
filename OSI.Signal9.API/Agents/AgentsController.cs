@@ -40,7 +40,7 @@ public sealed class AgentsController(
     IOpenIddictTokenManager tokens,
     AgentHubConnections hubConnections,
     IHubContext<AgentHub, IAgentHubClient> agentHub,
-    IHubContext<DashboardHub, IDashboardHubClient> dashboard) : ControllerBase
+    DashboardEvents dashboard) : ControllerBase
 {
     [RequireScope(Scopes.Devices.Read)]
     [HttpGet("{agentId:guid}", Name = nameof(GetAgent))]
@@ -103,8 +103,7 @@ public sealed class AgentsController(
 
         if (device is not null)
         {
-            await db.Entry(device).Reference(d => d.ActiveAgent).LoadAsync(cancellationToken);
-            await dashboard.Clients.All.DeviceChanged(device.ToDto(presence));
+            await dashboard.DeviceChangedAsync(device.TenantId, device.Id, cancellationToken);
         }
         this.SetETag(agent.ETag());
         return agent.ToDto();
@@ -149,8 +148,7 @@ public sealed class AgentsController(
         await db.SaveChangesAsync(cancellationToken);
 
         await RingIfWorkWaitingAsync(agent, cancellationToken);
-        await db.Entry(device).Reference(d => d.ActiveAgent).LoadAsync(cancellationToken);
-        await dashboard.Clients.All.DeviceChanged(device.ToDto(presence));
+        await dashboard.DeviceChangedAsync(device.TenantId, device.Id, cancellationToken);
         this.SetETag(agent.ETag());
         return agent.ToDto();
     }
@@ -248,7 +246,7 @@ public sealed class AgentsController(
             await CutOffAsync(replaced.Id, cancellationToken);
 
         await RingIfWorkWaitingAsync(agent, cancellationToken);
-        await dashboard.Clients.All.DeviceChanged(device.ToDto(presence));
+        await dashboard.DeviceChangedAsync(device.TenantId, device.Id, cancellationToken);
         this.SetETag(agent.ETag());
         return agent.ToDto();
     }
@@ -495,7 +493,7 @@ public sealed class AgentsController(
             return enrolled.Problem!;
 
         if (device is not null)
-            await dashboard.Clients.All.DeviceChanged(device.ToDto(presence));
+            await dashboard.DeviceChangedAsync(device.TenantId, device.Id, cancellationToken);
         this.SetETag(agent.ETag());
         return CreatedAtRoute(nameof(GetAgent), new { agentId = agent.Id }, agent.ToDto());
     }
@@ -731,7 +729,7 @@ public sealed class AgentsController(
         await db.RecordCheckInAsync(agent.Id, agent.LastSeenAt, cancellationToken, request.AgentVersion, request.IpAddress);
 
         if (device is not null && !wasOnline)
-            await dashboard.Clients.All.DeviceChanged(device.ToDto(presence));
+            await dashboard.DeviceChangedAsync(device.TenantId, device.Id, cancellationToken);
         var hasPendingWork = agent.Status() == AgentStatus.Active && await db.Commands
             .IgnoreTenantScope(TenantScopeBypass.AgentSelfService)
             .AnyAsync(c => c.DeviceId == agent.DeviceId && c.Status == CommandStatus.Pending, cancellationToken);

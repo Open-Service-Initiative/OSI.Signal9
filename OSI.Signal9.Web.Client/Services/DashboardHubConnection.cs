@@ -1,10 +1,7 @@
 using Microsoft.AspNetCore.SignalR.Client;
 using OSI.Signal9.Contracts.Bff;
-using OSI.Signal9.Contracts.Commands;
-using OSI.Signal9.Contracts.Devices;
 using OSI.Signal9.Contracts.Hubs;
 using OSI.Signal9.Contracts.Serialization;
-using OSI.Signal9.Contracts.Telemetry;
 
 namespace OSI.Signal9.Web.Client.Services;
 
@@ -17,8 +14,10 @@ public enum LiveStatus
 }
 
 /// <summary>
-/// Live updates from the API's dashboard hub, through web's proxy. The hub is a nicety: when it can't be reached the
-/// dashboard still works, says so, and keeps retrying with backoff.
+/// Live updates from the API's dashboard hub, through web's proxy: small notices that something changed, whose details
+/// the page fetches through web (ADR-0009). The hub is a nicety: when it can't be reached the dashboard still works,
+/// says so, and keeps retrying with backoff. The API closes it when the session's token expires or access ends, and it
+/// reconnects through web, which brings a fresh token (story 115).
 /// </summary>
 public sealed class DashboardHubConnection : IDashboardHubClient, IAsyncDisposable
 {
@@ -48,10 +47,10 @@ public sealed class DashboardHubConnection : IDashboardHubClient, IAsyncDisposab
             .WithAutomaticReconnect()
             .Build();
 
-        _connection.On<DeviceDto>(nameof(DeviceChanged), DeviceChanged);
-        _connection.On<Guid>(nameof(DeviceDeleted), DeviceDeleted);
-        _connection.On<TelemetrySampleDto>(nameof(TelemetryReceived), TelemetryReceived);
-        _connection.On<CommandDto>(nameof(CommandChanged), CommandChanged);
+        _connection.On<DeviceNotice>(nameof(DeviceChanged), DeviceChanged);
+        _connection.On<DeviceNotice>(nameof(DeviceDeleted), DeviceDeleted);
+        _connection.On<TelemetryNotice>(nameof(TelemetryReceived), TelemetryReceived);
+        _connection.On<CommandNotice>(nameof(CommandChanged), CommandChanged);
         _connection.Reconnecting += _ => RaiseStatusChanged();
         _connection.Reconnected += _ => RaiseStatusChanged();
         _connection.Closed += async error =>
@@ -61,10 +60,10 @@ public sealed class DashboardHubConnection : IDashboardHubClient, IAsyncDisposab
         };
     }
 
-    public event Func<DeviceDto, Task>? OnDeviceChanged;
-    public event Func<Guid, Task>? OnDeviceDeleted;
-    public event Func<TelemetrySampleDto, Task>? OnTelemetryReceived;
-    public event Func<CommandDto, Task>? OnCommandChanged;
+    public event Func<DeviceNotice, Task>? OnDeviceChanged;
+    public event Func<DeviceNotice, Task>? OnDeviceDeleted;
+    public event Func<TelemetryNotice, Task>? OnTelemetryReceived;
+    public event Func<CommandNotice, Task>? OnCommandChanged;
     public event Func<Task>? OnStatusChanged;
 
     public LiveStatus Status => _connection.State switch
@@ -118,10 +117,10 @@ public sealed class DashboardHubConnection : IDashboardHubClient, IAsyncDisposab
         }
     }
 
-    public Task DeviceChanged(DeviceDto device) => OnDeviceChanged?.Invoke(device) ?? Task.CompletedTask;
-    public Task DeviceDeleted(Guid deviceId) => OnDeviceDeleted?.Invoke(deviceId) ?? Task.CompletedTask;
-    public Task TelemetryReceived(TelemetrySampleDto sample) => OnTelemetryReceived?.Invoke(sample) ?? Task.CompletedTask;
-    public Task CommandChanged(CommandDto command) => OnCommandChanged?.Invoke(command) ?? Task.CompletedTask;
+    public Task DeviceChanged(DeviceNotice notice) => OnDeviceChanged?.Invoke(notice) ?? Task.CompletedTask;
+    public Task DeviceDeleted(DeviceNotice notice) => OnDeviceDeleted?.Invoke(notice) ?? Task.CompletedTask;
+    public Task TelemetryReceived(TelemetryNotice notice) => OnTelemetryReceived?.Invoke(notice) ?? Task.CompletedTask;
+    public Task CommandChanged(CommandNotice notice) => OnCommandChanged?.Invoke(notice) ?? Task.CompletedTask;
 
     private Task RaiseStatusChanged() => OnStatusChanged?.Invoke() ?? Task.CompletedTask;
 

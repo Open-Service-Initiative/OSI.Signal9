@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using OSI.Signal9.API.Audit;
 using OSI.Signal9.API.Authorization;
+using OSI.Signal9.API.Hubs;
 using OSI.Signal9.API.Infrastructure;
 using OSI.Signal9.API.Tenants;
 using OpenIddict.Abstractions;
@@ -20,7 +21,7 @@ namespace OSI.Signal9.API.Roles;
 [Route("api/v1/tenants/{tenantId:guid}/role-assignments")]
 public sealed class RoleAssignmentsController(
     Signal9DbContext db, CallerAudit audit, CallerAccess access, IAssignedTenants caller, TimeProvider time,
-    SignInSessions sessions) : ControllerBase
+    SignInSessions sessions, DashboardAccess dashboard) : ControllerBase
 {
     /// <summary>Lists the role assignments made at the tenant.</summary>
     [RequireScope(Scopes.RoleAssignments.Read)]
@@ -110,6 +111,11 @@ public sealed class RoleAssignmentsController(
             return Problem(statusCode: StatusCodes.Status409Conflict, title: "Role assignment already exists",
                 detail: "The user already has this role at this tenant.");
 
+        // Their open dashboard connections start hearing the tenant now.
+        var holder = await db.Users.AsNoTracking().Where(u => u.Id == assignment.UserId)
+            .Select(u => new { u.EntraTenantId, u.EntraObjectId }).SingleAsync(cancellationToken);
+        await dashboard.RecheckAsync(PersonSubject.Format(holder.EntraTenantId, holder.EntraObjectId), cancellationToken);
+
         this.SetETag(assignment.ETag());
         return CreatedAtRoute(nameof(GetRoleAssignment), new { tenantId, roleAssignmentId = assignment.Id }, assignment.ToDto());
     }
@@ -184,6 +190,8 @@ public sealed class RoleAssignmentsController(
                 User.FindFirst(OpenIddictConstants.Claims.Subject)?.Value,
                 HttpContext.Connection.RemoteIpAddress?.ToString()), cancellationToken);
         }
+        // Their open dashboard connections stop hearing the tenant now, and close when nothing is left (story 27).
+        await dashboard.RecheckAsync(person, cancellationToken);
         return NoContent();
     }
 

@@ -78,6 +78,7 @@ The `KeyEncryption` section chooses the key-encryption key on `auth` and `api`:
 Browsers only ever talk to web and auth (ADR-0003). web is a confidential client of auth (`signal9-web`) using authorization code with PKCE. It redeems codes at api's mTLS token alias with its own client certificate, so its access tokens are bound to it, and keeps them in the database, encrypted with Data Protection. The browser gets only a `__Host-Http-signal9` cookie (Secure, HttpOnly, SameSite=Strict) holding an encrypted session ticket. web generates its certificate itself, stores it wrapped by the key-encryption key, rotates it with the signing keys' schedule and registers it at the authorization server on its own.
 
 - Every state-changing request to web must send `X-CSRF: 1`. There's no CORS on any host.
+- The dashboard hub's handshake through web must come from web's own origin (`Identity:WebUri`): a WebSocket handshake without a matching `Origin` is refused with 403.
 - web forwards only `/api/*`, `/hubs/dashboard` and the OpenAPI document (`/docs/openapi/*`) to api, at `Identity:ApiUri`.
 - web sends a strict Content Security Policy: scripts from web only (plus WebAssembly and the import map's hash), no other origins.
 - `Identity:WebUri` is web's public address; its redirect URI is `{WebUri}signin-oidc`.
@@ -160,6 +161,8 @@ Single resources and write responses carry a strong `ETag`. Send it back in `If-
 A device is the managed machine; an agent is one enrolled installation on it. Telemetry and command history belong to the device and survive the agent being replaced. The agent's own requests (`/api/v1/agents/{agentId}/...` and command results) are refused with 403 unless `{agentId}` is the agent the access token belongs to.
 
 Hubs: `/hubs/agents` and `/hubs/dashboard` (live updates for the dashboard, reached through web). The agent hub is a doorbell (ADR-0009): it rings a device's active agent when a command is queued, carries no command content and accepts no calls. The agent fetches its pending commands over REST when the doorbell rings, every time it (re)connects and when a heartbeat response says work is waiting.
+
+The dashboard hub needs `devices.read` or `telemetry.read`, and any API application holding one can listen too. A connection hears changes from the tenants its caller's role assignments reach (every tenant tree for a Superadministrator), as small notices: `DeviceChanged`/`DeviceDeleted` (`deviceId`, `url`), `CommandChanged` (`deviceId`, `commandId`, `url`) and `TelemetryReceived` (`deviceId`, `sampleId`, `url`). Fetch the details from `url` over REST. A connection closes when its token expires or is revoked (sign-out, front-channel logout) or its caller loses their last role assignment; reconnect with a fresh token. Losing or gaining one of several role assignments, or a tenant transfer, changes what it hears at once. api re-checks open connections every `DashboardHub:AccessCheckInterval` (default 10 seconds) for changes made elsewhere.
 
 ## Operations
 

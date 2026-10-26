@@ -4,6 +4,7 @@ using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using OSI.Signal9.Contracts.Devices;
+using OSI.Signal9.Contracts.Hubs;
 using OSI.Signal9.Web.Client.Services;
 using static OSI.Signal9.Web.Tests.Samples;
 
@@ -84,19 +85,60 @@ public sealed class DevicesPageTests : DashboardTestContext
     }
 
     [TestMethod]
-    public void A_device_changed_on_the_hub_updates_its_row()
+    public void A_device_changed_notice_from_the_hub_fetches_the_device_and_updates_its_row()
+    {
+        var id = Guid.NewGuid();
+        Http.SignedInAs("Ada", request => request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/devices" => FakeHttp.Json(HttpStatusCode.OK, Page(Device("WS-001", DeviceStatus.Online, id))),
+            var path when path == $"/api/v1/devices/{id}" => FakeHttp.Json(HttpStatusCode.OK, Device("WS-001-RENAMED", DeviceStatus.Offline, id)),
+            _ => null,
+        });
+        var app = RenderApp("/devices");
+        app.WaitForAssertion(() => Assert.Contains("WS-001", app.Markup));
+
+        var hub = Services.GetRequiredService<DashboardHubConnection>();
+        app.InvokeAsync(() => hub.DeviceChanged(new DeviceNotice(id, $"/api/v1/devices/{id}")));
+
+        app.WaitForAssertion(() => Assert.Contains("WS-001-RENAMED", app.Markup));
+    }
+
+    [TestMethod]
+    public void A_device_changed_notice_for_a_device_now_out_of_reach_removes_its_row()
+    {
+        var id = Guid.NewGuid();
+        Http.SignedInAs("Ada", request => request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/devices" => FakeHttp.Json(HttpStatusCode.OK, Page(Device("WS-001", DeviceStatus.Online, id), Device("WS-002"))),
+            var path when path == $"/api/v1/devices/{id}" => new HttpResponseMessage(HttpStatusCode.NotFound),
+            _ => null,
+        });
+        var app = RenderApp("/devices");
+        app.WaitForAssertion(() => Assert.Contains("WS-001", app.Markup));
+
+        var hub = Services.GetRequiredService<DashboardHubConnection>();
+        app.InvokeAsync(() => hub.DeviceChanged(new DeviceNotice(id, $"/api/v1/devices/{id}")));
+
+        app.WaitForAssertion(() => Assert.DoesNotContain("WS-001", app.Markup));
+        Assert.Contains("WS-002", app.Markup);
+        Assert.IsEmpty(app.FindAll(".error-bar"));
+    }
+
+    [TestMethod]
+    public void A_device_deleted_notice_from_the_hub_removes_its_row()
     {
         var id = Guid.NewGuid();
         Http.SignedInAs("Ada", request => request.RequestUri!.AbsolutePath == "/api/v1/devices"
-            ? FakeHttp.Json(HttpStatusCode.OK, Page(Device("WS-001", DeviceStatus.Online, id)))
+            ? FakeHttp.Json(HttpStatusCode.OK, Page(Device("WS-001", DeviceStatus.Online, id), Device("WS-002")))
             : null);
         var app = RenderApp("/devices");
         app.WaitForAssertion(() => Assert.Contains("WS-001", app.Markup));
 
         var hub = Services.GetRequiredService<DashboardHubConnection>();
-        app.InvokeAsync(() => hub.DeviceChanged(Device("WS-001-RENAMED", DeviceStatus.Offline, id)));
+        app.InvokeAsync(() => hub.DeviceDeleted(new DeviceNotice(id, $"/api/v1/devices/{id}")));
 
-        app.WaitForAssertion(() => Assert.Contains("WS-001-RENAMED", app.Markup));
+        app.WaitForAssertion(() => Assert.DoesNotContain("WS-001", app.Markup));
+        Assert.Contains("WS-002", app.Markup);
     }
 
     [TestMethod]

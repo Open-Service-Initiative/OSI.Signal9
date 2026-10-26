@@ -39,6 +39,7 @@ app.UseSignal9ForwardedHeaders();
 app.UseHostHardening();
 app.UseContentSecurityPolicy();
 app.UseCsrfHeader();
+app.UseHubOrigin();
 app.UseRateLimitingAndAuthentication();
 app.UseAuthorization();
 

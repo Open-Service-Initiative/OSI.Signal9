@@ -25,7 +25,7 @@ public sealed class DevicesController(
     Signal9DbContext db,
     DevicePresence presence,
     CallerAudit audit,
-    IHubContext<DashboardHub, IDashboardHubClient> dashboard) : ControllerBase
+    DashboardEvents dashboard) : ControllerBase
 {
     /// <summary>Lists devices across tenants, with optional filters.</summary>
     [RequireScope(Scopes.Devices.Read)]
@@ -109,7 +109,7 @@ public sealed class DevicesController(
         await db.SaveChangesAsync(cancellationToken);
 
         var dto = device.ToDto(presence);
-        await dashboard.Clients.All.DeviceChanged(dto);
+        await dashboard.DeviceChangedAsync(device.TenantId, device.Id, cancellationToken);
         this.SetETag(device.ETag(presence));
         return dto;
     }
@@ -143,47 +143,48 @@ public sealed class DevicesController(
                 db.ChangeTracker.Clear();
             await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
             await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({TenantTree.LockKey})", cancellationToken);
-            var (refused, device) = await MoveAsync(deviceId, request.TenantId!.Value, cancellationToken);
+            var (refused, device, from) = await MoveAsync(deviceId, request.TenantId!.Value, cancellationToken);
             if (refused is not null)
-                return (refused, device);
+                return (refused, device, from);
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return (refused, device);
+            return (refused, device, from);
         });
         if (result.refused is not null)
             return result.refused;
 
         var moved = result.device!;
         var dto = moved.ToDto(presence);
-        await dashboard.Clients.All.DeviceChanged(dto);
+        // Both sides hear it: the former one, to drop the device, and the new one.
+        await dashboard.DeviceChangedAsync([result.from, moved.TenantId], moved.Id, cancellationToken);
         this.SetETag(moved.ETag(presence));
         return dto;
     }
 
     // Moves the device to the tenant, with the audit entries recording it, unless the request is refused.
-    private async Task<(ActionResult? refused, Device? device)> MoveAsync(Guid deviceId, Guid tenantId, CancellationToken cancellationToken)
+    private async Task<(ActionResult? refused, Device? device, Guid from)> MoveAsync(Guid deviceId, Guid tenantId, CancellationToken cancellationToken)
     {
         var device = await db.Devices.Include(d => d.ActiveAgent).SingleOrDefaultAsync(d => d.Id == deviceId, cancellationToken);
         if (device is null)
-            return (NotFound(), null);
+            return (NotFound(), null, default);
         if (this.Preconditions(device.ETag(presence)) is { } failed)
-            return (failed, null);
+            return (failed, null, default);
 
         // A tenant the caller can't transfer devices into is treated as missing, so nothing is learned about it.
         var tenant = await db.Tenants.SingleOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
         if (tenant is null)
         {
             ModelState.AddModelError(nameof(TransferDeviceRequest.TenantId), "Tenant does not exist.");
-            return (ValidationProblem(ModelState), null);
+            return (ValidationProblem(ModelState), null, default);
         }
         if (tenant.Id == device.TenantId)
-            return (Conflict("Already in that tenant", "The device already belongs to that tenant."), null);
+            return (Conflict("Already in that tenant", "The device already belongs to that tenant."), null, default);
         // The caller can transfer into the tenant, so they see all of its devices.
         if (await db.Devices.CountAsync(d => d.TenantId == tenant.Id, cancellationToken) >= tenant.MaxDevices)
-            return (Conflict("Device limit reached", $"Tenant '{tenant.Name}' allows at most {tenant.MaxDevices} devices."), null);
+            return (Conflict("Device limit reached", $"Tenant '{tenant.Name}' allows at most {tenant.MaxDevices} devices."), null, default);
         if (await HardwareTakenAsync(device, tenant.Id, cancellationToken))
             return (Conflict("Machine already in that tenant tree",
-                "The destination's root tenant tree already holds a device for the same hardware."), null);
+                "The destination's root tenant tree already holds a device for the same hardware."), null, default);
 
         var from = device.TenantId;
         device.TenantId = tenant.Id;
@@ -197,7 +198,7 @@ public sealed class DevicesController(
                 DeviceId = device.Id,
                 Detail = detail,
             });
-        return (null, device);
+        return (null, device, from);
     }
 
     /// <summary>
@@ -249,7 +250,7 @@ public sealed class DevicesController(
         if (deleted == 0)
             throw new DbUpdateConcurrencyException("The device changed or was deleted after it was read.");
 
-        await dashboard.Clients.All.DeviceDeleted(deviceId);
+        await dashboard.DeviceDeletedAsync(device.TenantId, deviceId, cancellationToken);
         return NoContent();
     }
 }
