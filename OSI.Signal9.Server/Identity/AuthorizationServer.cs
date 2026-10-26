@@ -117,7 +117,9 @@ public static class AuthorizationServer
         server.Services.AddScoped<SignInSessions>();
 
         // Revoking a refresh token revokes its whole grant: the authorization and every token issued under it, access
-        // tokens included (RFC 7009 §2.1). web's sign-out and session ends rely on it (story 53).
+        // tokens included (RFC 7009 §2.1). web's sign-out and session ends rely on it (story 53). It runs before
+        // OpenIddict revokes the token itself, so a redeem racing the revocation can't keep a valid token: OpenIddict
+        // fails to revoke a token whose row changed since it was read (ID2079), and nothing after it would run.
         server.AddEventHandler<OpenIddictServerEvents.HandleRevocationRequestContext>(handler => handler.UseInlineHandler(async context =>
         {
             if (context.GenericTokenPrincipal is not { } token || !token.HasTokenType(TokenTypeIdentifiers.RefreshToken)
@@ -127,7 +129,15 @@ public static class AuthorizationServer
             var authorizations = http.RequestServices.GetRequiredService<IOpenIddictAuthorizationManager>();
             if (await authorizations.FindByIdAsync(authorizationId, http.RequestAborted) is { } authorization)
                 await authorizations.TryRevokeAsync(authorization, http.RequestAborted);
-        }).SetOrder(OpenIddictServerHandlers.Revocation.RevokeToken.Descriptor.Order + 1));
+
+            // OpenIddict revokes the token next from the row it read while validating it, which a racing redeem may
+            // have changed since. Reading it again lets that revocation succeed, so the caller hears the token is
+            // revoked (RFC 7009 §2.2), as it now is along with its grant.
+            if (token.GetTokenId() is { } tokenId
+                && await http.RequestServices.GetRequiredService<IOpenIddictTokenManager>()
+                    .FindByIdAsync(tokenId, http.RequestAborted) is { } entry)
+                await http.RequestServices.GetRequiredService<Signal9DbContext>().Entry(entry).ReloadAsync(http.RequestAborted);
+        }).SetOrder(OpenIddictServerHandlers.Revocation.RevokeToken.Descriptor.Order - 500));
 
         // A client that fails to authenticate counts toward the repeated-failure audit (story 121).
         server.AddEventHandler<OpenIddictServerEvents.ApplyTokenResponseContext>(handler => handler.UseInlineHandler(async context =>

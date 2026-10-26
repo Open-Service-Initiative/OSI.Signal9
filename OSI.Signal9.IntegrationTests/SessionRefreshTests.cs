@@ -5,8 +5,10 @@ using System.Text.Json;
 using OSI.Signal9.Contracts.Bff;
 using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Contracts.Tenants;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using OpenIddict.Server;
 using OSI.Signal9.Web.Bff;
 
 namespace OSI.Signal9.IntegrationTests;
@@ -51,6 +53,70 @@ public sealed class SessionRefreshTests : IDisposable
         }), Ct);
         var body = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(await response.Content.ReadAsStringAsync(Ct))!;
         return (response.StatusCode, body);
+    }
+
+    /// <summary>Revokes a refresh token at api's mTLS revocation alias as web does, and returns the status.</summary>
+    private async Task<HttpStatusCode> RevokeAsWebAsync(string refreshToken)
+    {
+        var certificate = _factory.Web.Services.GetRequiredService<WebClientCertificate>().Current;
+        using var api = _factory.CreateForwardedCertificateClient(certificate);
+        using var response = await api.PostAsync("connect/revoke", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["token"] = refreshToken,
+            ["token_type_hint"] = "refresh_token",
+            ["client_id"] = WebClientRegistration.ClientId,
+        }), Ct);
+        return response.StatusCode;
+    }
+
+    [TestMethod]
+    public async Task Revoking_a_refresh_token_just_after_it_was_redeemed_revokes_what_the_redeem_issued()
+    {
+        using var browser = await SignedInAsync();
+        var first = _factory.Web.IssuedRefreshTokens.Single();
+        // Someone holding the token redeems it a moment before web revokes it (OpenIddict's ID2079 race).
+        var (redeemed, issued) = await RedeemAsWebAsync(first);
+        Assert.AreEqual(HttpStatusCode.OK, redeemed);
+
+        var revoked = await RevokeAsWebAsync(first);
+        var (status, body) = await RedeemAsWebAsync(issued["refresh_token"].GetString()!);
+
+        Assert.AreEqual(HttpStatusCode.OK, revoked, "auth didn't confirm the revocation (RFC 7009 §2.2).");
+        Assert.AreEqual(HttpStatusCode.BadRequest, status, "The redeem's new refresh token outlived the revocation.");
+        Assert.AreEqual("invalid_grant", Error(body));
+    }
+
+    [TestMethod]
+    public async Task A_redeem_racing_a_revocation_cannot_keep_a_valid_token()
+    {
+        using var browser = await SignedInAsync();
+        var first = _factory.Web.IssuedRefreshTokens.Single();
+        string? issued = null;
+        // Someone holding the token redeems it after api has read it for revocation but before it's revoked: OpenIddict's
+        // own revocation then fails on the changed row (ID2079).
+        using var racingApi = _factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.AddOpenIddict().AddServer().AddEventHandler<OpenIddictServerEvents.ValidateRevocationRequestContext>(handler =>
+                handler.UseInlineHandler(async _ =>
+                {
+                    var (status, body) = await RedeemAsWebAsync(first);
+                    Assert.AreEqual(HttpStatusCode.OK, status, Error(body));
+                    issued = body["refresh_token"].GetString();
+                }).SetOrder(OpenIddictServerHandlers.Revocation.ValidateAuthentication.Descriptor.Order + 1))));
+        var certificate = _factory.Web.Services.GetRequiredService<WebClientCertificate>().Current;
+        using var api = Signal9ApiFactory.CreatePeerClient(racingApi.Server, Signal9ApiFactory.TrustedProxy, null);
+        api.DefaultRequestHeaders.Add(Signal9ApiFactory.ClientCertificateHeader, TestCertificates.ContainerAppsHeader(certificate));
+
+        using var revoked = await api.PostAsync("connect/revoke", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["token"] = first,
+            ["token_type_hint"] = "refresh_token",
+            ["client_id"] = WebClientRegistration.ClientId,
+        }), Ct);
+        var (status, body) = await RedeemAsWebAsync(issued!);
+
+        Assert.AreEqual(HttpStatusCode.OK, revoked.StatusCode, await revoked.Content.ReadAsStringAsync(Ct));
+        Assert.AreEqual(HttpStatusCode.BadRequest, status, "The racing redeem's refresh token outlived the revocation.");
+        Assert.AreEqual("invalid_grant", Error(body));
     }
 
     private static string Error(Dictionary<string, JsonElement> body) =>
