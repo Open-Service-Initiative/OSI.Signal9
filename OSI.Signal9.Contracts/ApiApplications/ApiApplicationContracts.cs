@@ -24,9 +24,6 @@ public static class TokenEndpointAuthMethods
     public const string ClientSecret = "client_secret_basic";
 
     public static readonly IReadOnlyList<string> All = [TlsClientAuth, SelfSignedTlsClientAuth, PrivateKeyJwt, ClientSecret];
-
-    /// <summary>Whether the method is mTLS, so tokens issued with it are bound to the certificate.</summary>
-    public static bool IsMutualTls(string method) => method is TlsClientAuth or SelfSignedTlsClientAuth;
 }
 
 /// <summary>

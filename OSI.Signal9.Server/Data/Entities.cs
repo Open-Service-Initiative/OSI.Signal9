@@ -19,7 +19,6 @@ public sealed class Tenant
     public string? Description { get; set; }
     public required string ContactEmail { get; set; }
     public string? ContactPhone { get; set; }
-    public SubscriptionPlan Plan { get; set; }
     public int MaxDevices { get; set; }
     public TenantStatus Status { get; set; }
 
@@ -109,7 +108,6 @@ public sealed class Device : ITenantOwned
     public string? MacAddress { get; set; }
     public string? GroupName { get; set; }
     public List<string> Tags { get; set; } = [];
-    public bool MaintenanceMode { get; set; }
 
     /// <summary>
     /// Whether the device's next agent must be approved, whatever its tenant's approval setting: set when its agent is
@@ -212,7 +210,6 @@ public sealed class Command : IDeviceOwned
     public Guid DeviceId { get; set; }
     public CommandType Type { get; set; }
     public string? Parameters { get; set; }
-    public CommandPriority Priority { get; set; }
     public int TimeoutSeconds { get; set; }
     public CommandStatus Status { get; set; }
     public DateTime CreatedAt { get; set; }

@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Agents;
+using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Commands;
 using OSI.Signal9.Contracts.Devices;
 using OSI.Signal9.Contracts.Serialization;
@@ -211,6 +212,26 @@ public sealed class TenantScopeTests : IDisposable
     }
 
     [TestMethod]
+    public async Task An_audited_bypass_lifts_the_filter_and_records_each_use()
+    {
+        await SeedAsync();
+        await using var db = CreateContext(NoAssignedTenants.Instance);
+        var audit = new AuditLog(db, _factory.Services.GetRequiredService<IServiceScopeFactory>(), _factory.Time);
+        // No production bypass is audited yet; an undeclared value counts as audited.
+        var testOnly = (TenantScopeBypass)999;
+
+        var all = await audit.IgnoreTenantScopeAsync(db.Tenants, testOnly, Ct);
+        await audit.IgnoreTenantScopeAsync(db.Tenants, testOnly, Ct);
+
+        Assert.AreEqual(5, await all.CountAsync(Ct));
+        // Deployment-level entries, which only a Superadministrator reads.
+        await using var reader = CreateContext(new FixedAssignedTenants([], superadministrator: true));
+        var recorded = await reader.AuditEntries.Where(e => e.Action == AuditActions.TenantScopeBypassed).ToListAsync(Ct);
+        Assert.HasCount(2, recorded);
+        Assert.IsTrue(recorded.All(e => e.Detail == "999" && e.TenantId == null && e.OccurredAt == _factory.Time.GetUtcNow().UtcDateTime));
+    }
+
+    [TestMethod]
     public void The_bypass_rule_catches_other_calls()
     {
         var violations = IgnoreQueryFiltersCallers(typeof(BypassesDirectly)).ToList();
@@ -287,9 +308,9 @@ public sealed class TenantScopeTests : IDisposable
     private Signal9DbContext CreateContext(IAssignedTenants assigned) =>
         new(new DbContextOptionsBuilder<Signal9DbContext>().UseNpgsql(_factory.ConnectionString).Options, assigned);
 
-    private sealed class FixedAssignedTenants(Guid[] ids) : IAssignedTenants
+    private sealed class FixedAssignedTenants(Guid[] ids, bool superadministrator = false) : IAssignedTenants
     {
-        public bool IsSuperadministrator => false;
+        public bool IsSuperadministrator => superadministrator;
 
         public IReadOnlyCollection<Guid> TenantIds => ids;
     }

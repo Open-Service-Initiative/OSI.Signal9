@@ -17,7 +17,7 @@ public static class DatabaseExtensions
         builder.Services.AddDbContext<Signal9DbContext>(options =>
             options.UseNpgsql(builder.Configuration.GetConnectionString("signal9")));
         builder.EnrichAzureNpgsqlDbContext<Signal9DbContext>();
-        // Fails closed: until RBAC feeds in role assignments (#114), callers see no tenant-owned rows.
+        // Fails closed: a host that doesn't register its callers' role assignments (api does) sees no tenant-owned rows.
         builder.Services.TryAddSingleton<IAssignedTenants>(NoAssignedTenants.Instance);
         return builder;
     }

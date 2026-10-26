@@ -252,7 +252,7 @@ public sealed class RecentMfaTests : IDisposable
 
         var staleScript = await stale.PostAsJsonAsync(commands, script, Signal9Json.Options, Ct);
         var predefined = await stale.PostAsJsonAsync(commands,
-            new CreateCommandRequest { Type = CommandType.RestartService }, Signal9Json.Options, Ct);
+            new CreateCommandRequest { Type = CommandType.CollectSystemInfo }, Signal9Json.Options, Ct);
         var recentScript = await recent.PostAsJsonAsync(commands, script, Signal9Json.Options, Ct);
         var applicationScript = await application.PostAsJsonAsync(commands, script, Signal9Json.Options, Ct);
 

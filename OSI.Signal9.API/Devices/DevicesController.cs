@@ -72,7 +72,7 @@ public sealed class DevicesController(
     }
 
     /// <summary>
-    /// Updates a device's group, tags and maintenance mode with a JSON merge patch (RFC 7396).
+    /// Updates a device's group and tags with a JSON merge patch (RFC 7396).
     /// Status is read-only: it comes from the active agent's check-ins.
     /// </summary>
     [RequireScope(Scopes.Devices.Write)]
@@ -95,9 +95,7 @@ public sealed class DevicesController(
         UpdateDeviceRequest request;
         try
         {
-            request = MergePatch.Apply(
-                new UpdateDeviceRequest { GroupName = device.GroupName, Tags = device.Tags, MaintenanceMode = device.MaintenanceMode },
-                patch);
+            request = MergePatch.Apply(new UpdateDeviceRequest { GroupName = device.GroupName, Tags = device.Tags }, patch);
         }
         catch (JsonException ex)
         {
@@ -109,7 +107,6 @@ public sealed class DevicesController(
 
         device.GroupName = string.IsNullOrWhiteSpace(request.GroupName) ? null : request.GroupName.Trim();
         device.Tags = request.Tags.Select(t => (t ?? string.Empty).Trim()).Where(t => t.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        device.MaintenanceMode = request.MaintenanceMode;
         await db.SaveChangesAsync(cancellationToken);
 
         var dto = device.ToDto(presence);

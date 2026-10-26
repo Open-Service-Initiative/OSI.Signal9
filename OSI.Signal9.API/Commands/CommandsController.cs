@@ -110,7 +110,6 @@ public sealed class CommandsController(
             DeviceId = deviceId,
             Type = request.Type,
             Parameters = request.Parameters,
-            Priority = request.Priority,
             TimeoutSeconds = request.TimeoutSeconds,
             Status = CommandStatus.Pending,
             CreatedAt = time.GetUtcNow().UtcDateTime,

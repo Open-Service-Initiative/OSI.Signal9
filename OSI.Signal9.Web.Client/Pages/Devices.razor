@@ -39,10 +39,6 @@
     <TemplateColumn Title="Status">
         <span id="@($"status-{context.Id}")">
             <FluentBadge Appearance="BadgeAppearance.Tint" Color="@(context.Status == DeviceStatus.Online ? BadgeColor.Success : BadgeColor.Subtle)">@context.Status</FluentBadge>
-            @if (context.MaintenanceMode)
-            {
-                <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Warning">Maintenance</FluentBadge>
-            }
         </span>
     </TemplateColumn>
     <TemplateColumn Title="Agent">
@@ -68,8 +64,6 @@
                       IconStart="@(new Icons.Regular.Size20.Edit())" OnClick="@(() => EditAsync(context))" />
         <FluentButton Id="@($"collect-{context.Id}")" IconOnly="true" Title="Collect system info" Appearance="ButtonAppearance.Subtle"
                       IconStart="@(new Icons.Regular.Size20.Info())" OnClick="@(() => QueueAsync(context, CommandType.CollectSystemInfo))" />
-        <FluentButton Id="@($"restart-{context.Id}")" IconOnly="true" Title="Restart machine" Appearance="ButtonAppearance.Subtle"
-                      IconStart="@(new Icons.Regular.Size20.ArrowClockwise())" OnClick="@(() => QueueAsync(context, CommandType.RestartMachine))" />
         <FluentButton Id="@($"transfer-{context.Id}")" IconOnly="true" Title="Transfer to another tenant" Appearance="ButtonAppearance.Subtle"
                       IconStart="@(new Icons.Regular.Size20.ArrowSwap())" OnClick="@(() => TransferAsync(context))" />
         <FluentButton Id="@($"delete-{context.Id}")" IconOnly="true" Title="Delete" Appearance="ButtonAppearance.Subtle"
@@ -170,14 +164,6 @@
 
     private async Task QueueAsync(DeviceDto device, CommandType type)
     {
-        if (type == CommandType.RestartMachine)
-        {
-            var confirm = await Dialogs.ShowConfirmationAsync(
-                $"Restart {device.MachineName}? Anyone using it will lose unsaved work.", "Restart machine", "Restart", "Cancel");
-            if (confirm.Cancelled)
-                return;
-        }
-
         await RunAsync(() => Api.QueueCommandAsync(device.Id, new CreateCommandRequest { Type = type }),
             $"Queued {type} for {device.MachineName}.");
     }

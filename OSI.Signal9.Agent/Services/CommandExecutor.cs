@@ -17,7 +17,7 @@ public interface ICommandHandler
 /// </summary>
 public sealed class CommandExecutor(IEnumerable<ICommandHandler> handlers, TimeProvider time, ILogger<CommandExecutor> logger)
 {
-    // TODO: RestartService, RunScript and RestartMachine need a signed, allow-listed design before they have handlers.
+    // TODO(#82): RunScript needs a signed, allow-listed design before it has a handler.
     private readonly Dictionary<CommandType, ICommandHandler> _handlers = handlers.ToDictionary(h => h.Type);
 
     public async Task<CommandResultRequest> ExecuteAsync(CommandDto command, CancellationToken cancellationToken)

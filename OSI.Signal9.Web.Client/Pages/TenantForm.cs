@@ -9,7 +9,6 @@ public sealed class TenantForm
     public string? Description { get; set; }
     public string ContactEmail { get; set; } = string.Empty;
     public string? ContactPhone { get; set; }
-    public string Plan { get; set; } = nameof(SubscriptionPlan.Basic);
     public string MaxDevices { get; set; } = "25";
 
     /// <summary>Whether new agents wait for approval here, set here or inherited.</summary>
@@ -27,7 +26,6 @@ public sealed class TenantForm
         Description = tenant.Description,
         ContactEmail = tenant.ContactEmail,
         ContactPhone = tenant.ContactPhone,
-        Plan = tenant.Plan.ToString(),
         MaxDevices = tenant.MaxDevices.ToString(System.Globalization.CultureInfo.InvariantCulture),
         HoldsNewAgentsForApproval = tenant.HoldsNewAgentsForApproval,
         ApprovalHoldInherited = tenant.ApprovalHoldInherited,
@@ -40,7 +38,6 @@ public sealed class TenantForm
         Description = Blank(Description),
         ContactEmail = ContactEmail,
         ContactPhone = Blank(ContactPhone),
-        Plan = Enum.Parse<SubscriptionPlan>(Plan),
         MaxDevices = ParseMaxDevices(),
         ParentTenantId = Guid.TryParse(ParentTenantId, out var parent) ? parent : null,
     };
@@ -51,7 +48,6 @@ public sealed class TenantForm
         Description = Blank(Description),
         ContactEmail = ContactEmail,
         ContactPhone = Blank(ContactPhone),
-        Plan = Enum.Parse<SubscriptionPlan>(Plan),
         MaxDevices = ParseMaxDevices(),
         HoldsNewAgentsForApproval = HoldsNewAgentsForApproval,
     };

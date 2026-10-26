@@ -29,15 +29,12 @@ public sealed class CommandExecutorTests(TestContext testContext)
     }
 
     [TestMethod]
-    [DataRow(CommandType.RestartService)]
-    [DataRow(CommandType.RunScript)]
-    [DataRow(CommandType.RestartMachine)]
-    public async Task An_unsupported_command_fails_explicitly(CommandType type)
+    public async Task An_unsupported_command_fails_explicitly()
     {
-        var result = await Executor().ExecuteAsync(Command(type), Ct);
+        var result = await Executor().ExecuteAsync(Command(CommandType.RunScript), Ct);
 
         Assert.IsFalse(result.Succeeded);
-        Assert.AreEqual($"{type} is not supported by this agent version.", result.Error);
+        Assert.AreEqual("RunScript is not supported by this agent version.", result.Error);
     }
 
     [TestMethod]
@@ -61,7 +58,7 @@ public sealed class CommandExecutorTests(TestContext testContext)
 
     private static CommandDto Command(CommandType type, int timeoutSeconds = 60) => new(
         Guid.NewGuid(), Guid.NewGuid(), "https://api.invalid/api/v1/devices/x/commands/y", type, null,
-        CommandPriority.Normal, timeoutSeconds, CommandStatus.Pending, DateTimeOffset.UnixEpoch, null, null, null);
+        timeoutSeconds, CommandStatus.Pending, DateTimeOffset.UnixEpoch, null, null, null);
 
     private sealed class FakeTelemetry(TimeProvider time) : ITelemetrySource
     {

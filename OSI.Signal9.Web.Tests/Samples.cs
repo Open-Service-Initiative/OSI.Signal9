@@ -18,7 +18,7 @@ internal static class Samples
     public static DeviceDto Device(string machineName, DeviceStatus status = DeviceStatus.Online, Guid? id = null,
         AgentStatus? agentStatus = AgentStatus.Active) =>
         new(id ?? Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), machineName, "corp.example", OsFamily.Windows, "Windows", "11", "x64",
-            "CPU", 8, 16_384, "10.0.0.5", null, "Servers", ["finance"], false, status, Now, Now, false, agentStatus);
+            "CPU", 8, 16_384, "10.0.0.5", null, "Servers", ["finance"], status, Now, Now, false, agentStatus);
 
     public static AgentDto Agent(string machineName, Guid tenantId, AgentStatus status = AgentStatus.AwaitingApproval,
         Guid? id = null)
@@ -30,7 +30,7 @@ internal static class Samples
 
     public static TenantDto Tenant(string name, TenantStatus status = TenantStatus.Active, Guid? id = null,
         bool holdsNewAgents = false, bool holdInherited = false) =>
-        new(id ?? Guid.NewGuid(), null, name, null, "ops@example.com", null, SubscriptionPlan.Basic, 25, status, 3,
+        new(id ?? Guid.NewGuid(), null, name, null, "ops@example.com", null, 25, status, 3,
             holdsNewAgents || holdInherited, holdInherited, Now, Now);
 
     public static AuditEntryDto AuditEntry(string action, string? tenantName = "Contoso", Guid? deviceId = null,

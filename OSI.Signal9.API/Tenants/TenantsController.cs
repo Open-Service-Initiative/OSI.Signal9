@@ -94,7 +94,6 @@ public sealed class TenantsController(
             Description = request.Description,
             ContactEmail = request.ContactEmail,
             ContactPhone = request.ContactPhone,
-            Plan = request.Plan,
             MaxDevices = request.MaxDevices,
             Status = TenantStatus.Active,
             CreatedAt = now,
@@ -155,7 +154,6 @@ public sealed class TenantsController(
                     Description = tenant.Description,
                     ContactEmail = tenant.ContactEmail,
                     ContactPhone = tenant.ContactPhone,
-                    Plan = tenant.Plan,
                     MaxDevices = tenant.MaxDevices,
                     HoldsNewAgentsForApproval = held,
                 },
@@ -173,7 +171,6 @@ public sealed class TenantsController(
         tenant.Description = request.Description;
         tenant.ContactEmail = request.ContactEmail;
         tenant.ContactPhone = request.ContactPhone;
-        tenant.Plan = request.Plan;
         tenant.MaxDevices = request.MaxDevices;
         // The hold changes only when the patch changes what applies here, so sending an inherited hold back is no change.
         if (request.HoldsNewAgentsForApproval != held)

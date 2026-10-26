@@ -49,7 +49,6 @@ public sealed record DeviceDto(
     string? MacAddress,
     string? GroupName,
     IReadOnlyList<string> Tags,
-    bool MaintenanceMode,
     DeviceStatus Status,
     DateTimeOffset CreatedAt,
     DateTimeOffset? LastSeenAt,
@@ -67,9 +66,6 @@ public sealed record UpdateDeviceRequest
 
     [MaxLength(50)]
     public IReadOnlyList<string> Tags { get; init; } = [];
-
-    /// <summary>Planned downtime: the device raises no alerts while it is on.</summary>
-    public bool MaintenanceMode { get; init; }
 }
 
 /// <summary>

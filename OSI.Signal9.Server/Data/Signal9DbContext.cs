@@ -68,7 +68,6 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
             tenant.Property(t => t.Description).HasMaxLength(1000);
             tenant.Property(t => t.ContactEmail).HasMaxLength(255);
             tenant.Property(t => t.ContactPhone).HasMaxLength(32);
-            tenant.Property(t => t.Plan).HasConversion<string>().HasMaxLength(20);
             tenant.Property(t => t.Status).HasConversion<string>().HasMaxLength(20);
             tenant.HasOne(t => t.ParentTenant)
                 .WithMany()
@@ -168,7 +167,6 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
         modelBuilder.Entity<Command>(command =>
         {
             command.Property(c => c.Type).HasConversion<string>().HasMaxLength(50);
-            command.Property(c => c.Priority).HasConversion<string>().HasMaxLength(20);
             command.Property(c => c.Status).HasConversion<string>().HasMaxLength(20);
             command.Property(c => c.Parameters).HasMaxLength(4000);
             command.Property(c => c.Output).HasMaxLength(16_000);

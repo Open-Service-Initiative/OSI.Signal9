@@ -12,7 +12,7 @@ public sealed class AuditPageTests : DashboardTestContext
     {
         Http.SignedInAs("Ada", request => request.RequestUri!.AbsolutePath == "/api/v1/audit-entries"
             ? FakeHttp.Json(HttpStatusCode.OK, Page(
-                AuditEntry(AuditActions.CommandCreated, deviceId: Guid.NewGuid(), deviceName: "WS-001", detail: "RestartMachine"),
+                AuditEntry(AuditActions.CommandCreated, deviceId: Guid.NewGuid(), deviceName: "WS-001", detail: "CollectSystemInfo"),
                 AuditEntry(AuditActions.AuthorizationDenied, tenantName: null, outcome: AuditOutcome.Denied, superadministrator: true)))
             : null);
 
@@ -24,7 +24,7 @@ public sealed class AuditPageTests : DashboardTestContext
         Assert.HasCount(2, rows);
         Assert.Contains("command.created", rows[0], "In the order the API returned them.");
         Assert.Contains("WS-001", rows[0]);
-        Assert.Contains("RestartMachine", rows[0]);
+        Assert.Contains("CollectSystemInfo", rows[0]);
         Assert.Contains("Alex Wilber", rows[0]);
         Assert.Contains("Contoso", rows[0]);
         Assert.Contains("Denied", rows[1]);

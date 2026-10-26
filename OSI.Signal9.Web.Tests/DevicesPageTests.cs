@@ -179,7 +179,7 @@ public sealed class DevicesPageTests : DashboardTestContext
     }
 
     [TestMethod]
-    public void Edit_sends_group_tags_and_maintenance_as_a_merge_patch()
+    public void Edit_sends_group_and_tags_as_a_merge_patch()
     {
         var id = Guid.NewGuid();
         Http.SignedInAs("Ada", request => (request.Method.Method, request.RequestUri!.AbsolutePath) switch
@@ -193,7 +193,6 @@ public sealed class DevicesPageTests : DashboardTestContext
         app.WaitForElement($"#edit-{id}").Click();
         app.WaitForElement("#device-group").Change("Kiosks");
         app.Find("#device-tags").Change("lobby, , kiosk");
-        app.WaitForElement("#device-maintenance").Change(true);
         app.Find("fluent-dialog fluent-button[appearance=primary]").Click();
 
         app.WaitForAssertion(() => Assert.IsTrue(Http.Requests.Any(r => r.Method == HttpMethod.Patch)));
@@ -203,7 +202,6 @@ public sealed class DevicesPageTests : DashboardTestContext
         var sent = JsonSerializer.Deserialize<UpdateDeviceRequest>(patch.Body!, Signal9Json.Options)!;
         Assert.AreEqual("Kiosks", sent.GroupName);
         CollectionAssert.AreEqual(new[] { "lobby", "kiosk" }, sent.Tags.ToArray());
-        Assert.IsTrue(sent.MaintenanceMode);
     }
 
     [TestMethod]
@@ -278,6 +276,20 @@ public sealed class DevicesPageTests : DashboardTestContext
         var post = Http.Requests.Single(r => r.Method == HttpMethod.Post && r.PathAndQuery == $"/api/v1/devices/{id}/commands");
         Assert.AreEqual(CommandType.CollectSystemInfo,
             JsonSerializer.Deserialize<CreateCommandRequest>(post.Body!, Signal9Json.Options)!.Type);
+    }
+
+    [TestMethod]
+    public void Devices_offer_no_restart_which_no_agent_can_run()
+    {
+        var id = Guid.NewGuid();
+        Http.SignedInAs("Ada", request => request.RequestUri!.AbsolutePath == "/api/v1/devices"
+            ? FakeHttp.Json(HttpStatusCode.OK, Page(Device("WS-001", DeviceStatus.Online, id)))
+            : null);
+        var app = RenderApp("/devices");
+
+        app.WaitForElement($"#collect-{id}");
+
+        Assert.IsEmpty(app.FindAll($"#restart-{id}"));
     }
 
     [TestMethod]

@@ -26,7 +26,6 @@
             <FluentBadge Appearance="BadgeAppearance.Tint" Color="@StatusColor(context.Status)">@context.Status</FluentBadge>
         </span>
     </TemplateColumn>
-    <PropertyColumn Title="Plan" Property="@(t => t.Plan)" />
     <TemplateColumn Title="Devices">@context.DeviceCount / @context.MaxDevices</TemplateColumn>
     <TemplateColumn Title="New agents">
         <span id="@($"hold-{context.Id}")">

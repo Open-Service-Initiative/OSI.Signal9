@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.Commands;
@@ -58,20 +59,19 @@ public sealed class DevicesTests : IDisposable
     }
 
     [TestMethod]
-    public async Task Patch_merges_group_tags_and_maintenance_mode_and_leaves_status_to_check_ins()
+    public async Task Patch_merges_group_and_tags_and_leaves_status_to_check_ins()
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
         using var agent = await RegisterAsync(tenant.Id, "PC01");
 
-        var first = await PatchAsync(agent.DeviceId, """{ "groupName": "Finance", "tags": ["laptop", " vip ", "LAPTOP"] }""");
-        var second = await PatchAsync(agent.DeviceId, """{ "maintenanceMode": true }""");
+        var first = await PatchAsync(agent.DeviceId, """{ "groupName": "Finance" }""");
+        var second = await PatchAsync(agent.DeviceId, """{ "tags": ["laptop", " vip ", "LAPTOP"] }""");
 
         Assert.AreEqual(HttpStatusCode.OK, first.StatusCode);
         Assert.AreEqual(HttpStatusCode.OK, second.StatusCode);
         var device = await second.Content.ReadFromJsonAsync<DeviceDto>(Signal9Json.Options, Ct);
         Assert.AreEqual("Finance", device!.GroupName);
         CollectionAssert.AreEqual(new[] { "laptop", "vip" }, device.Tags.ToArray());
-        Assert.IsTrue(device.MaintenanceMode);
         Assert.AreEqual(DeviceStatus.Online, device.Status);
     }
 
@@ -96,8 +96,8 @@ public sealed class DevicesTests : IDisposable
 
         var invalid = await PatchAsync(agent.DeviceId, $$"""{ "groupName": "{{new string('x', 101)}}" }""");
         var notAnObject = await PatchAsync(agent.DeviceId, "[]");
-        var missing = await PatchAsync(Guid.NewGuid(), """{ "maintenanceMode": true }""");
-        var plainJson = await _client.PatchAsJsonAsync($"api/v1/devices/{agent.DeviceId}", new { maintenanceMode = true }, Ct);
+        var missing = await PatchAsync(Guid.NewGuid(), """{ "groupName": "Finance" }""");
+        var plainJson = await _client.PatchAsJsonAsync($"api/v1/devices/{agent.DeviceId}", new { groupName = "Finance" }, Ct);
 
         Assert.AreEqual(HttpStatusCode.BadRequest, invalid.StatusCode);
         Assert.AreEqual(HttpStatusCode.BadRequest, notAnObject.StatusCode);
@@ -134,6 +134,22 @@ public sealed class DevicesTests : IDisposable
         Assert.AreEqual(HttpStatusCode.NotFound, (await _client.GetAsync($"api/v1/agents/{unknown}", Ct)).StatusCode);
         Assert.AreEqual(HttpStatusCode.NotFound, (await _client.PostAsJsonAsync($"api/v1/devices/{unknown}/commands",
             new CreateCommandRequest { Type = CommandType.CollectSystemInfo }, Signal9Json.Options, Ct)).StatusCode);
+    }
+
+    [TestMethod]
+    [DataRow("RestartMachine")]
+    [DataRow("RestartService")]
+    public async Task Commands_no_agent_can_run_are_refused(string type)
+    {
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
+        using var agent = await RegisterAsync(tenant.Id, "PC01");
+
+        // #82 designs them.
+        var response = await _client.PostAsync($"api/v1/devices/{agent.DeviceId}/commands",
+            new StringContent($$"""{ "type": "{{type}}" }""", Encoding.UTF8, "application/json"), Ct);
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.AreEqual("application/problem+json", response.Content.Headers.ContentType?.MediaType);
     }
 
     [TestMethod]

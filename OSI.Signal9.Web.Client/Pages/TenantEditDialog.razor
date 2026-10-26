@@ -6,12 +6,6 @@
         <FluentTextArea Id="tenant-description" Label="Description" MaxLength="1000" @bind-Value="Form.Description" />
         <FluentTextInput Id="tenant-email" Label="Contact email" Required="true" TextInputType="TextInputType.Email" @bind-Value="Form.ContactEmail" />
         <FluentTextInput Id="tenant-phone" Label="Contact phone" TextInputType="TextInputType.Telephone" @bind-Value="Form.ContactPhone" />
-        <FluentSelect Id="tenant-plan" TOption="string" TValue="string" Label="Plan" @bind-Value="Form.Plan">
-            @foreach (var plan in Enum.GetNames<SubscriptionPlan>())
-            {
-                <FluentOption TValue="string" Value="@plan">@plan</FluentOption>
-            }
-        </FluentSelect>
         <FluentTextInput Id="tenant-max-devices" Label="Max devices" TextInputType="TextInputType.Number" @bind-Value="Form.MaxDevices" />
         @if (Parents is null)
         {

@@ -141,11 +141,11 @@ public sealed class TenantsTests : IDisposable
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
 
-        var response = await PatchAsync(tenant.Id, """{ "name": "Contoso Ltd", "plan": "Enterprise", "maxDevices": 500 }""");
+        var response = await PatchAsync(tenant.Id, """{ "name": "Contoso Ltd", "maxDevices": 500 }""");
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         var updated = await response.Content.ReadFromJsonAsync<TenantDto>(Signal9Json.Options, Ct);
-        Assert.AreEqual(("Contoso Ltd", SubscriptionPlan.Enterprise, 500), (updated!.Name, updated.Plan, updated.MaxDevices));
+        Assert.AreEqual(("Contoso Ltd", 500), (updated!.Name, updated.MaxDevices));
         Assert.AreEqual((tenant.ContactEmail, TenantStatus.Active), (updated.ContactEmail, updated.Status));
         Assert.AreEqual(updated, await _client.GetFromJsonAsync<TenantDto>($"api/v1/tenants/{tenant.Id}", Signal9Json.Options, Ct));
     }

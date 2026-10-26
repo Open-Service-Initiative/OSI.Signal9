@@ -4,7 +4,6 @@
     <div class="dialog-form">
         <FluentTextInput Id="device-group" Label="Group" MaxLength="100" @bind-Value="groupName" />
         <FluentTextInput Id="device-tags" Label="Tags" Placeholder="Comma-separated, e.g. server, finance" @bind-Value="tags" />
-        <FluentSwitch Id="device-maintenance" Label="Maintenance mode (planned downtime: no alerts)" @bind-Value="maintenanceMode" />
     </div>
 </FluentDialogBody>
 
@@ -13,7 +12,6 @@
 
     private string? groupName;
     private string? tags;
-    private bool maintenanceMode;
 
     protected override void OnInitializeDialog(DialogOptionsHeader header, DialogOptionsFooter footer)
     {
@@ -21,7 +19,6 @@
         footer.SecondaryAction.Label = "Cancel";
         groupName = Device.GroupName;
         tags = string.Join(", ", Device.Tags);
-        maintenanceMode = Device.MaintenanceMode;
     }
 
     protected override async Task OnActionClickedAsync(bool primary)
@@ -37,7 +34,6 @@
         {
             GroupName = groupName,
             Tags = (tags ?? string.Empty).Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries),
-            MaintenanceMode = maintenanceMode,
         });
     }
 }

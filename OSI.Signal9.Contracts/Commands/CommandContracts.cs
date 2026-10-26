@@ -2,12 +2,14 @@ using System.ComponentModel.DataAnnotations;
 
 namespace OSI.Signal9.Contracts.Commands;
 
+/// <summary>
+/// What a command does. <see cref="RunScript"/> carries the <c>terminal.execute</c> rules until #82 moves ad-hoc code to
+/// script executions; no agent runs it yet.
+/// </summary>
 public enum CommandType
 {
     CollectSystemInfo = 0,
-    RestartService = 1,
-    RunScript = 2,
-    RestartMachine = 3
+    RunScript = 2
 }
 
 public enum CommandStatus
@@ -18,13 +20,6 @@ public enum CommandStatus
     Cancelled = 3
 }
 
-public enum CommandPriority
-{
-    Low = 0,
-    Normal = 1,
-    High = 2
-}
-
 /// <summary>A command for a device, run by whichever agent is active on it. It stays in the device's history.</summary>
 /// <param name="Url">The command's canonical URL, where agents report its result.</param>
 public sealed record CommandDto(
@@ -33,7 +28,6 @@ public sealed record CommandDto(
     string Url,
     CommandType Type,
     string? Parameters,
-    CommandPriority Priority,
     int TimeoutSeconds,
     CommandStatus Status,
     DateTimeOffset CreatedAt,
@@ -49,8 +43,6 @@ public sealed record CreateCommandRequest
     /// <summary>Command-specific JSON payload, e.g. {"serviceName":"Spooler"}.</summary>
     [StringLength(4000)]
     public string? Parameters { get; init; }
-
-    public CommandPriority Priority { get; init; } = CommandPriority.Normal;
 
     [Range(1, 3600)]
     public int TimeoutSeconds { get; init; } = 300;

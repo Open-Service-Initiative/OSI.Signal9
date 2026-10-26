@@ -259,11 +259,6 @@ namespace OSI.Signal9.Server.Data.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
 
-                    b.Property<string>("Priority")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -386,9 +381,6 @@ namespace OSI.Signal9.Server.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
-
-                    b.Property<bool>("MaintenanceMode")
-                        .HasColumnType("boolean");
 
                     b.Property<string>("Manufacturer")
                         .HasMaxLength(255)
@@ -919,11 +911,6 @@ namespace OSI.Signal9.Server.Data.Migrations
 
                     b.Property<Guid?>("ParentTenantId")
                         .HasColumnType("uuid");
-
-                    b.Property<string>("Plan")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
 
                     b.Property<string>("Status")
                         .IsRequired()

@@ -232,7 +232,7 @@ public sealed class ScopeTests : IDisposable
         // Running code also needs a person's recent MFA (RecentMfaTests).
         using var both = await _factory.CreatePersonClientAsync(_factory.Superadministrator(), "commands.execute", "terminal.execute");
 
-        var predefined = await commandsOnly.PostAsJsonAsync(commands, new CreateCommandRequest { Type = CommandType.RestartService }, Signal9Json.Options, Ct);
+        var predefined = await commandsOnly.PostAsJsonAsync(commands, new CreateCommandRequest { Type = CommandType.CollectSystemInfo }, Signal9Json.Options, Ct);
         var scriptWithoutTerminal = await commandsOnly.PostAsJsonAsync(commands, new CreateCommandRequest { Type = CommandType.RunScript }, Signal9Json.Options, Ct);
         var scriptWithoutCommands = await terminalOnly.PostAsJsonAsync(commands, new CreateCommandRequest { Type = CommandType.RunScript }, Signal9Json.Options, Ct);
         var script = await both.PostAsJsonAsync(commands, new CreateCommandRequest { Type = CommandType.RunScript }, Signal9Json.Options, Ct);

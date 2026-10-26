@@ -91,6 +91,21 @@ public sealed class OpenApiTests : IDisposable
         Assert.IsFalse(list.TryGetProperty(DocumentedRequirements.Extension, out _));
     }
 
+    [TestMethod]
+    public async Task The_contract_offers_no_scaffold_fields_that_nothing_reads()
+    {
+        var schemas = (await DocumentAsync()).Components!.Schemas!;
+
+        Assert.IsFalse(schemas.ContainsKey("CommandPriority"));
+        Assert.IsFalse(schemas.ContainsKey("SubscriptionPlan"));
+        foreach (var (schema, property) in new[]
+        {
+            ("CommandDto", "priority"), ("CreateCommandRequest", "priority"), ("TenantDto", "plan"),
+            ("CreateTenantRequest", "plan"), ("DeviceDto", "maintenanceMode"),
+        })
+            Assert.IsFalse(schemas[schema].Properties!.ContainsKey(property), $"{schema}.{property}");
+    }
+
     private Task<OpenApiDocument> DocumentAsync() =>
         _factory.Services.GetRequiredKeyedService<IOpenApiDocumentProvider>("v1").GetOpenApiDocumentAsync(TestContext.CancellationToken);
 

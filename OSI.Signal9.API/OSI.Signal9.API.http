@@ -1,41 +1,56 @@
 @api = https://localhost:7201
+# An access token from auth carrying each request's scope, for example one a registered API application gets with
+# client credentials. Agents don't use this file: they authenticate with their certificate.
+@token = <access token>
 
-### Create a tenant
+### Create a tenant under a parent (only a Superadministrator creates a root tenant, without parentTenantId)
 POST {{api}}/api/v1/tenants
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
   "name": "Contoso",
   "contactEmail": "it@contoso.example",
+  "parentTenantId": "<parent tenant id>",
   "maxDevices": 25
 }
 
 ### List tenants
 GET {{api}}/api/v1/tenants?page=1&pageSize=25
+Authorization: Bearer {{token}}
 
 ### Update a tenant's fields (JSON merge patch: send only what changes; null clears)
 PATCH {{api}}/api/v1/tenants/<tenant id>
+Authorization: Bearer {{token}}
 Content-Type: application/merge-patch+json
 
 {
-  "plan": "Professional",
   "maxDevices": 50
 }
 
 ### Suspend a tenant (then :activate or :cancel)
 POST {{api}}/api/v1/tenants/<tenant id>:suspend
+Authorization: Bearer {{token}}
 
-### Enroll an agent
-POST {{api}}/api/v1/agents
+### Issue an enrollment token: its secret is in this response only. Run the agent with it to enroll a machine.
+POST {{api}}/api/v1/tenants/<tenant id>/enrollment-tokens
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
-  "tenantId": "<id of the tenant created above>",
-  "machineName": "CONTOSO-PC01",
-  "operatingSystem": "Windows 11 Pro",
-  "processorCores": 8,
-  "totalMemoryMb": 16384
+  "name": "Head office installer",
+  "maxUses": 10
 }
 
 ### List online devices
 GET {{api}}/api/v1/devices?status=Online
+Authorization: Bearer {{token}}
+
+### Collect a device's system info
+POST {{api}}/api/v1/devices/<device id>/commands
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "type": "CollectSystemInfo"
+}
