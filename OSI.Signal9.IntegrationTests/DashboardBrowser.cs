@@ -57,7 +57,7 @@ public sealed class DashboardBrowser : IDisposable
             request.Headers.Add(Signal9ApiFactory.ClientIpHeader, "203.0.113.1");
             var jar = browser.Jar(WebHost);
             if (jar.Count > 0)
-                request.Headers.Add("Cookie", string.Join("; ", jar.Select(c => $"{c.Key}={c.Value}")));
+                request.Headers.Add("Cookie", CookieJar.Header(jar));
             if (origin is not null && request.Method != HttpMethod.Get)
                 request.Headers.Add("Origin", origin);
             return base.SendAsync(request, cancellationToken);
@@ -140,7 +140,7 @@ public sealed class DashboardBrowser : IDisposable
         request.Headers.Add(Signal9ApiFactory.ClientIpHeader, "203.0.113.1");
         var jar = Jar(uri.Host);
         if (jar.Count > 0)
-            request.Headers.Add("Cookie", string.Join("; ", jar.Select(c => $"{c.Key}={c.Value}")));
+            request.Headers.Add("Cookie", CookieJar.Header(jar));
         configure?.Invoke(request);
 
         var response = await invoker.SendAsync(request, CancellationToken.None);
@@ -153,14 +153,7 @@ public sealed class DashboardBrowser : IDisposable
             {
                 if (uri.Host == WebHost)
                     WebSetCookies.Add(setCookie);
-                var pair = setCookie.Split(';')[0];
-                var separator = pair.IndexOf('=', StringComparison.Ordinal);
-                var (name, value) = (pair[..separator], pair[(separator + 1)..]);
-                // Deleting a cookie sets it empty and expired in 1970.
-                if (value.Length == 0 || setCookie.Contains("1970", StringComparison.Ordinal))
-                    jar.Remove(name);
-                else
-                    jar[name] = value;
+                CookieJar.Apply(jar, setCookie);
             }
         }
 

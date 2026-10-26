@@ -2,12 +2,14 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using OpenIddict.Abstractions;
 using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Bff;
 using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Serialization;
+using OSI.Signal9.Auth;
 using OSI.Signal9.Server.Data;
 using OSI.Signal9.Server.Identity;
 using OSI.Signal9.Web.Bff;
@@ -77,6 +79,31 @@ public sealed class SessionCheckTests : IDisposable
     {
         _factory.Time.Advance(TimeSpan.FromMinutes(56));
         await EventuallyAsync(() => Task.FromResult(_factory.Entra.Refreshes > refreshesBefore), "the hourly Entra check");
+    }
+
+    /// <summary>
+    /// Waits for the Entra check that claimed the person's sessions to finish with them after Entra couldn't answer: it
+    /// hands them back as due, for its next run. Only that says the run is over. Asking Entra can take more than one
+    /// call: the outbound resilience handler retries network errors and 5xx after a backoff on the fixture's clock, so
+    /// fixture time passes a second at a time meanwhile, and Microsoft.Identity.Web asks again after
+    /// <c>invalid_client</c> with its credential reloaded.
+    /// </summary>
+    private async Task HandedBackAsync(EntraUser user)
+    {
+        var subject = PersonSubject.Format(user.TenantId, user.ObjectId);
+        for (var waited = 0; waited < 100; waited++)
+        {
+            await using (var scope = _factory.Services.CreateAsyncScope())
+            {
+                var due = _factory.Time.GetUtcNow().UtcDateTime - (EntraSessionCheck.Every - EntraSessionCheck.Interval);
+                if (await scope.ServiceProvider.GetRequiredService<Signal9DbContext>().SignInSessions
+                        .AnyAsync(s => s.Subject == subject && s.EntraCheckedAt <= due, Ct))
+                    return;
+            }
+            _factory.Time.Advance(TimeSpan.FromSeconds(1));
+            await Task.Delay(100, Ct);
+        }
+        Assert.Fail("Timed out waiting for the Entra check to hand the session back.");
     }
 
     /// <summary>The audit trail, read through the public API by a client seeing every tenant, with a token from now.</summary>
@@ -193,7 +220,9 @@ public sealed class SessionCheckTests : IDisposable
             _factory.Time.Advance(TimeSpan.FromMinutes(5));
             await browser.GetAsync("api/v1/tenants");
         }
-        await Task.Delay(500, Ct);
+        // A check now, whatever the background runs have got to.
+        await using (var scope = _factory.Auth.Services.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<EntraSessionChecker>().RunAsync(Ct);
 
         Assert.AreEqual(0, _factory.Entra.Refreshes, "auth asked Entra within the hour.");
     }
@@ -221,7 +250,7 @@ public sealed class SessionCheckTests : IDisposable
 
         _factory.Entra.RefreshFault = fault;
         await EntraCheckAsync(0);
-        await Task.Delay(300, Ct);
+        await HandedBackAsync(assigned.User);
         Assert.AreEqual(HttpStatusCode.OK, (await browser.GetAsync("api/v1/tenants")).StatusCode, failure);
         _factory.Entra.RefreshFault = null;
         _factory.Entra.Refuse(assigned.User);
@@ -233,7 +262,7 @@ public sealed class SessionCheckTests : IDisposable
             "the session to end");
     }
 
-    private static readonly TimeSpan EntraSessionCheckInterval = OSI.Signal9.Auth.EntraSessionCheck.Interval;
+    private static readonly TimeSpan EntraSessionCheckInterval = EntraSessionCheck.Interval;
 
     // Superadministrator is re-read at every session check (story 59).
 

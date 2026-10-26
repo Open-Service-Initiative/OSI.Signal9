@@ -10,7 +10,7 @@ namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>
 /// A person's browser at <c>auth</c>: it keeps cookies and doesn't follow redirects, so tests walk each hop of a
-/// sign-in. Cookie expiry is ignored, because the hosts set it from the fixture's clock rather than the real one.
+/// sign-in, keeping cookies as <see cref="CookieJar"/> does.
 /// </summary>
 public sealed class Browser : IDisposable
 {
@@ -18,7 +18,7 @@ public sealed class Browser : IDisposable
 
     public Browser(TestServer auth, string clientIp = "203.0.113.1")
     {
-        _client = new HttpClient(new CookieJar { InnerHandler = auth.CreateHandler() })
+        _client = new HttpClient(new Cookies { InnerHandler = auth.CreateHandler() })
         {
             BaseAddress = Signal9ApiFactory.HttpsLocalhost,
         };
@@ -89,30 +89,19 @@ public sealed class Browser : IDisposable
 
     public void Dispose() => _client.Dispose();
 
-    private sealed class CookieJar : DelegatingHandler
+    private sealed class Cookies : DelegatingHandler
     {
         private readonly Dictionary<string, string> _cookies = [];
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             if (_cookies.Count > 0)
-                request.Headers.Add("Cookie", string.Join("; ", _cookies.Select(c => $"{c.Key}={c.Value}")));
+                request.Headers.Add("Cookie", CookieJar.Header(_cookies));
 
             var response = await base.SendAsync(request, cancellationToken);
             if (response.Headers.TryGetValues("Set-Cookie", out var cookies))
-            {
                 foreach (var cookie in cookies)
-                {
-                    var pair = cookie.Split(';')[0];
-                    var separator = pair.IndexOf('=', StringComparison.Ordinal);
-                    var (name, value) = (pair[..separator], pair[(separator + 1)..]);
-                    // Deleting a cookie sets it empty and expired in 1970.
-                    if (value.Length == 0 || cookie.Contains("1970", StringComparison.Ordinal))
-                        _cookies.Remove(name);
-                    else
-                        _cookies[name] = value;
-                }
-            }
+                    CookieJar.Apply(_cookies, cookie);
             return response;
         }
     }

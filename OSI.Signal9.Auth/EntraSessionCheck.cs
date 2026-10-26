@@ -183,10 +183,12 @@ public sealed class EntraSessionChecker(Signal9DbContext db, SignInSessions sess
     /// <summary>Ends the sessions; auth's own sign-in cookies from their Entra sessions no longer count either.</summary>
     private async Task EndAsync(List<SignInSession> ending, string detail, CancellationToken cancellationToken)
     {
+        // Ended first, so a refresh racing this check finds no session rather than an ended Entra session, and the
+        // audit entry gives this check's reason.
+        await sessions.EndAsync(ending, new SessionEnd(detail), cancellationToken);
         foreach (var sid in ending.Select(s => (s.EntraTenantId, s.EntraSessionId)).Distinct())
             if (sid.EntraSessionId is { } id)
                 await sessions.RecordEndedAsync(sid.EntraTenantId, id, cancellationToken);
-        await sessions.EndAsync(ending, new SessionEnd(detail), cancellationToken);
     }
 
     /// <summary>Only Entra's own error codes reach the audit log; anything else is named generically.</summary>
