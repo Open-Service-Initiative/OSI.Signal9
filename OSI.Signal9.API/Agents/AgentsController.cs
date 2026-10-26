@@ -484,7 +484,7 @@ public sealed class AgentsController(
         {
             db.ChangeTracker.Clear();
             await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-            var result = await EnrollAsync(tenant, token.Id, certificate, request, now.UtcDateTime, cancellationToken);
+            var result = await EnrollAsync(tenant, token.Id, secretHash, certificate, request, now.UtcDateTime, cancellationToken);
             if (result.Value is not null)
                 await transaction.CommitAsync(cancellationToken);
             return result;
@@ -499,12 +499,13 @@ public sealed class AgentsController(
     }
 
     private async Task<(ActionResult? Problem, (Device?, Agent)? Value)> EnrollAsync(Tenant tenant, Guid tokenId,
-        System.Security.Cryptography.X509Certificates.X509Certificate2 certificate, EnrollAgentRequest request,
+        byte[] secretHash, System.Security.Cryptography.X509Certificates.X509Certificate2 certificate, EnrollAgentRequest request,
         DateTime now, CancellationToken cancellationToken)
     {
-        // One use, unless a concurrent enrollment took the last one or the token changed since it was read.
+        // One use, unless a concurrent enrollment took the last one or the token changed since it was read: a rotation
+        // retires the presented secret (story 94).
         var used = await db.EnrollmentTokens.IgnoreTenantScope(TenantScopeBypass.Enrollment)
-            .Where(t => t.Id == tokenId && t.RevokedAt == null && (t.ExpiresAt == null || t.ExpiresAt > now)
+            .Where(t => t.Id == tokenId && t.SecretHash == secretHash && t.RevokedAt == null && (t.ExpiresAt == null || t.ExpiresAt > now)
                 && (t.MaxUses == null || t.UseCount < t.MaxUses))
             .ExecuteUpdateAsync(set => set
                 .SetProperty(t => t.UseCount, t => t.UseCount + 1)

@@ -3,6 +3,9 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Agents;
@@ -12,6 +15,7 @@ using OSI.Signal9.Contracts.Devices;
 using OSI.Signal9.Contracts.Enrollment;
 using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Contracts.Telemetry;
+using OSI.Signal9.Server.Data;
 using static OSI.Signal9.IntegrationTests.TestCertificates;
 
 namespace OSI.Signal9.IntegrationTests;
@@ -374,6 +378,27 @@ public sealed class AgentEnrollmentTests : IDisposable
 
         Assert.AreEqual(HttpStatusCode.OK, rotated.StatusCode);
         Assert.AreEqual(HttpStatusCode.OK, revoked.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task A_secret_rotated_away_while_enrolling_is_refused()
+    {
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
+        var token = await _factory.IssueEnrollmentTokenAsync(tenant.Id);
+        using var certificate = AgentCertificate();
+        // The rotation commits after enrollment found the token by its secret, just before it takes a use.
+        using var racing = _factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.ConfigureDbContext<Signal9DbContext>(options => options.AddInterceptors(new ConcurrentWriter(
+                _factory.ConnectionString,
+                $"""UPDATE "EnrollmentTokens" SET "SecretHash" = decode(md5(random()::text), 'hex') WHERE "Id" = '{token.Id}'""")))));
+        using var anonymous = racing.Server.CreateClient();
+        anonymous.BaseAddress = Signal9ApiFactory.HttpsLocalhost;
+
+        var response = await anonymous.PostAsJsonAsync("api/v1/agents",
+            Signal9ApiFactory.Enrollment(token.Secret!, certificate), Signal9Json.Options, Ct);
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode, await response.Content.ReadAsStringAsync(Ct));
+        Assert.AreEqual(0, (await GetTokenAsync(token)).UseCount);
     }
 
     [TestMethod]
