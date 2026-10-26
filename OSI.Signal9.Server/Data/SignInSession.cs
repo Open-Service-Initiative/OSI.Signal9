@@ -66,3 +66,19 @@ public sealed class EntraTokenCacheEntry
 
     public DateTime UpdatedAt { get; set; }
 }
+
+/// <summary>
+/// A sign-in at Entra that auth hasn't yet issued a code from or refused (story 59): the person's app roles are as Entra
+/// just sent them, and, when <see cref="ReauthenticatedFor"/> is set, they authenticated afresh for that authorization
+/// request. The sign-in cookie names it; issuing or refusing deletes it, so replaying an earlier cookie can't bring it
+/// back.
+/// </summary>
+public sealed class FreshSignIn
+{
+    public Guid Id { get; set; }
+
+    /// <summary>The authorization request's re-authentication attempt this sign-in answered, if auth asked for one.</summary>
+    public string? ReauthenticatedFor { get; set; }
+
+    public DateTime ExpiresAt { get; set; }
+}

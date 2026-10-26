@@ -5,7 +5,7 @@ using System.Security.Cryptography.X509Certificates;
 namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>The key kinds a test agent certificate can be made with.</summary>
-public enum AgentKey { EcdsaP256, EcdsaP384, Rsa3072, Rsa2048 }
+public enum AgentKey { EcdsaP256, EcdsaP384, Rsa3072, Rsa2048, EcdsaBrainpoolP256 }
 
 /// <summary>Client certificates for mTLS tests: self-signed ones and ones issued by a test certificate authority.</summary>
 internal static class TestCertificates
@@ -24,7 +24,7 @@ internal static class TestCertificates
     /// <summary>A self-signed client certificate, as an agent or an API application generates for itself.</summary>
     public static X509Certificate2 SelfSigned(string commonName = "self-signed-client")
     {
-        using var key = RSA.Create(2048);
+        using var key = RSA.Create(3072);
         var request = new CertificateRequest($"CN={commonName}", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         AddClientExtensions(request);
         return request.CreateSelfSigned(Now.AddMinutes(-5), Now.AddDays(30));
@@ -43,6 +43,7 @@ internal static class TestCertificates
         {
             AgentKey.EcdsaP256 => ECDsa.Create(ECCurve.NamedCurves.nistP256),
             AgentKey.EcdsaP384 => ECDsa.Create(ECCurve.NamedCurves.nistP384),
+            AgentKey.EcdsaBrainpoolP256 => ECDsa.Create(ECCurve.NamedCurves.brainpoolP256r1),
             AgentKey.Rsa3072 => RSA.Create(3072),
             _ => RSA.Create(2048),
         };
@@ -56,6 +57,39 @@ internal static class TestCertificates
         if (certificateAuthority)
             request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, critical: true));
         return request.CreateSelfSigned(notBefore ?? Now.AddMinutes(-5), notAfter ?? Now.AddDays(365));
+    }
+
+    /// <summary>
+    /// An otherwise acceptable agent certificate (RSA 3072) signed with SHA-1, which .NET won't make itself: the signature
+    /// generator names sha1WithRSAEncryption and signs with SHA-1.
+    /// </summary>
+    public static X509Certificate2 Sha1SignedCertificate()
+    {
+        using var key = RSA.Create(3072);
+        var request = new CertificateRequest("CN=Signal9 agent", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        AddClientExtensions(request);
+        return request.Create(request.SubjectName, new Sha1RsaSignatureGenerator(key), Now.AddMinutes(-5), Now.AddDays(30),
+            RandomNumberGenerator.GetBytes(16));
+    }
+
+    private sealed class Sha1RsaSignatureGenerator(RSA key) : X509SignatureGenerator
+    {
+        // AlgorithmIdentifier { sha1WithRSAEncryption, NULL }.
+        public override byte[] GetSignatureAlgorithmIdentifier(HashAlgorithmName hashAlgorithm) =>
+            [0x30, 0x0D, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x05, 0x05, 0x00];
+
+        public override byte[] SignData(byte[] data, HashAlgorithmName hashAlgorithm) =>
+            key.SignData(data, HashAlgorithmName.SHA1, RSASignaturePadding.Pkcs1);
+
+        protected override PublicKey BuildPublicKey() => CreateForRSA(key, RSASignaturePadding.Pkcs1).PublicKey;
+    }
+
+    /// <summary>A copy of <paramref name="certificate"/> whose signature no longer verifies: its last byte is changed.</summary>
+    public static X509Certificate2 WithBrokenSignature(X509Certificate2 certificate)
+    {
+        var der = certificate.RawData;
+        der[^1] ^= 0x01;
+        return X509CertificateLoader.LoadCertificate(der);
     }
 
     /// <summary>

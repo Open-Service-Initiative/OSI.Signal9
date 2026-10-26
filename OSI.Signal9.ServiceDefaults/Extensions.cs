@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http;
@@ -5,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.ServiceDiscovery;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
@@ -65,11 +67,14 @@ public static class Extensions
             {
                 tracing.AddSource(builder.Environment.ApplicationName)
                     .AddAspNetCoreInstrumentation(tracing =>
+                    {
                         // Exclude health check requests from tracing
                         tracing.Filter = context =>
                             !context.Request.Path.StartsWithSegments(HealthEndpointPath)
-                            && !context.Request.Path.StartsWithSegments(AlivenessEndpointPath)
-                    )
+                            && !context.Request.Path.StartsWithSegments(AlivenessEndpointPath);
+                        // A secret in the path never reaches a trace (query values are already redacted by default).
+                        tracing.EnrichWithHttpRequest = RedactSecretPath;
+                    })
                     // Uncomment the following line to enable gRPC instrumentation (requires the OpenTelemetry.Instrumentation.GrpcNetClient package)
                     //.AddGrpcClientInstrumentation()
                     .AddHttpClientInstrumentation();
@@ -78,6 +83,35 @@ public static class Extensions
         builder.AddOpenTelemetryExporters();
 
         return builder;
+    }
+
+    /// <summary>
+    /// Marks every path under <paramref name="prefix"/> as carrying a secret, such as a bearer reference: request traces
+    /// record the prefix followed by <see cref="RedactedSegment"/> instead of the rest of the path.
+    /// </summary>
+    public static IServiceCollection RedactPathInTelemetry(this IServiceCollection services, PathString prefix) =>
+        services.Configure<SecretPaths>(paths => paths.Prefixes.Add(prefix));
+
+    /// <summary>What a trace records in place of a path's secret segments.</summary>
+    public const string RedactedSegment = "{redacted}";
+
+    /// <summary>The path prefixes whose remaining segments are secrets, set with <see cref="RedactPathInTelemetry"/>.</summary>
+    public sealed class SecretPaths
+    {
+        public List<PathString> Prefixes { get; } = [];
+    }
+
+    private static void RedactSecretPath(Activity activity, HttpRequest request)
+    {
+        var prefixes = request.HttpContext.RequestServices.GetService<IOptions<SecretPaths>>()?.Value.Prefixes ?? [];
+        foreach (var prefix in prefixes)
+        {
+            if (!request.Path.StartsWithSegments(prefix, StringComparison.OrdinalIgnoreCase, out var rest) || !rest.HasValue)
+                continue;
+            activity.SetTag("url.path", $"{prefix}/{RedactedSegment}");
+            activity.DisplayName = request.Method;
+            return;
+        }
     }
 
     private static TBuilder AddOpenTelemetryExporters<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder

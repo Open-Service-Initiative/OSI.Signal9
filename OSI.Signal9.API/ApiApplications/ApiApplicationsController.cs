@@ -14,6 +14,7 @@ using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.ApiApplications;
 using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Server.Data;
+using OSI.Signal9.Server.Hosting;
 using OSI.Signal9.Server.Identity;
 using ClientTypes = OpenIddict.Abstractions.OpenIddictConstants.ClientTypes;
 using Permissions = OpenIddict.Abstractions.OpenIddictConstants.Permissions;
@@ -30,7 +31,7 @@ namespace OSI.Signal9.API.ApiApplications;
 [Route("api/v1/tenants/{tenantId:guid}/api-applications")]
 public sealed class ApiApplicationsController(
     Signal9DbContext db, CallerAudit audit, CallerAccess access, IAssignedTenants caller, TimeProvider time,
-    IOpenIddictApplicationManager applications) : ControllerBase
+    IOpenIddictApplicationManager applications, IOpenIddictTokenManager tokens) : ControllerBase
 {
     /// <summary>How long a client secret lasts unless the request says otherwise.</summary>
     public static readonly TimeSpan DefaultSecretLifetime = TimeSpan.FromDays(180);
@@ -305,7 +306,8 @@ public sealed class ApiApplicationsController(
 
     /// <summary>
     /// Adds a credential of the kind the application's method takes (story 84): a self-signed certificate
-    /// (<c>self_signed_tls_client_auth</c>), an RSA (2048 bits or more) or EC (P-256, P-384, P-521) public key or
+    /// (<c>self_signed_tls_client_auth</c>, under the same policy as an agent's: ECDSA P-256 or stronger or RSA 3072+,
+    /// digitalSignature and clientAuth usages, not a CA, SHA-2 signed, valid now for at most 398 days), an RSA (2048 bits or more) or EC (P-256, P-384, P-521) public key or
     /// certificate (<c>private_key_jwt</c>), or a generated client secret, returned only in this response and stored as a
     /// hash, which expires within a year (180 days by default). A <c>tls_client_auth</c> application's credential is its
     /// certificate subject, changed on the application itself (400). Several can be live at once, for rotation. Only a
@@ -338,7 +340,10 @@ public sealed class ApiApplicationsController(
         switch (application.TokenEndpointAuthMethod)
         {
             case TokenEndpointAuthMethods.SelfSignedTlsClientAuth when request.CertificatePem is { } pem && request.PublicKeyPem is null:
-                if (ParseCertificate(pem) is { } certificate)
+                // The same certificate policy as an agent's (RFC 8705 §2.2).
+                if (SelfSignedClientCertificate.Read(pem, now, out var problem) is not { } certificate)
+                    ModelState.AddModelError(nameof(request.CertificatePem), problem!);
+                else
                     using (certificate)
                         credential = new Credential(id, ApiApplicationCredentialTypes.Certificate, now, certificate.NotAfter.ToUniversalTime(),
                             ApiApplicationClient.Thumbprint(certificate.RawData), certificate.Subject,
@@ -388,11 +393,17 @@ public sealed class ApiApplicationsController(
         await SaveCredentialsAsync(client, [.. credentials, credential], cancellationToken);
 
         this.SetETag(ETag(credential));
+        // A generated secret is shown only here.
+        Response.NoStore();
         return CreatedAtRoute(nameof(GetCredential), new { tenantId, apiApplicationId, credentialId = credential.Id },
             ToDto(credential) with { Secret = secret });
     }
 
-    /// <summary>Removes a credential. It stops authenticating at once; tokens already issued with it stay valid until they expire.</summary>
+    /// <summary>
+    /// Removes a credential. It stops authenticating at once, and every token already issued to the application is
+    /// revoked, since any of them may have been obtained with it (RFC 9700 §4.14): the application gets new ones with its
+    /// remaining credentials, and people who signed in through it keep their consent.
+    /// </summary>
     [RequireScope(Scopes.ApiApplications.Write)]
     [HttpDelete("{apiApplicationId:guid}/credentials/{credentialId:guid}")]
     [OptimisticConcurrency]
@@ -412,6 +423,7 @@ public sealed class ApiApplicationsController(
 
         Audit(AuditActions.ApiApplicationCredentialRemoved, application, $"{credential.Type} {credential.Id}");
         await SaveCredentialsAsync(client, [.. credentials.Where(c => c.Id != credentialId)], cancellationToken);
+        await tokens.RevokeByApplicationIdAsync((await applications.GetIdAsync(client, cancellationToken))!, cancellationToken);
         return NoContent();
     }
 

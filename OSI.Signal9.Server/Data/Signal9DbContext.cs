@@ -38,6 +38,7 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
     public DbSet<ApiApplication> ApiApplications => Set<ApiApplication>();
     public DbSet<SignInSession> SignInSessions => Set<SignInSession>();
     public DbSet<EndedEntraSession> EndedEntraSessions => Set<EndedEntraSession>();
+    public DbSet<FreshSignIn> FreshSignIns => Set<FreshSignIn>();
     public DbSet<EntraTokenCacheEntry> EntraTokenCache => Set<EntraTokenCacheEntry>();
 
     /// <summary>The ASP.NET Core Data Protection key ring, each key wrapped by the key-encryption key (ADR-0008).</summary>
@@ -214,6 +215,12 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
         {
             ended.HasKey(e => new { e.EntraTenantId, e.EntraSessionId });
             ended.Property(e => e.EntraSessionId).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<FreshSignIn>(fresh =>
+        {
+            fresh.Property(f => f.ReauthenticatedFor).HasMaxLength(100);
+            fresh.HasIndex(f => f.ExpiresAt);
         });
 
         modelBuilder.Entity<EntraTokenCacheEntry>(entry =>

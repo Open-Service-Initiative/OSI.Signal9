@@ -367,7 +367,7 @@ public sealed class AgentsController(
         if (this.Preconditions(CertificateETag(currentDto)) is { } refused)
             return refused;
 
-        using var certificate = AgentCredentials.Read(request.Certificate, time.GetUtcNow(), out var problem);
+        using var certificate = SelfSignedClientCertificate.Read(request.Certificate, time.GetUtcNow(), out var problem);
         if (certificate is null)
         {
             ModelState.AddModelError(nameof(request.Certificate), problem!);
@@ -489,7 +489,7 @@ public sealed class AgentsController(
             return TooManyRequests(lease);
 
         var now = time.GetUtcNow();
-        using var certificate = AgentCredentials.Read(request.Certificate, now, out var problem);
+        using var certificate = SelfSignedClientCertificate.Read(request.Certificate, now, out var problem);
         if (certificate is null)
         {
             ModelState.AddModelError(nameof(request.Certificate), problem!);
@@ -503,8 +503,9 @@ public sealed class AgentsController(
         var tenant = await db.Tenants.AsNoTracking().IgnoreTenantScope(TenantScopeBypass.Enrollment)
             .SingleAsync(t => t.Id == token.TenantId, cancellationToken);
         if (tenant.Status != TenantStatus.Active)
+            // The installer holds only an enrollment token: it learns nothing more about the tenant (the audit log has it).
             return Problem(statusCode: StatusCodes.Status409Conflict, title: "Tenant not active",
-                detail: $"The tenant is {tenant.Status}; agents can enroll only into an active tenant.");
+                detail: "Agents can't enroll into this tenant now.");
 
         // The token's use, the new device and agent (which point at each other, so they're saved in two steps) and the
         // agent's client are saved in one transaction.
@@ -570,7 +571,7 @@ public sealed class AgentsController(
         var heldClaim = false;
         if (candidates is [])
         {
-            if (await DeviceLimitReachedAsync(tenant, cancellationToken) is { } limit)
+            if (await DeviceLimitReachedAsync(tenant, cancellationToken, anonymous: true) is { } limit)
                 return (limit, null);
             device = NewDevice(reported);
             db.Devices.Add(device);
@@ -730,11 +731,15 @@ public sealed class AgentsController(
         agent.AwaitingApproval = device.RequiresAgentApproval || await db.HoldsNewAgentsAsync(device.TenantId, cancellationToken);
     }
 
-    private async Task<ActionResult?> DeviceLimitReachedAsync(Tenant tenant, CancellationToken cancellationToken)
+    /// <param name="anonymous">Whether the caller is an enrolling agent, holding only an enrollment token, which learns
+    /// neither the tenant's name nor its limit.</param>
+    private async Task<ActionResult?> DeviceLimitReachedAsync(Tenant tenant, CancellationToken cancellationToken, bool anonymous = false)
     {
         var devices = await db.Devices.IgnoreTenantScope(TenantScopeBypass.Enrollment).CountAsync(d => d.TenantId == tenant.Id, cancellationToken);
         return devices < tenant.MaxDevices ? null : Problem(statusCode: StatusCodes.Status409Conflict,
-            title: "Device limit reached", detail: $"Tenant '{tenant.Name}' allows at most {tenant.MaxDevices} devices.");
+            title: "Device limit reached", detail: anonymous
+                ? "The tenant can't take more devices."
+                : $"Tenant '{tenant.Name}' allows at most {tenant.MaxDevices} devices.");
     }
 
     private ActionResult InvalidToken()

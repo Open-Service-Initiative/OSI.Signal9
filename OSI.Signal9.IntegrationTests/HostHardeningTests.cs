@@ -114,5 +114,44 @@ public sealed class HostHardeningTests : IDisposable
             string.Join(", ", response.Headers.GetValues("Strict-Transport-Security")));
     }
 
+    private HttpClient ClientFor(string host) => host switch
+    {
+        "auth" => _factory.Auth.CreateClient(),
+        "web" => _factory.Web.CreateClient(),
+        _ => _factory.CreateClient(),
+    };
+
+    [TestMethod]
+    [DataRow("auth", ".well-known/openid-configuration")]
+    [DataRow("auth", "no-such-endpoint")]
+    [DataRow("api", "api/v1/tenants")]
+    [DataRow("api", "docs/openapi/v1.json")]
+    [DataRow("web", "bff/user")]
+    [DataRow("web", "")]
+    public async Task Every_response_forbids_mime_sniffing_and_referrers(string host, string path)
+    {
+        using var client = ClientFor(host);
+
+        var response = await client.GetAsync(path, Ct);
+
+        Assert.AreEqual("nosniff", string.Join(", ", response.Headers.GetValues("X-Content-Type-Options")));
+        Assert.AreEqual("no-referrer", string.Join(", ", response.Headers.GetValues("Referrer-Policy")));
+    }
+
+    [TestMethod]
+    [DataRow("api", "api/v1/tenants", true)]
+    [DataRow("api", "api/v1/tenants", false)]
+    [DataRow("api", "api/v1/no-such-resource", true)]
+    [DataRow("web", "bff/user", false)]
+    [DataRow("web", "api/v1/tenants", false)]
+    public async Task Private_responses_are_never_stored(string host, string path, bool withToken)
+    {
+        using var client = host == "web" ? _factory.Web.CreateClient() : withToken ? _factory.CreateClient() : _factory.CreateAnonymousClient();
+
+        var response = await client.GetAsync(path, Ct);
+
+        Assert.IsTrue(response.Headers.CacheControl?.NoStore, $"{(int)response.StatusCode} {path}");
+    }
+
     public void Dispose() => _factory.Dispose();
 }

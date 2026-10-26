@@ -65,6 +65,12 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
     /// </summary>
     public FakeTimeProvider Time { get; }
 
+    /// <summary>
+    /// What <c>api</c> logged, from Information up for the categories the configuration lets through (warnings and
+    /// worse by default), with each exception's message.
+    /// </summary>
+    public ConcurrentQueue<string> Logs { get; } = new();
+
     /// <summary>The configuration every host gets on top of the fixture's own.</summary>
     internal IReadOnlyDictionary<string, string?> Settings => _settings;
 
@@ -112,6 +118,8 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         ConfigureSharedHost(builder, ConnectionString, Time, _settings);
         builder.ConfigureTestServices(services =>
         {
+            services.AddSingleton<Microsoft.Extensions.Logging.ILoggerProvider>(
+                new CapturingLoggerProvider(Logs, Microsoft.Extensions.Logging.LogLevel.Information));
             services.AddHttpContextAccessor();
             services.RemoveAll<IAssignedTenants>();
             services.AddScoped<IAssignedTenants>(sp =>

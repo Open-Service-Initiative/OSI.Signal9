@@ -546,6 +546,26 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.ToTable("EntraTokenCache");
                 });
 
+            modelBuilder.Entity("OSI.Signal9.Server.Data.FreshSignIn", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReauthenticatedFor")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.ToTable("FreshSignIns");
+                });
+
             modelBuilder.Entity("OSI.Signal9.Server.Data.Invitation", b =>
                 {
                     b.Property<Guid>("Id")

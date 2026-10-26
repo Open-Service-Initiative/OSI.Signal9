@@ -92,7 +92,11 @@ builder.Services.AddSignal9OpenIddict()
         validation.EnableTokenEntryValidation();
         validation.EnableAuthorizationEntryValidation();
         validation.AddAudiences(AuthorizationServer.ApiAudience);
-        validation.UseAspNetCore();
+        // Only from the Authorization header: a token in a URI leaks into logs and Referer headers, and none of api's
+        // clients sends one any other way (RFC 6750 §2.3, RFC 9700 §4.3.2).
+        validation.UseAspNetCore()
+            .DisableAccessTokenExtractionFromQueryString()
+            .DisableAccessTokenExtractionFromBodyForm();
     });
 
 builder.Services.AddAuthentication(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);

@@ -38,10 +38,30 @@ public static class EntraSignIn
     public const string RejectionParameter = "signal9_sign_in_rejected";
 
     /// <summary>
-    /// Kept in the session at auth from Entra's sign-in until the authorization endpoint first issues from it, so it
-    /// knows the session's app roles are as Entra just sent them.
+    /// Names the sign-in's <see cref="FreshSignIns">fresh sign-in record</see> in the session at auth, which the
+    /// authorization endpoint uses up when it first issues from it or refuses, so it knows the session's app roles are as
+    /// Entra just sent them.
     /// </summary>
     public const string FreshSignInItem = ".signal9.fresh";
+
+    /// <summary>
+    /// Set on a challenge that asks Entra to authenticate the person again (<c>prompt=login</c>): the authorization
+    /// request's re-authentication attempt, which the authorization request auth returns to carries as
+    /// <see cref="ReauthenticationParameter"/>.
+    /// </summary>
+    public const string ReauthenticationItem = ".signal9.reauthentication";
+
+    /// <summary>When auth asked Entra to authenticate the person again.</summary>
+    public const string ReauthenticationRequestedAtItem = ".signal9.reauthentication_requested_at";
+
+    /// <summary>The authorization request parameter naming the re-authentication attempt it came back from Entra with.</summary>
+    public const string ReauthenticationParameter = "signal9_reauthentication";
+
+    /// <summary>
+    /// How far before auth asked for it an authentication Entra reports still counts as the one asked for: clocks
+    /// differ, and <c>auth_time</c> has whole seconds.
+    /// </summary>
+    public static readonly TimeSpan ReauthenticationClockSkew = TimeSpan.FromMinutes(1);
 
     /// <summary>When the person signed in at Entra, which a sliding cookie's own issue time doesn't keep.</summary>
     public const string SignedInAtItem = ".signal9.signed_in_at";
@@ -105,7 +125,8 @@ public static class EntraSignIn
                 await tokenValidated(context);
                 if (context.Result is not null)
                     return;
-                if (Check(context.Principal!, allowedTenants, context.HttpContext) is { } rejection)
+                if ((Check(context.Principal!, allowedTenants, context.HttpContext)
+                    ?? CheckReauthentication(context.Principal!, context.Properties!)) is { } rejection)
                 {
                     await SignInAudit.FailedAsync(context.HttpContext, context.Principal, context.Properties, rejection);
                     if (ReturnRejected(context.HttpContext, context.Properties, rejection))
@@ -114,7 +135,11 @@ public static class EntraSignIn
                         context.Fail(Describe(rejection));
                     return;
                 }
-                context.Properties!.Items[FreshSignInItem] = "true";
+                context.Properties!.Items.Remove(ReauthenticationRequestedAtItem);
+                context.Properties.Items.Remove(ReauthenticationItem, out var reauthenticatedFor);
+                var fresh = await context.HttpContext.RequestServices.GetRequiredService<FreshSignIns>()
+                    .RecordAsync(reauthenticatedFor, context.HttpContext.RequestAborted);
+                context.Properties.Items[FreshSignInItem] = fresh.ToString();
                 context.Properties.Items[SignedInAtItem] = context.Options.TimeProvider!.GetUtcNow()
                     .ToString("O", CultureInfo.InvariantCulture);
                 await SignInAudit.SucceededAsync(context.HttpContext, context.Principal!, context.Properties,
@@ -172,8 +197,8 @@ public static class EntraSignIn
         NoAuthenticationTime,
 
         /// <summary>
-        /// A sign-in auth asked Entra to make afresh (<c>prompt=login</c>) still authenticated the person too long ago for
-        /// the client's <c>max_age</c>.
+        /// A sign-in auth asked Entra to make afresh (<c>prompt=login</c>), for the client's <c>prompt=login</c> or
+        /// <c>max_age</c>, reports an authentication from before auth asked.
         /// </summary>
         NotFresh,
     }
@@ -214,6 +239,18 @@ public static class EntraSignIn
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// A sign-in auth asked Entra to make afresh must have authenticated the person then, not earlier: an Entra that
+    /// ignores <c>prompt=login</c> answers from its old session.
+    /// </summary>
+    private static Rejection? CheckReauthentication(ClaimsPrincipal principal, AuthenticationProperties properties)
+    {
+        if (!properties.Items.TryGetValue(ReauthenticationRequestedAtItem, out var value)
+            || !DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var requestedAt))
+            return null;
+        return AuthenticatedAt(principal) < requestedAt - ReauthenticationClockSkew ? Rejection.NotFresh : null;
     }
 
     /// <summary>When the person signed in at Entra, as the sign-in's session at auth recorded it.</summary>

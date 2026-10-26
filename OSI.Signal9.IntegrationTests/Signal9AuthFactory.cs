@@ -72,26 +72,26 @@ public sealed class Signal9AuthFactory : WebApplicationFactory<AuthHost>
         && service.ImplementationType?.Namespace?.StartsWith("Quartz", StringComparison.Ordinal) == true;
 }
 
-/// <summary>Keeps every warning or worse a host logs, for tests that check what was logged.</summary>
-internal sealed class CapturingLoggerProvider(ConcurrentQueue<string> logs) : ILoggerProvider
+/// <summary>Keeps every entry a host logs at or above a level (warnings by default), for tests that check what was logged.</summary>
+internal sealed class CapturingLoggerProvider(ConcurrentQueue<string> logs, LogLevel minimum = LogLevel.Warning) : ILoggerProvider
 {
-    public ILogger CreateLogger(string categoryName) => new Logger(logs);
+    public ILogger CreateLogger(string categoryName) => new Logger(logs, minimum);
 
     public void Dispose()
     {
     }
 
-    private sealed class Logger(ConcurrentQueue<string> logs) : ILogger
+    private sealed class Logger(ConcurrentQueue<string> logs, LogLevel minimum) : ILogger
     {
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
-        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
+        public bool IsEnabled(LogLevel logLevel) => logLevel >= minimum;
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
             if (IsEnabled(logLevel))
-                logs.Enqueue(formatter(state, exception));
+                logs.Enqueue(exception is null ? formatter(state, exception) : $"{formatter(state, exception)} {exception.Message}");
         }
     }
 }

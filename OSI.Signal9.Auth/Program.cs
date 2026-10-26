@@ -7,6 +7,8 @@ using Quartz;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+// An invitation's link is its bearer reference (#121): request traces record only that one was opened.
+builder.Services.RedactPathInTelemetry("/" + InvitationReference.Path);
 builder.AddHostHardening();
 builder.AddSignal9Database();
 builder.AddSignal9ForwardedHeaders();
@@ -14,6 +16,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSignal9Audit();
 builder.AddSignal9EntraSignIn();
 builder.Services.AddScoped<Consent>();
+builder.Services.AddScoped<FreshSignIns>();
 // The hourly session check against Entra (#119, story 52).
 builder.Services.AddScoped<IEntraRefresh, EntraRefresh>();
 builder.Services.AddScoped<EntraSessionChecker>();

@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -26,7 +28,8 @@ public static class AuthorizationEndpoint
 
     public static IEndpointConventionBuilder MapAuthorizationEndpoint(this IEndpointRouteBuilder endpoints) =>
         endpoints.MapMethods(Path, [HttpMethods.Get, HttpMethods.Post], async (HttpContext context, DeployingDirectory deploying,
-            TimeProvider time, Consent consent, SignInSessions sessions, IOpenIddictApplicationManager applications) =>
+            TimeProvider time, Consent consent, SignInSessions sessions, FreshSignIns freshSignIns,
+            IOpenIddictApplicationManager applications) =>
         {
             var request = context.GetOpenIddictServerRequest()
                 ?? throw new InvalidOperationException("The OpenIddict server request can't be retrieved.");
@@ -45,38 +48,31 @@ public static class AuthorizationEndpoint
                 await context.SignOutAsync(EntraSignIn.CookieScheme);
                 session = AuthenticateResult.NoResult();
             }
-            // Kept until a code is issued or refused, so answering the consent screen doesn't send a Superadministrator
-            // back to Entra.
-            var fresh = session.Succeeded && session.Properties!.Items.ContainsKey(EntraSignIn.FreshSignInItem);
-            // max_age (OpenID Connect Core §3.1.2.1): the client needs an authentication at most this old, such as after
-            // an RFC 9470 step-up challenge. The person authenticates at Entra again; a sign-in that just came back from
-            // there and still isn't recent enough is refused, rather than sent round again.
-            // A session that doesn't say when the person authenticated is too old for any max_age.
+            // A sign-in straight from Entra that no code has been issued from yet (story 59), until one is issued or
+            // refused, so answering the consent screen doesn't send a Superadministrator back to Entra.
+            var fresh = session.Succeeded ? await freshSignIns.FindAsync(session.Properties!, context.RequestAborted) : null;
+            var superadministrator = session.Succeeded && deploying.IsSuperadministrator(session.Principal!);
+            // prompt=login, and a max_age the last authentication doesn't meet (OpenID Connect Core §3.1.2.1, such as after
+            // an RFC 9470 step-up challenge): the person authenticates at Entra again, and only the sign-in made for this
+            // request counts. A session that doesn't say when the person authenticated is too old for any max_age.
             var authenticatedAt = session.Succeeded ? EntraSignIn.AuthenticatedAt(session.Principal!) : null;
-            var tooOld = session.Succeeded && (authenticatedAt is null
+            var mustReauthenticate = session.Succeeded && (request.HasPromptValue(PromptValues.Login) || authenticatedAt is null
                 || (request.MaxAge is { } maxAge && time.GetUtcNow() - authenticatedAt > TimeSpan.FromSeconds(maxAge)));
-            if (tooOld && fresh)
-            {
-                await TakeFreshSignInAsync(context, session);
-                return Deny(EntraSignIn.Describe(EntraSignIn.Rejection.NotFresh));
-            }
+            // Without a session at auth too, as Entra's own may be older than max_age.
+            var reauthenticate = mustReauthenticate || request.HasPromptValue(PromptValues.Login) || request.MaxAge is not null;
+            var reauthenticated = fresh?.ReauthenticatedFor is { } attempt
+                && attempt == request[EntraSignIn.ReauthenticationParameter]?.ToString();
 
             // Superadministrator is re-read from Entra for every token (story 59), so a session that already issued
             // one goes back to Entra, whose own session signs the person straight in with their current app roles.
-            if (!session.Succeeded || tooOld || (!fresh && deploying.IsSuperadministrator(session.Principal!)))
-            {
-                // A form-posted request comes back as a query, so the return address holds all of it.
-                var returnUrl = QueryHelpers.AddQueryString(ReturnPath.TrimEnd('?'),
-                    RequestParameters(context).Where(p => p.Key != EntraSignIn.RejectionParameter));
-                var properties = new OpenIdConnectChallengeProperties { RedirectUri = returnUrl };
-                // Entra's session would sign the person straight in; prompt=login makes them authenticate again.
-                if (request.MaxAge is not null)
-                    properties.Prompt = PromptValues.Login;
-                return Results.Challenge(properties, [EntraSignIn.ChallengeScheme]);
-            }
+            if (!session.Succeeded || (mustReauthenticate && !reauthenticated) || (superadministrator && fresh is null))
+                return SignInAtEntra(context, request, reauthenticate);
 
             if (EntraPerson.From(session.Principal!) is not { } person)
+            {
+                await freshSignIns.ConsumeAsync(fresh, context.RequestAborted);
                 return Deny(EntraSignIn.Describe(EntraSignIn.Rejection.NoIdentity));
+            }
 
             // Identity only (ADR-0007): the person, the client and the scopes. Signing in creates no user record.
             var identity = new ClaimsIdentity(TokenValidationParameters.DefaultAuthenticationType, Claims.Name, Claims.Role);
@@ -86,7 +82,7 @@ public static class AuthorizationEndpoint
             identity.SetClaims(Claims.AuthenticationMethodReference,
                 [.. session.Principal!.FindAll("amr").Select(claim => claim.Value).Distinct(StringComparer.Ordinal)]);
             // The one authorization claim a token carries (ADR-0006, ADR-0007).
-            if (deploying.IsSuperadministrator(session.Principal!))
+            if (superadministrator)
                 identity.AddClaim(Claims.Role, Superadministrator.Role);
             identity.SetScopes(request.GetScopes());
             identity.SetResources(AuthorizationServer.ApiAudience);
@@ -97,9 +93,10 @@ public static class AuthorizationEndpoint
                 case Consent.Outcome.Ask ask:
                     return ask.Page;
                 case Consent.Outcome.Refused refused:
+                    // An unconfirmed answer (antiforgery) refuses only that post: the person can still answer the screen.
                     return refused.Result;
                 case Consent.Outcome.Declined:
-                    await TakeFreshSignInAsync(context, session);
+                    await freshSignIns.ConsumeAsync(fresh, context.RequestAborted);
                     return Deny("The person declined the application's request.");
                 case Consent.Outcome.Required:
                     // prompt=none: the client asked not to show anything (OpenID Connect Core §3.1.2.6).
@@ -110,16 +107,20 @@ public static class AuthorizationEndpoint
                     }), [OpenIddictServerAspNetCoreDefaults.AuthenticationScheme]);
             }
 
+            // The sign-in's freshness goes with this code. When the code relies on it, and a concurrent request used it
+            // first, the person goes back to Entra.
+            if (!await freshSignIns.ConsumeAsync(fresh, context.RequestAborted) && (superadministrator || mustReauthenticate))
+                return SignInAtEntra(context, request, reauthenticate);
+
             // Every code starts a session of its own (#119), which every refresh then checks and which Entra's logout
             // can end. Entra vouched for the person when they signed in there.
             var application = await applications.FindByClientIdAsync(request.ClientId!, context.RequestAborted)
                 ?? throw new InvalidOperationException("OpenIddict validated a client that doesn't exist.");
             await sessions.StartAsync(identity, (await applications.GetIdAsync(application, context.RequestAborted))!,
                 request.ClientId!, person.TenantId, session.Principal!.FindFirst("sid")?.Value,
-                EntraSignIn.AccountId(session.Principal!, person), deploying.IsSuperadministrator(session.Principal!),
+                EntraSignIn.AccountId(session.Principal!, person), superadministrator,
                 EntraSignIn.SignedInAt(session.Properties!) ?? time.GetUtcNow(), context.RequestAborted);
 
-            await TakeFreshSignInAsync(context, session);
             return Results.SignIn(new ClaimsPrincipal(identity), properties: null,
                 OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
         })
@@ -128,15 +129,38 @@ public static class AuthorizationEndpoint
         .ExcludeFromDescription();
 
     /// <summary>
-    /// Whether the session comes straight from Entra's sign-in, which it then no longer does: the next authorization
-    /// request finds it already used.
+    /// Sends the person to sign in at Entra, then back to this request; with <paramref name="reauthenticate"/>, making
+    /// them authenticate again there, for a re-authentication attempt of this request's own. <c>prompt=none</c> asked
+    /// for nothing to be shown, so the client gets <c>login_required</c> instead (OpenID Connect Core §3.1.2.6).
     /// </summary>
-    private static async Task<bool> TakeFreshSignInAsync(HttpContext context, AuthenticateResult session)
+    private static IResult SignInAtEntra(HttpContext context, OpenIddictRequest request, bool reauthenticate)
     {
-        if (!session.Properties!.Items.Remove(EntraSignIn.FreshSignInItem))
-            return false;
-        await context.SignInAsync(EntraSignIn.CookieScheme, session.Principal!, session.Properties);
-        return true;
+        if (request.HasPromptValue(PromptValues.None))
+        {
+            return Results.Forbid(new AuthenticationProperties(new Dictionary<string, string?>
+            {
+                [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.LoginRequired,
+                [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "The person must sign in.",
+            }), [OpenIddictServerAspNetCoreDefaults.AuthenticationScheme]);
+        }
+
+        var parameters = RequestParameters(context)
+            .Where(p => p.Key is not (EntraSignIn.RejectionParameter or EntraSignIn.ReauthenticationParameter))
+            .ToList();
+        var properties = new OpenIdConnectChallengeProperties();
+        if (reauthenticate)
+        {
+            // Entra's session would sign the person straight in; prompt=login makes them authenticate again.
+            var attempt = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(16));
+            parameters.Add(new(EntraSignIn.ReauthenticationParameter, attempt));
+            properties.Prompt = PromptValues.Login;
+            properties.Items[EntraSignIn.ReauthenticationItem] = attempt;
+            properties.Items[EntraSignIn.ReauthenticationRequestedAtItem] = context.RequestServices
+                .GetRequiredService<TimeProvider>().GetUtcNow().ToString("O", CultureInfo.InvariantCulture);
+        }
+        // A form-posted request comes back as a query, so the return address holds all of it.
+        properties.RedirectUri = QueryHelpers.AddQueryString(ReturnPath.TrimEnd('?'), parameters);
+        return Results.Challenge(properties, [EntraSignIn.ChallengeScheme]);
     }
 
     /// <summary>The authorization request's parameters as the client sent them, by query or form, without consent's own.</summary>

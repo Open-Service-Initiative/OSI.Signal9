@@ -317,6 +317,28 @@ public sealed class ApiApplicationTests : IDisposable
     }
 
     [TestMethod]
+    public async Task Removing_a_credential_revokes_the_tokens_already_issued_to_the_application()
+    {
+        var tree = await TreeAsync();
+        var application = await RegisterAsSuperadministratorAsync(tree.Msp,
+            Registration("Leaked", await RoleIdAsync("Viewer"), TokenEndpointAuthMethods.ClientSecret, "tenants.read"));
+        var leaked = await AddCredentialAsync(application, new CreateApiApplicationCredentialRequest());
+        var issued = await SecretTokenResponseAsync(application.ClientId, leaked.Secret!, "tenants.read");
+        Assert.AreEqual(HttpStatusCode.OK, issued.StatusCode, await issued.Content.ReadAsStringAsync(Ct));
+        using var api = _factory.CreateAnonymousClient();
+        api.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer",
+            (await issued.Content.ReadFromJsonAsync<AccessToken>(Ct))!.Value);
+        Assert.AreEqual(HttpStatusCode.OK, (await api.GetAsync($"api/v1/tenants/{tree.Msp}", Ct)).StatusCode);
+
+        var removed = await (await MfaSuperadministratorAsync()).DeleteAsync(
+            $"{ApplicationsUrl(tree.Msp)}/{application.Id}/credentials/{leaked.Id}", Ct);
+        var afterRemoval = await api.GetAsync($"api/v1/tenants/{tree.Msp}", Ct);
+
+        Assert.AreEqual(HttpStatusCode.NoContent, removed.StatusCode);
+        Assert.AreEqual(HttpStatusCode.Unauthorized, afterRemoval.StatusCode, "A rotation after a leak takes effect at once.");
+    }
+
+    [TestMethod]
     public async Task A_vendors_product_is_registered_separately_at_each_tenant()
     {
         var tree = await TreeAsync();
@@ -645,6 +667,7 @@ public sealed class ApiApplicationTests : IDisposable
         var response = await caller.PostAsJsonAsync($"{ApplicationsUrl(application.TenantId)}/{application.Id}/credentials",
             new CreateApiApplicationCredentialRequest(), Signal9Json.Options, Ct);
         Assert.AreEqual(HttpStatusCode.Created, response.StatusCode, await response.Content.ReadAsStringAsync(Ct));
+        Assert.IsTrue(response.Headers.CacheControl?.NoStore, "A response carrying the secret is never stored.");
         return (await response.Content.ReadFromJsonAsync<ApiApplicationCredentialDto>(Signal9Json.Options, Ct))!.Secret!;
     }
 

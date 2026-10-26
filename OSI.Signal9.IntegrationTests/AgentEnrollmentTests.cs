@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -446,6 +447,27 @@ public sealed class AgentEnrollmentTests : IDisposable
 
         Assert.AreEqual(HttpStatusCode.Conflict, refused.StatusCode);
         Assert.AreEqual(1, (await GetTokenAsync(token)).UseCount);
+        // The installer holds only an enrollment token: nothing about the tenant reaches it.
+        var problem = await refused.Content.ReadFromJsonAsync<ProblemDetails>(Ct);
+        Assert.AreEqual("Device limit reached", problem!.Title);
+        Assert.AreEqual("The tenant can't take more devices.", problem.Detail);
+    }
+
+    [TestMethod]
+    public async Task Enrollment_into_a_tenant_that_is_not_active_is_refused_without_saying_more()
+    {
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
+        var token = await _factory.IssueEnrollmentTokenAsync(tenant.Id);
+        Assert.AreEqual(HttpStatusCode.OK, (await _client.PostAsync($"api/v1/tenants/{tenant.Id}:suspend", null, Ct)).StatusCode);
+        using var certificate = AgentCertificate();
+
+        var refused = await _factory.EnrollAsync(token.Secret!, certificate);
+
+        Assert.AreEqual(HttpStatusCode.Conflict, refused.StatusCode);
+        var problem = await refused.Content.ReadFromJsonAsync<ProblemDetails>(Ct);
+        Assert.AreEqual("Tenant not active", problem!.Title);
+        Assert.AreEqual("Agents can't enroll into this tenant now.", problem.Detail);
+        Assert.AreEqual(0, (await GetTokenAsync(token)).UseCount);
     }
 
     [TestMethod]

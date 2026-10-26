@@ -8,6 +8,7 @@ using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Invitations;
 using OSI.Signal9.Server.Data;
+using OSI.Signal9.Server.Hosting;
 using OSI.Signal9.Server.Identity;
 
 namespace OSI.Signal9.API.Invitations;
@@ -120,7 +121,7 @@ public sealed class InvitationsController(
         Record(AuditActions.InvitationCreated, invitation);
         await db.SaveChangesAsync(cancellationToken);
 
-        NoStore();
+        Response.NoStore();
         this.SetETag(invitation.ETag(now));
         return CreatedAtRoute(nameof(GetInvitation), new { tenantId, invitationId = invitation.Id },
             invitation.ToDto(now, InvitationReference.Link(identity.Issuer, reference)));
@@ -171,5 +172,4 @@ public sealed class InvitationsController(
     });
 
     // A response carrying the link must not be stored by any cache (RFC 9111 §5.2.2.5), as for OAuth tokens (RFC 6749 §5.1).
-    private void NoStore() => Response.Headers.CacheControl = "no-store";
 }

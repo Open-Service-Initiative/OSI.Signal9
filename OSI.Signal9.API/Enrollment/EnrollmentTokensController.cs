@@ -7,6 +7,7 @@ using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Enrollment;
 using OSI.Signal9.Server.Data;
+using OSI.Signal9.Server.Hosting;
 using OSI.Signal9.Server.Identity;
 
 namespace OSI.Signal9.API.Enrollment;
@@ -95,7 +96,7 @@ public sealed class EnrollmentTokensController(Signal9DbContext db, CallerAudit 
         Record(AuditActions.EnrollmentTokenCreated, token);
         await db.SaveChangesAsync(cancellationToken);
 
-        NoStore();
+        Response.NoStore();
         this.SetETag(token.ETag(now));
         return CreatedAtRoute(nameof(GetEnrollmentToken), new { tenantId, enrollmentTokenId = token.Id },
             token.ToDto(now, secret));
@@ -130,7 +131,7 @@ public sealed class EnrollmentTokensController(Signal9DbContext db, CallerAudit 
         Record(AuditActions.EnrollmentTokenRotated, token);
         await db.SaveChangesAsync(cancellationToken);
 
-        NoStore();
+        Response.NoStore();
         this.SetETag(token.ETag(now));
         return token.ToDto(now, secret);
     }
@@ -180,5 +181,4 @@ public sealed class EnrollmentTokensController(Signal9DbContext db, CallerAudit 
         detail: "The enrollment token is revoked.");
 
     // A response carrying a secret must not be stored by any cache (RFC 9111 §5.2.2.5), as for OAuth tokens (RFC 6749 §5.1).
-    private void NoStore() => Response.Headers.CacheControl = "no-store";
 }

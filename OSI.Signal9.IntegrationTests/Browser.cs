@@ -15,10 +15,12 @@ namespace OSI.Signal9.IntegrationTests;
 public sealed class Browser : IDisposable
 {
     private readonly HttpClient _client;
+    private readonly Cookies _cookies;
 
     public Browser(TestServer auth, string clientIp = "203.0.113.1")
     {
-        _client = new HttpClient(new Cookies { InnerHandler = auth.CreateHandler() })
+        _cookies = new Cookies { InnerHandler = auth.CreateHandler() };
+        _client = new HttpClient(_cookies)
         {
             BaseAddress = Signal9ApiFactory.HttpsLocalhost,
         };
@@ -87,11 +89,24 @@ public sealed class Browser : IDisposable
         return await PostAsync(new Uri(WebUtility.HtmlDecode(form.Groups[1].Value), UriKind.Relative), new FormUrlEncodedContent(fields));
     }
 
+    /// <summary>A copy of the browser's cookies as they are now, for replaying them later as an attacker could.</summary>
+    public IReadOnlyDictionary<string, string> SaveCookies() => new Dictionary<string, string>(_cookies.Jar);
+
+    /// <summary>Replaces the browser's cookies with <paramref name="saved"/>.</summary>
+    public void RestoreCookies(IReadOnlyDictionary<string, string> saved)
+    {
+        _cookies.Jar.Clear();
+        foreach (var (name, value) in saved)
+            _cookies.Jar[name] = value;
+    }
+
     public void Dispose() => _client.Dispose();
 
     private sealed class Cookies : DelegatingHandler
     {
         private readonly Dictionary<string, string> _cookies = [];
+
+        public Dictionary<string, string> Jar => _cookies;
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
