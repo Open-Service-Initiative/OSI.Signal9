@@ -36,6 +36,7 @@ public static class PostgresContainer
     [AssemblyCleanup]
     public static async Task StopAsync()
     {
+        await RedisContainer.StopAsync();
         if (_container is not null)
             await _container.DisposeAsync();
     }

@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http.Features;
 using OSI.Signal9.Contracts.Bff;
+using OSI.Signal9.Contracts.Hubs;
 using OSI.Signal9.Server.Hosting;
 using OSI.Signal9.Server.Identity;
 using Yarp.ReverseProxy.Forwarder;
@@ -30,6 +31,8 @@ public static class ApiProxy
         var forwarder = app.Services.GetRequiredService<IHttpForwarder>();
         var channel = app.Services.GetRequiredService<ApiChannel>();
         var config = new ForwarderRequestConfig { ActivityTimeout = TimeSpan.FromSeconds(100) };
+        // On Azure SignalR Service, the dashboard hub's negotiation redirects to web's path for the service.
+        var rewrite = RealtimeServiceProxy.Rewrite(app.Configuration);
 
         foreach (var pattern in WithToken)
         {
@@ -43,7 +46,7 @@ public static class ApiProxy
                 var upgrade = context.Features.Get<IHttpUpgradeFeature>()?.IsUpgradableRequest == true;
                 if (!upgrade)
                     context.Request.EnableBuffering();
-                var first = new Transformer(token, holdUnauthorized: !upgrade);
+                var first = new Transformer(token, holdUnauthorized: !upgrade, rewrite);
                 await forwarder.SendAsync(context, destination, channel.Invoker, config, first);
                 if (!first.HeldUnauthorized)
                     return;
@@ -53,14 +56,14 @@ public static class ApiProxy
                 context.Request.Body.Position = 0;
                 context.Response.StatusCode = StatusCodes.Status200OK;
                 await forwarder.SendAsync(context, destination, channel.Invoker, config,
-                    new Transformer(refreshed, holdUnauthorized: false));
+                    new Transformer(refreshed, holdUnauthorized: false, rewrite));
             }).RequireAuthorization();
         }
 
         foreach (var pattern in Public)
         {
             app.Map(pattern, async context =>
-                await forwarder.SendAsync(context, destination, channel.Invoker, config, new Transformer(token: null, holdUnauthorized: false)))
+                await forwarder.SendAsync(context, destination, channel.Invoker, config, new Transformer(token: null, holdUnauthorized: false, rewrite: null)))
                 .AllowAnonymous();
         }
 
@@ -100,7 +103,7 @@ public static class ApiProxy
     /// Copies the request, minus what's web's alone: the browser's cookies, any credentials it sent and the CSRF
     /// header, and any forwarding headers a client made up. Then it attaches the person's access token, if any.
     /// </summary>
-    private sealed class Transformer(string? token, bool holdUnauthorized) : HttpTransformer
+    private sealed class Transformer(string? token, bool holdUnauthorized, NegotiationRewrite? rewrite) : HttpTransformer
     {
         /// <summary>Whether api answered 401 and the response was held back for a retry.</summary>
         public bool HeldUnauthorized { get; private set; }
@@ -133,10 +136,33 @@ public static class ApiProxy
                 return false;
             }
 
+            if (rewrite is not null && proxyResponse is { IsSuccessStatusCode: true }
+                && httpContext.Request.Path.Equals(HubRoutes.Dashboard + "/negotiate", StringComparison.OrdinalIgnoreCase))
+                return await RewriteNegotiationAsync(httpContext, proxyResponse, rewrite, cancellationToken);
+
             var result = await base.TransformResponseAsync(httpContext, proxyResponse, cancellationToken);
             // Only web sets cookies on its own origin.
             httpContext.Response.Headers.Remove("Set-Cookie");
             return result;
+        }
+
+        // Sends the browser api's negotiate response with its redirect pointing at web's path for the service; a
+        // redirect anywhere else is a misconfiguration or worse, so it becomes a 502 and goes no further.
+        private async ValueTask<bool> RewriteNegotiationAsync(HttpContext httpContext, HttpResponseMessage proxyResponse,
+            NegotiationRewrite negotiation, CancellationToken cancellationToken)
+        {
+            if (negotiation.Apply(await proxyResponse.Content.ReadAsByteArrayAsync(cancellationToken)) is not { } body)
+            {
+                await Results.Problem(statusCode: StatusCodes.Status502BadGateway,
+                    title: "The real-time service's address doesn't match web's configuration.").ExecuteAsync(httpContext);
+                return false;
+            }
+
+            await base.TransformResponseAsync(httpContext, proxyResponse, cancellationToken);
+            httpContext.Response.Headers.Remove("Set-Cookie");
+            httpContext.Response.ContentLength = body.Length;
+            await httpContext.Response.Body.WriteAsync(body, cancellationToken);
+            return false;
         }
     }
 }

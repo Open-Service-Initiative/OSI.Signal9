@@ -29,6 +29,8 @@ builder.Services.AddSingleton<ApiChannel>();
 builder.AddSignal9Bff();
 builder.Services.AddAuthorization();
 builder.Services.AddHttpForwarder();
+// On Azure SignalR Service, the dashboard reaches the service through web (ADR-0009).
+builder.Services.AddRealtimeServiceProxy(builder.Configuration);
 builder.Services.AddRazorComponents().AddInteractiveWebAssemblyComponents();
 builder.Services.AddScoped<AntiforgeryStateProvider, NoAntiforgeryState>();
 
@@ -46,6 +48,7 @@ app.UseAuthorization();
 app.MapStaticAssets();
 app.MapBff();
 app.MapApiProxy();
+app.MapRealtimeServiceProxy();
 app.MapApiReference();
 // Every page is the same WebAssembly shell, which shows a sign-in prompt when there's no session; the data stays behind
 // the proxy's own checks. The shell takes no form posts, so it needs no antiforgery token: CSRF is the custom header.

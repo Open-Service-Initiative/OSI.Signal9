@@ -131,7 +131,7 @@ public sealed class DashboardAccess(
         {
             if (connection.Closed)
                 return false;
-            var groups = connection.Context.User is { } user && await TokenIsLiveAsync(user, cancellationToken)
+            var groups = connection.Context.User is { } user && await HubTokens.IsLiveAsync(db, user, time, cancellationToken)
                 ? await GroupsForAsync(user, cancellationToken)
                 : new HashSet<string>();
             if (groups.Count == 0)
@@ -161,18 +161,6 @@ public sealed class DashboardAccess(
         }
     }
 
-    // The access token the connection was opened with is still valid: not revoked, by itself or with its authorization
-    // (sign-out, front-channel logout, a revoked connection or role), and not expired.
-    private Task<bool> TokenIsLiveAsync(System.Security.Claims.ClaimsPrincipal user, CancellationToken cancellationToken)
-    {
-        if (user.GetTokenId() is not { } tokenId)
-            return Task.FromResult(false);
-        var now = time.GetUtcNow().UtcDateTime;
-        return db.Set<OpenIddictEntityFrameworkCoreToken>().AsNoTracking()
-            .AnyAsync(t => t.Id == tokenId && t.Status == OpenIddictConstants.Statuses.Valid && t.ExpirationDate > now
-                && (t.Authorization == null || t.Authorization.Status == OpenIddictConstants.Statuses.Valid), cancellationToken);
-    }
-
     /// <summary>
     /// The groups the caller hears: the deployment's for a Superadministrator; otherwise those of the assigned tenants
     /// where their access grants a hub scope (ADR-0010), leaving out any beneath another, whose events it already hears.
@@ -194,6 +182,25 @@ public sealed class DashboardAccess(
             .Select(c => c.DescendantId)
             .ToListAsync(cancellationToken);
         return tenants.Except(beneath).Select(DashboardHub.GroupFor).ToHashSet();
+    }
+}
+
+/// <summary>Whether the access token a hub connection was opened with is still good.</summary>
+internal static class HubTokens
+{
+    /// <summary>
+    /// Not revoked, by itself or with its authorization (sign-out, front-channel logout, a revoked connection, role or
+    /// agent), and not expired.
+    /// </summary>
+    public static Task<bool> IsLiveAsync(Signal9DbContext db, System.Security.Claims.ClaimsPrincipal user, TimeProvider time,
+        CancellationToken cancellationToken)
+    {
+        if (user.GetTokenId() is not { } tokenId)
+            return Task.FromResult(false);
+        var now = time.GetUtcNow().UtcDateTime;
+        return db.Set<OpenIddictEntityFrameworkCoreToken>().AsNoTracking()
+            .AnyAsync(t => t.Id == tokenId && t.Status == OpenIddictConstants.Statuses.Valid && t.ExpirationDate > now
+                && (t.Authorization == null || t.Authorization.Status == OpenIddictConstants.Statuses.Valid), cancellationToken);
     }
 }
 

@@ -88,7 +88,26 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         return replica;
     }
 
-    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    /// <summary>
+    /// Another <c>api</c> replica sharing the database, clock and configuration, as when api scales out (story 117).
+    /// </summary>
+    public WebApplicationFactory<ApiHost> CreateApiReplica()
+    {
+        var replica = new ApiReplica(this);
+        _apiReplicas.Add(replica);
+        return replica;
+    }
+
+    private readonly List<ApiReplica> _apiReplicas = [];
+
+    private sealed class ApiReplica(Signal9ApiFactory owner) : WebApplicationFactory<ApiHost>
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder) => owner.ConfigureApiHost(builder);
+    }
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder) => ConfigureApiHost(builder);
+
+    private void ConfigureApiHost(IWebHostBuilder builder)
     {
         ConfigureSharedHost(builder, ConnectionString, Time, _settings);
         builder.ConfigureTestServices(services =>
@@ -598,6 +617,8 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
     public override async ValueTask DisposeAsync()
     {
         foreach (var replica in _webReplicas)
+            await replica.DisposeAsync();
+        foreach (var replica in _apiReplicas)
             await replica.DisposeAsync();
         if (_web is not null)
             await _web.DisposeAsync();

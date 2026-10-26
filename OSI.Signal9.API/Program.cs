@@ -7,7 +7,6 @@ using OSI.Signal9.API.Devices;
 using OSI.Signal9.API.Hubs;
 using OSI.Signal9.API.Infrastructure;
 using OSI.Signal9.API.Tenants;
-using OSI.Signal9.Contracts.Hubs;
 using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Server.Data;
 using OSI.Signal9.Server.Hosting;
@@ -55,14 +54,18 @@ builder.Services.AddOpenApi(options => options
     .AddOperationTransformer<RecentMfaResponses>()
     .AddOperationTransformer<ConditionalOperationTransformer>());
 builder.Services.AddSingleton<AgentHubConnections>();
+builder.Services.AddOptions<AgentHubOptions>().BindConfiguration(AgentHubOptions.SectionName)
+    .ValidateDataAnnotations().ValidateOnStart();
+builder.Services.AddScoped<AgentHubAccess>();
+builder.Services.AddHostedService<AgentHubAccessSweeper>();
 builder.Services.AddOptions<DashboardHubOptions>().BindConfiguration(DashboardHubOptions.SectionName)
     .ValidateDataAnnotations().ValidateOnStart();
 builder.Services.AddSingleton<DashboardConnections>();
 builder.Services.AddScoped<DashboardAccess>();
 builder.Services.AddScoped<DashboardEvents>();
 builder.Services.AddHostedService<DashboardAccessSweeper>();
-builder.Services.AddSignalR()
-    .AddJsonProtocol(options => Signal9Json.Configure(options.PayloadSerializerOptions));
+// In api, or on Azure SignalR Service; on a Redis backplane once api scales out (ADR-0009).
+builder.AddSignal9Realtime();
 
 // api runs the authorization server's RFC 8705 mTLS aliases (token, revocation, introspection), at the same paths
 // auth advertises for them. Discovery and the key set are served only by auth.
@@ -115,16 +118,14 @@ app.UseCallerAccess();
 // Around authorization, so it sees refusals as well as what endpoints did.
 app.UseRequestAudit();
 app.UseAuthorization();
+app.UseRealtimeNegotiation();
 
 app.MapTokenEndpoint().RequireRateLimiting(RateLimiting.Token);
 // The API description is public (story 132): it shows what each call needs, never data.
 app.MapOpenApi(ApiDocs.DocumentPattern).AllowAnonymous().RequireRateLimiting(RateLimiting.Api);
 app.MapControllers().RequireRateLimitingUnlessNamed(RateLimiting.Api);
 // Both hubs close a connection when its access token expires; the client reconnects with a fresh one (story 115).
-app.MapHub<AgentHub>(HubRoutes.Agents, options => options.CloseOnAuthenticationExpiration = true)
-    .RequireRateLimiting(RateLimiting.Api);
-app.MapHub<DashboardHub>(HubRoutes.Dashboard, options => options.CloseOnAuthenticationExpiration = true)
-    .RequireRateLimiting(RateLimiting.Api);
+app.MapSignal9Hubs();
 
 app.Run();
 

@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.ComponentModel.DataAnnotations;
+using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using OSI.Signal9.API.Agents;
@@ -70,6 +72,10 @@ public sealed class AgentHubConnections
             open.TryRemove(connection.ConnectionId, out _);
     }
 
+    /// <summary>Every open connection, with its agent.</summary>
+    internal IReadOnlyList<(Guid AgentId, HubCallerContext Context)> All() =>
+        [.. _connections.SelectMany(open => open.Value.Values.Select(context => (open.Key, context)))];
+
     /// <summary>Closes every hub connection of <paramref name="agentId"/>.</summary>
     public void Close(Guid agentId)
     {
@@ -77,5 +83,67 @@ public sealed class AgentHubConnections
             return;
         foreach (var connection in open.Values)
             connection.Abort();
+    }
+}
+
+/// <summary>How often api re-checks every open agent hub connection against its access token.</summary>
+public sealed class AgentHubOptions
+{
+    public const string SectionName = "AgentHub";
+
+    /// <summary>
+    /// The longest a connection outlives its agent's revocation, key rotation or tenant deletion on another api
+    /// replica, or on Azure SignalR Service. The replica that handles the change closes its own connections at once.
+    /// </summary>
+    [Range(typeof(TimeSpan), "00:00:01", "00:05:00")]
+    public TimeSpan AccessCheckInterval { get; set; } = TimeSpan.FromSeconds(10);
+}
+
+/// <summary>
+/// Closes the agent hub connections this api replica holds whose access token is no longer good: revoking an agent,
+/// rotating its key or deleting its tenant revokes its tokens (#129), wherever its connection is.
+/// </summary>
+public sealed class AgentHubAccess(Signal9DbContext db, AgentHubConnections connections, TimeProvider time)
+{
+    public async Task RecheckAllAsync(CancellationToken cancellationToken)
+    {
+        foreach (var (agentId, context) in connections.All())
+        {
+            if (context.User is { } user && await HubTokens.IsLiveAsync(db, user, time, cancellationToken))
+                continue;
+            connections.Remove(agentId, context);
+            context.Abort();
+        }
+    }
+}
+
+/// <summary>Re-checks every open agent hub connection on an interval (<see cref="AgentHubOptions"/>).</summary>
+public sealed class AgentHubAccessSweeper(
+    IServiceScopeFactory scopes,
+    IOptions<AgentHubOptions> options,
+    TimeProvider time,
+    ILogger<AgentHubAccessSweeper> logger) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        using var timer = new PeriodicTimer(options.Value.AccessCheckInterval, time);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stoppingToken))
+            {
+                try
+                {
+                    await using var scope = scopes.CreateAsyncScope();
+                    await scope.ServiceProvider.GetRequiredService<AgentHubAccess>().RecheckAllAsync(stoppingToken);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    logger.LogWarning(exception, "Re-checking agent hub connections failed; trying again next time.");
+                }
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+        }
     }
 }

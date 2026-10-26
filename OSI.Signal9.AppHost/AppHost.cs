@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Configuration;
+
 var builder = DistributedApplication.CreateBuilder(args);
 
 // Local development topology. The Agent is not orchestrated here: it runs as a Windows Service on managed machines.
@@ -43,6 +45,27 @@ var web = builder.AddProject<Projects.OSI_Signal9_Web>("web")
     .WaitFor(auth)
     .WaitFor(api)
     .WithExternalHttpEndpoints();
+
+// Real-time (ADR-0009, stories 116-117), chosen by configuration: Realtime:Hosting is AzureSignalR (the default when
+// published) or SelfHosted (the default locally, where Azure SignalR has no emulator for hub servers). On Azure SignalR
+// Service both hubs run there, and the dashboard reaches it through web. Self-hosted, the hubs run in api, which needs
+// Redis only once Realtime:ApiReplicas is more than one.
+var realtime = builder.Configuration["Realtime:Hosting"] ?? (builder.ExecutionContext.IsRunMode ? "SelfHosted" : "AzureSignalR");
+if (string.Equals(realtime, "AzureSignalR", StringComparison.OrdinalIgnoreCase))
+{
+    var signalr = builder.AddAzureSignalR("signalr");
+    api.WithReference(signalr)
+        .WithEnvironment("Realtime__Hosting", "AzureSignalR");
+    web.WithEnvironment("Realtime__Hosting", "AzureSignalR")
+        .WithEnvironment("Realtime__ServiceEndpoint", ReferenceExpression.Create($"https://{signalr.Resource.HostName}/"));
+}
+else if (builder.Configuration.GetValue("Realtime:ApiReplicas", 1) is var replicas and > 1)
+{
+    var redis = builder.AddRedis("redis");
+    api.WithReference(redis)
+        .WaitFor(redis)
+        .WithReplicas(replicas);
+}
 
 var issuer = ReferenceExpression.Create($"{auth.GetEndpoint("https")}/");
 var apiUri = ReferenceExpression.Create($"{api.GetEndpoint("https")}/");

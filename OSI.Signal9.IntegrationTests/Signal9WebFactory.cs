@@ -51,6 +51,12 @@ public sealed class Signal9WebFactory : WebApplicationFactory<WebHost>
     /// </summary>
     public Func<HttpRequestMessage, HttpResponseMessage?>? Fault { get; set; }
 
+    /// <summary>Answers for Azure SignalR Service, when web forwards the dashboard's service path to it.</summary>
+    public Func<HttpRequestMessage, HttpResponseMessage>? RealtimeService { get; set; }
+
+    /// <summary>Every request web forwarded to Azure SignalR Service, as sent.</summary>
+    public ConcurrentQueue<(Uri Uri, IReadOnlyDictionary<string, string> Headers)> ServiceRequests { get; } = new();
+
     /// <summary>How many times web refreshed tokens at api.</summary>
     public int Refreshes => ApiRequests.Count(r => r.Uri.AbsolutePath == "/connect/token" && r.GrantType == "refresh_token");
 
@@ -72,6 +78,8 @@ public sealed class Signal9WebFactory : WebApplicationFactory<WebHost>
             // Code redemption and proxied calls at api, presenting web's certificate.
             services.RemoveAll<IApiHandlerFactory>();
             services.AddSingleton<IApiHandlerFactory>(new IngressHandlerFactory(this));
+            services.RemoveAll<IRealtimeServiceHandlerFactory>();
+            services.AddSingleton<IRealtimeServiceHandlerFactory>(new FakeRealtimeService(this));
         });
     }
 
@@ -87,6 +95,25 @@ public sealed class Signal9WebFactory : WebApplicationFactory<WebHost>
                 InnerHandler = web._owner.Server.CreateHandler(context =>
                     context.Connection.RemoteIpAddress = Signal9ApiFactory.TrustedProxy),
             };
+    }
+
+    /// <summary>Stands in for Azure SignalR Service, recording what web sends it.</summary>
+    private sealed class FakeRealtimeService(Signal9WebFactory web) : HttpMessageHandler, IRealtimeServiceHandlerFactory
+    {
+        public HttpMessageHandler Create() => this;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            web.ServiceRequests.Enqueue((request.RequestUri!,
+                request.Headers.ToDictionary(h => h.Key, h => string.Join(", ", h.Value), StringComparer.OrdinalIgnoreCase)));
+            return Task.FromResult(web.RealtimeService?.Invoke(request)
+                ?? throw new InvalidOperationException("The test set no answer for Azure SignalR Service."));
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            // Shared by every invoker web makes; the factory outlives them.
+        }
     }
 
     private sealed class Ingress(Signal9WebFactory web, X509Certificate2 certificate) : DelegatingHandler

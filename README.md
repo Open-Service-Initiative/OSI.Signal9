@@ -186,6 +186,15 @@ Rate limiting is off until configured. Each policy has a `RateLimiting:<policy>`
 
 Rejected requests get `429` ProblemDetails with `Retry-After`. Errors are ProblemDetails, without exception details outside Development, and HSTS (two years, `includeSubDomains`, `preload`) is sent outside Development.
 
+### Real-time
+
+The agent and dashboard hubs (ADR-0009) are hosted as the AppHost's `Realtime:Hosting` says:
+
+- `AzureSignalR` (the default when published): both hubs run on Azure SignalR Service. api negotiates and hands the client a token for the service that carries only what the hubs read and lasts `Realtime:ServiceTokenLifetime` (default two minutes). The dashboard reaches the service through web, at `/hubs/dashboard/service/`, so browsers stay on web's origin; agents connect to it directly. Clients can't connect to api's hubs directly.
+- `SelfHosted` (the default locally): both hubs run in api. With `Realtime:ApiReplicas` above 1, the AppHost adds a Redis container and api's replicas share it as their backplane (`Realtime:BackplaneChannelPrefix`, default `signal9`); the hubs then take WebSockets only and answer negotiation without keeping state, so no sticky sessions are needed. A single replica needs no Redis.
+
+Each replica re-checks its hub connections every `AgentHub:AccessCheckInterval` and `DashboardHub:AccessCheckInterval` (default 10 seconds), so a revocation made on another replica closes a connection within that time.
+
 ## Development
 
 ```sh
