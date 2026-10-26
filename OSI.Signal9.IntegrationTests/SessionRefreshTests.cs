@@ -6,6 +6,7 @@ using OSI.Signal9.Contracts.Bff;
 using OSI.Signal9.Contracts.Serialization;
 using OSI.Signal9.Contracts.Tenants;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using OSI.Signal9.Web.Bff;
 
 namespace OSI.Signal9.IntegrationTests;
@@ -356,6 +357,84 @@ public sealed class SessionRefreshTests : IDisposable
 
         Assert.AreEqual(HttpStatusCode.BadRequest, status, "The idle session's refresh token still works at auth.");
         Assert.AreEqual("invalid_grant", Error(body));
+    }
+
+    private static Func<HttpRequestMessage, HttpResponseMessage?> RevocationUnavailable =>
+        request => request.RequestUri!.AbsolutePath == "/connect/revoke"
+            ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            : null;
+
+    [TestMethod]
+    public async Task A_sign_out_whose_revocation_fails_is_revoked_once_auth_is_back()
+    {
+        using var browser = await SignedInAsync();
+        var refreshToken = _factory.Web.IssuedRefreshTokens.Single();
+        var captured = browser.WebCookies.ToDictionary();
+        _factory.Web.Fault = RevocationUnavailable;
+
+        var signOut = await browser.FetchAsync(HttpMethod.Post, BffRoutes.Logout);
+        browser.SetWebCookies(captured);
+        var replayed = await browser.GetAsync("api/v1/tenants");
+        _factory.Web.Fault = null;
+        // Web's sweeper tries again with a growing delay until auth confirms (RFC 7009 §2.2).
+        _factory.Time.Advance(TimeSpan.FromMinutes(2));
+        await RevokedAsync();
+        var (status, body) = await RedeemAsWebAsync(refreshToken);
+
+        Assert.AreEqual(HttpStatusCode.NoContent, signOut.StatusCode);
+        Assert.AreEqual(HttpStatusCode.Unauthorized, replayed.StatusCode, "The ended session was still usable.");
+        Assert.AreEqual(HttpStatusCode.BadRequest, status, "The signed-out session's refresh token still works at auth.");
+        Assert.AreEqual("invalid_grant", Error(body));
+    }
+
+    [TestMethod]
+    public async Task An_idle_end_whose_revocation_fails_is_revoked_once_auth_is_back()
+    {
+        using var browser = await SignedInAsync();
+        var refreshToken = _factory.Web.IssuedRefreshTokens.Single();
+        _factory.Web.Fault = RevocationUnavailable;
+
+        _factory.Time.Advance(TimeSpan.FromMinutes(61));
+        var me = await browser.GetAsync(BffRoutes.User);
+        // Until a revocation is attempted (and refused), the session isn't known to have ended at auth.
+        for (var waited = 0; !_factory.Web.ApiRequests.Any(r => r.Uri.AbsolutePath == "/connect/revoke") && waited < 100; waited++)
+            await Task.Delay(100, Ct);
+        _factory.Web.Fault = null;
+        _factory.Time.Advance(TimeSpan.FromMinutes(2));
+        await RevokedAsync();
+        var (status, body) = await RedeemAsWebAsync(refreshToken);
+
+        Assert.AreEqual(HttpStatusCode.Unauthorized, me.StatusCode);
+        Assert.AreEqual(HttpStatusCode.BadRequest, status, "The idle session's refresh token still works at auth.");
+        Assert.AreEqual("invalid_grant", Error(body));
+    }
+
+    [TestMethod]
+    public async Task An_ended_session_is_forgotten_once_nothing_behind_it_could_be_used()
+    {
+        using var browser = await SignedInAsync();
+        _factory.Web.Fault = RevocationUnavailable;
+        await browser.FetchAsync(HttpMethod.Post, BffRoutes.Logout);
+        Assert.AreEqual(1L, await CountDashboardSessionsAsync(), "The unconfirmed revocation wasn't kept.");
+
+        // Past the refresh token's 12 hours and the last access token's lifetime, there's nothing left to revoke.
+        _factory.Time.Advance(TimeSpan.FromHours(12.5));
+        var remaining = await CountDashboardSessionsAsync();
+        for (var waited = 0; remaining > 0 && waited < 100; waited++)
+        {
+            await Task.Delay(100, Ct);
+            remaining = await CountDashboardSessionsAsync();
+        }
+
+        Assert.AreEqual(0L, remaining);
+    }
+
+    private async Task<long> CountDashboardSessionsAsync()
+    {
+        await using var connection = new NpgsqlConnection(_factory.ConnectionString);
+        await connection.OpenAsync(Ct);
+        await using var count = new NpgsqlCommand("""SELECT count(*) FROM "DashboardSessions" """, connection);
+        return (long)(await count.ExecuteScalarAsync(Ct))!;
     }
 
     [TestMethod]

@@ -51,8 +51,11 @@ public sealed class WebTokenClient(ApiChannel channel, IConfiguration configurat
         return new TokenRefresh(null, Rejected: false);
     }
 
-    /// <summary>Revokes a refresh token (RFC 7009). It's best-effort: a failure is logged.</summary>
-    public async Task RevokeAsync(string refreshToken, CancellationToken cancellationToken)
+    /// <summary>
+    /// Revokes a refresh token (RFC 7009), returning whether auth confirmed it: a 200 means the token is revoked, or was
+    /// already invalid (§2.2). A failure is logged, for the caller to try again.
+    /// </summary>
+    public async Task<bool> RevokeAsync(string refreshToken, CancellationToken cancellationToken)
     {
         try
         {
@@ -62,15 +65,17 @@ public sealed class WebTokenClient(ApiChannel channel, IConfiguration configurat
                 ["token_type_hint"] = "refresh_token",
                 ["client_id"] = WebClientRegistration.ClientId,
             }, cancellationToken);
-            if (status is not (>= 200 and < 300))
-                logger.LogWarning("Revoking a dashboard session's refresh token failed with {Status} {Error}.",
-                    status, response?.Error);
+            if (status is >= 200 and < 300)
+                return true;
+            logger.LogWarning("Revoking a dashboard session's refresh token failed with {Status} {Error}; it's retried.",
+                status, response?.Error);
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException
                                               && !cancellationToken.IsCancellationRequested)
         {
-            logger.LogWarning(exception, "Revoking a dashboard session's refresh token failed.");
+            logger.LogWarning(exception, "Revoking a dashboard session's refresh token failed; it's retried.");
         }
+        return false;
     }
 
     private async Task<(int Status, OpenIdConnectMessage? Response)> PostAsync(string endpoint,

@@ -28,10 +28,12 @@ public readonly record struct SessionToken(SessionTokenStatus Status, string? Ac
 /// The tokens web holds for each signed-in person: a distributed, encrypted token cache in the database (story 46).
 /// The tokens are protected with Data Protection, whose keys are in the database wrapped by the key-encryption key, for
 /// one session each, so any web replica can use them (story 54) and a row can't be read as another session's.
-/// Sessions end after an hour idle or 12 hours in all (story 48); ending one revokes its refresh token at auth.
+/// Sessions end after an hour idle or 12 hours in all (story 48); ending one revokes its refresh token at auth, which
+/// revokes every token behind it. An ended session can't be used at once, and is kept, holding only the work of revoking
+/// it, until auth confirms the revocation.
 /// </summary>
 public sealed class DashboardSessions(Signal9DbContext db, IDataProtectionProvider dataProtection, TimeProvider time,
-    WebTokenClient tokenClient)
+    WebTokenClient tokenClient, ILogger<DashboardSessions> logger)
 {
     /// <summary>The claim in web's session ticket that names the person's session.</summary>
     public const string SessionClaim = "signal9_session";
@@ -41,6 +43,19 @@ public sealed class DashboardSessions(Signal9DbContext db, IDataProtectionProvid
 
     /// <summary>How stale <see cref="DashboardSession.LastSeenAt"/> may get before a request updates it.</summary>
     private static readonly TimeSpan ActivityResolution = TimeSpan.FromMinutes(1);
+
+    /// <summary>How long a replica holds an ended session while it revokes it: longer than a call to auth can take.</summary>
+    private static readonly TimeSpan RevocationLease = TimeSpan.FromMinutes(1);
+
+    /// <summary>The longest wait between attempts at a failed revocation; the first wait is a minute, then it doubles.</summary>
+    private static readonly TimeSpan MaxRevocationBackoff = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// After this long from sign-in nothing behind a session is usable anyway: web's refresh token lasts 12 hours from
+    /// sign-in without sliding, and an access token issued just before then lasts its own lifetime.
+    /// </summary>
+    private static readonly TimeSpan RevocationHorizon =
+        AuthorizationServer.DashboardSessionLifetime + AuthorizationServer.AccessTokenLifetime;
 
     private sealed record Tokens(string AccessToken, string? RefreshToken, string? IdToken);
 
@@ -70,7 +85,7 @@ public sealed class DashboardSessions(Signal9DbContext db, IDataProtectionProvid
     public async Task<bool> ValidateAsync(ClaimsPrincipal person, CancellationToken cancellationToken)
     {
         if (SessionId(person) is not { } id
-            || await db.DashboardSessions.AsNoTracking().Where(s => s.Id == id)
+            || await db.DashboardSessions.AsNoTracking().Where(s => s.Id == id && s.EndedAt == null)
                 .Select(s => new { s.CreatedAt, s.LastSeenAt }).SingleOrDefaultAsync(cancellationToken) is not { } session)
             return false;
 
@@ -82,7 +97,7 @@ public sealed class DashboardSessions(Signal9DbContext db, IDataProtectionProvid
         }
 
         if (now - session.LastSeenAt >= ActivityResolution)
-            await db.DashboardSessions.Where(s => s.Id == id)
+            await db.DashboardSessions.Where(s => s.Id == id && s.EndedAt == null)
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.LastSeenAt, now), cancellationToken);
         return true;
     }
@@ -96,7 +111,8 @@ public sealed class DashboardSessions(Signal9DbContext db, IDataProtectionProvid
         CancellationToken cancellationToken)
     {
         if (SessionId(person) is not { } id
-            || await db.DashboardSessions.AsNoTracking().SingleOrDefaultAsync(s => s.Id == id, cancellationToken) is not { } session)
+            || await db.DashboardSessions.AsNoTracking()
+                .SingleOrDefaultAsync(s => s.Id == id && s.EndedAt == null, cancellationToken) is not { } session)
             return new SessionToken(SessionTokenStatus.Ended);
 
         if (Usable(session, rejected) is { } current)
@@ -117,7 +133,7 @@ public sealed class DashboardSessions(Signal9DbContext db, IDataProtectionProvid
             await using var transaction = await db.Database.BeginTransactionAsync();
             // The row lock serializes refreshes of this session across every replica sharing the database.
             var session = await db.DashboardSessions
-                .FromSql($"""SELECT * FROM "DashboardSessions" WHERE "Id" = {id} FOR UPDATE""")
+                .FromSql($"""SELECT * FROM "DashboardSessions" WHERE "Id" = {id} AND "EndedAt" IS NULL FOR UPDATE""")
                 .SingleOrDefaultAsync();
             if (session is null)
                 return new SessionToken(SessionTokenStatus.Ended);
@@ -133,6 +149,7 @@ public sealed class DashboardSessions(Signal9DbContext db, IDataProtectionProvid
 
             if (refresh.Rejected)
             {
+                // The grant is already gone at auth, so there's nothing left to revoke.
                 db.DashboardSessions.Remove(session);
                 await db.SaveChangesAsync();
                 await transaction.CommitAsync();
@@ -164,7 +181,7 @@ public sealed class DashboardSessions(Signal9DbContext db, IDataProtectionProvid
             : session.AccessTokenExpiresAt - time.GetUtcNow().UtcDateTime > RefreshMargin ? accessToken : null;
     }
 
-    /// <summary>Ends the person's session: its tokens are gone and its refresh token is revoked at auth.</summary>
+    /// <summary>Ends the person's session: it can't be used any more, and its refresh token is revoked at auth.</summary>
     public async Task EndAsync(ClaimsPrincipal person)
     {
         if (SessionId(person) is { } id)
@@ -178,26 +195,71 @@ public sealed class DashboardSessions(Signal9DbContext db, IDataProtectionProvid
         var idleSince = now - AuthorizationServer.DashboardSessionIdleTimeout;
         var startedBefore = now - AuthorizationServer.DashboardSessionLifetime;
         var expired = await db.DashboardSessions.AsNoTracking()
-            .Where(s => s.LastSeenAt <= idleSince || s.CreatedAt <= startedBefore)
+            .Where(s => s.EndedAt == null && (s.LastSeenAt <= idleSince || s.CreatedAt <= startedBefore))
             .Select(s => s.Id).ToListAsync(cancellationToken);
         foreach (var id in expired)
             await EndAsync(id);
     }
 
+    /// <summary>Tries again to revoke each ended session whose earlier revocation failed and whose wait is over.</summary>
+    public async Task RetryRevocationsAsync(CancellationToken cancellationToken)
+    {
+        var now = time.GetUtcNow().UtcDateTime;
+        // Claiming them with a lease means one replica tries each; if it stops midway, another tries after the lease.
+        var due = await db.DashboardSessions
+            .FromSql($"""
+                UPDATE "DashboardSessions" SET "RevocationDueAt" = {now + RevocationLease}
+                WHERE "EndedAt" IS NOT NULL AND "RevocationDueAt" <= {now}
+                RETURNING *
+                """)
+            .AsNoTracking().ToListAsync(cancellationToken);
+        foreach (var session in due)
+            await RevokeAsync(session);
+    }
+
     /// <summary>
-    /// Deletes the session and then revokes its refresh token, so whichever replica deletes it revokes it, once. Both
-    /// run to the end whoever asked, so a session is never half-ended.
+    /// Marks the session ended, so nothing uses it from now on, and then revokes its refresh token. Only the replica
+    /// that ended it revokes it now; a failed revocation is retried later. Both run to the end whoever asked, so a
+    /// session is never half-ended.
     /// </summary>
     private async Task EndAsync(Guid id)
     {
+        var now = time.GetUtcNow().UtcDateTime;
         var ended = await db.DashboardSessions
-            .FromSql($"""DELETE FROM "DashboardSessions" WHERE "Id" = {id} RETURNING *""")
+            .FromSql($"""
+                UPDATE "DashboardSessions" SET "EndedAt" = {now}, "RevocationDueAt" = {now + RevocationLease}
+                WHERE "Id" = {id} AND "EndedAt" IS NULL
+                RETURNING *
+                """)
             .AsNoTracking().ToListAsync();
         foreach (var session in ended)
+            await RevokeAsync(session);
+    }
+
+    /// <summary>
+    /// Revokes an ended session's refresh token, and forgets the session once auth confirms it (RFC 7009 §2.2) or once
+    /// nothing behind it could be used anyway. Otherwise it's tried again after a growing wait.
+    /// </summary>
+    private async Task RevokeAsync(DashboardSession session)
+    {
+        var confirmed = Read(session).RefreshToken is not { } refreshToken
+            || await tokenClient.RevokeAsync(refreshToken, CancellationToken.None);
+        var now = time.GetUtcNow().UtcDateTime;
+        if (confirmed || now - session.CreatedAt >= RevocationHorizon)
         {
-            if (Read(session).RefreshToken is { } refreshToken)
-                await tokenClient.RevokeAsync(refreshToken, CancellationToken.None);
+            if (!confirmed)
+                logger.LogError("Giving up revoking dashboard session {Session} after {Attempts} attempts: its tokens have expired.",
+                    session.Id, session.RevocationAttempts + 1);
+            await db.DashboardSessions.Where(s => s.Id == session.Id).ExecuteDeleteAsync();
+            return;
         }
+
+        var attempts = session.RevocationAttempts + 1;
+        var wait = TimeSpan.FromMinutes(Math.Min(Math.Pow(2, attempts - 1), MaxRevocationBackoff.TotalMinutes));
+        await db.DashboardSessions.Where(s => s.Id == session.Id)
+            .ExecuteUpdateAsync(set => set
+                .SetProperty(s => s.RevocationAttempts, attempts)
+                .SetProperty(s => s.RevocationDueAt, now + wait));
     }
 
     private static bool IsOver(DateTime createdAt, DateTime lastSeenAt, DateTime now) =>

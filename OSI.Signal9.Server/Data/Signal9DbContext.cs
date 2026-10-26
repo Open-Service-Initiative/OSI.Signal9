@@ -189,6 +189,8 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
             session.Property(s => s.Subject).HasMaxLength(200);
             // Sessions are looked up by person for sign-out everywhere (#119).
             session.HasIndex(s => s.Subject);
+            // Ended sessions waiting for their revocation to be tried again.
+            session.HasIndex(s => s.RevocationDueAt).HasFilter("\"EndedAt\" IS NOT NULL");
         });
 
         modelBuilder.Entity<SignInSession>(session =>

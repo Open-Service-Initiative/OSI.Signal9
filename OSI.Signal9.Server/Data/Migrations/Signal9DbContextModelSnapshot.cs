@@ -302,6 +302,9 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("EndedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("LastSeenAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -309,12 +312,21 @@ namespace OSI.Signal9.Server.Data.Migrations
                         .IsRequired()
                         .HasColumnType("bytea");
 
+                    b.Property<int>("RevocationAttempts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("RevocationDueAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Subject")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("RevocationDueAt")
+                        .HasFilter("\"EndedAt\" IS NOT NULL");
 
                     b.HasIndex("Subject");
 
