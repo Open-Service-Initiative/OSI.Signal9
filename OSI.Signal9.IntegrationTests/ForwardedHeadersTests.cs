@@ -32,6 +32,20 @@ public sealed class ForwardedHeadersTests : IDisposable
         Assert.AreEqual(HttpStatusCode.BadRequest, fromElsewhere.StatusCode);
     }
 
+    [TestMethod]
+    [DataRow("auth")]
+    [DataRow("api")]
+    public async Task Forwarded_scheme_is_ignored_when_no_proxy_network_is_configured(string host)
+    {
+        using var factory = new Signal9ApiFactory(settings: new Dictionary<string, string?> { [Signal9ApiFactory.NoProxyNetwork] = null });
+        await factory.SeedClientAsync("reporting-app");
+        var server = host == "auth" ? factory.Auth.Server : factory.Server;
+
+        var response = await RequestTokenOverHttpAsync(server, Signal9ApiFactory.TrustedProxy);
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     private async Task<HttpResponseMessage> RequestTokenOverHttpAsync(TestServer server, IPAddress peer)
     {
         using var client = Signal9ApiFactory.CreatePeerClient(server, peer, null);

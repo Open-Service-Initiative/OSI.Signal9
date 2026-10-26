@@ -40,7 +40,11 @@ public static class ForwardedHeaderTrust
         builder.Services.AddSingleton(Options.Create(settings));
         builder.Services.Configure<ForwardedHeadersOptions>(options =>
         {
-            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+            // With no trusted network, ignore forwarded headers altogether: given empty lists, ASP.NET Core would
+            // believe every peer.
+            options.ForwardedHeaders = networks.Count == 0
+                ? ForwardedHeaders.None
+                : ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
             // Drop the loopback defaults: only what's configured is trusted.
             options.KnownProxies.Clear();
             options.KnownIPNetworks.Clear();

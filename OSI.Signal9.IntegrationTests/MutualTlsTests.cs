@@ -109,6 +109,19 @@ public sealed class MutualTlsTests : IDisposable
     }
 
     [TestMethod]
+    public async Task Forwarded_certificate_is_ignored_when_no_proxy_network_is_configured()
+    {
+        using var certificate = TestCertificates.SelfSigned();
+        using var factory = new Signal9ApiFactory(settings: new Dictionary<string, string?> { [Signal9ApiFactory.NoProxyNetwork] = null });
+        await factory.SeedSelfSignedTlsClientAsync("agent-app", certificate);
+        using var api = factory.CreateForwardedCertificateClient(certificate);
+
+        var response = await api.PostAsync("connect/token", Signal9ApiFactory.MtlsClientCredentials("agent-app"), Ct);
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [TestMethod]
     public async Task Forwarded_certificate_is_ignored_when_forwarding_is_off()
     {
         using var certificate = TestCertificates.SelfSigned();

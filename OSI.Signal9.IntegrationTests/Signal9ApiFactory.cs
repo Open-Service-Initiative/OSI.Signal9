@@ -248,8 +248,10 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         builder.UseSetting("KeyEncryption:Provider", "Certificate");
         builder.UseSetting("KeyEncryption:Certificate:Path", kekPath ?? TestKeys.KekPath);
         builder.UseSetting("HealthProbes:Port", ProbePort.ToString(CultureInfo.InvariantCulture));
-        // Container Apps' ingress is the proxy in front of every host; api takes client certificates from it.
-        builder.UseSetting("ForwardedHeaders:KnownNetworks:0", TrustedProxyNetwork);
+        // Container Apps' ingress is the proxy in front of every host; api takes client certificates from it. A test
+        // that sets NoProxyNetwork runs without one.
+        if (!settings.ContainsKey(NoProxyNetwork))
+            builder.UseSetting("ForwardedHeaders:KnownNetworks:0", TrustedProxyNetwork);
         builder.UseSetting("ForwardedHeaders:ForwardClientCertificate", "true");
         builder.UseSetting("Identity:TlsClientCertificateAuthorities:0", TestCertificates.AuthorityPem);
         foreach (var (key, value) in settings)
@@ -264,6 +266,9 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
 
     /// <summary>The network the fixture trusts forwarded headers from, standing in for Container Apps' ingress.</summary>
     public const string TrustedProxyNetwork = "10.0.0.0/24";
+
+    /// <summary>A setting that leaves the hosts with no trusted proxy network, as self-hosted by default.</summary>
+    public const string NoProxyNetwork = "ForwardedHeaders:KnownNetworks";
 
     /// <summary>A peer inside <see cref="TrustedProxyNetwork"/>.</summary>
     public static readonly IPAddress TrustedProxy = IPAddress.Parse("10.0.0.4");
