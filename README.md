@@ -168,20 +168,22 @@ The dashboard hub needs `devices.read` or `telemetry.read`, and any API applicat
 
 Both hosts serve their liveness (`/alive`) and readiness (`/health`) probes only on the internal port in `HealthProbes:Port`, in every environment; it's required, and that port serves nothing else. The AppHost assigns it.
 
-Rate limiting is off until configured. Each policy has a `RateLimiting:<policy>` section with `PermitLimit` (requests per window; absent means no limit) and `Window` (default `00:01:00`):
+Each rate limiting policy has a `RateLimiting:<policy>` section with `PermitLimit` (requests per window) and `Window` (default `00:01:00`). The anonymous endpoints that make the database work have conservative defaults, against unrestricted resource consumption (OWASP API Security Top 10 API4:2023, ASVS anti-automation); every other policy is off until its `PermitLimit` is set:
 
-| Policy | Applies to | Partitioned by |
-| --- | --- | --- |
-| `Global` | every request on the host | client IP |
-| `Token` | the token endpoint on auth and its mTLS alias on api | `client_id` and client IP |
-| `Authorize` | the authorization endpoint on auth | client IP |
-| `Api` | api's resources and hubs | caller (the access token's subject), or client IP without a token |
-| `Enrollment` | agent enrollment on api | client IP |
-| `EnrollmentToken` | agent enrollment on api | enrollment token |
-| `InvitationRedemption` | invitation links on auth | client IP |
+| Policy | Applies to | Partitioned by | Default |
+| --- | --- | --- | --- |
+| `Global` | every request on the host | client IP | off |
+| `Token` | the token endpoint on auth and its mTLS alias on api | `client_id` and client IP | 300 a minute |
+| `Authorize` | the authorization endpoint on auth | client IP | off |
+| `Api` | api's resources and hubs | caller (the access token's subject), or client IP without a token | off |
+| `Enrollment` | agent enrollment on api | client IP | 60 a minute |
+| `EnrollmentToken` | agent enrollment on api | enrollment token | off |
+| `InvitationRedemption` | invitation links on auth | client IP | 30 a minute |
+
+The `Token` default is shared by every person signed in to the dashboard, since web refreshes their tokens as one client from one address: raise it for more than a few thousand people signed in at once. Agents enrolling faster than `Enrollment` allows from one site retry with backoff. Set a limit, or set `PermitLimit` to empty (`null` in JSON, `RateLimiting__Enrollment__PermitLimit=` in the environment) to turn a default off:
 
 ```json
-"RateLimiting": { "Token": { "PermitLimit": 20, "Window": "00:01:00" } }
+"RateLimiting": { "Token": { "PermitLimit": 600, "Window": "00:01:00" }, "Enrollment": { "PermitLimit": null } }
 ```
 
 Rejected requests get `429` ProblemDetails with `Retry-After`. Errors are ProblemDetails, without exception details outside Development, and HSTS (two years, `includeSubDomains`, `preload`) is sent outside Development.

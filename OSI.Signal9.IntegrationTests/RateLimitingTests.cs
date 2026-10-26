@@ -6,8 +6,8 @@ using System.Text;
 namespace OSI.Signal9.IntegrationTests;
 
 /// <summary>
-/// Rate limiting (stories 128, 129): named, configurable policies under <c>RateLimiting:{name}</c>, with no limits
-/// unless configured.
+/// Rate limiting (stories 128, 129): named, configurable policies under <c>RateLimiting:{name}</c>, with conservative
+/// defaults on the token, enrollment and invitation-redemption endpoints and no other limits unless configured.
 /// </summary>
 [TestClass]
 public sealed class RateLimitingTests
@@ -43,10 +43,64 @@ public sealed class RateLimitingTests
         return client.SendAsync(request, Ct);
     }
 
-    [TestMethod]
-    public async Task Nothing_is_limited_by_default()
+    /// <summary>
+    /// The production defaults, which the fixture otherwise turns off, with windows long enough that none ends during a
+    /// test (only <c>Window</c> is set, so the default <c>PermitLimit</c> still applies).
+    /// </summary>
+    private static Dictionary<string, string?> Defaults(Dictionary<string, string?>? overrides = null)
     {
-        using var factory = new Signal9ApiFactory();
+        var settings = new Dictionary<string, string?>
+        {
+            [Signal9ApiFactory.DefaultRateLimits] = "true",
+            ["RateLimiting:Token:Window"] = "01:00:00",
+            ["RateLimiting:Enrollment:Window"] = "01:00:00",
+            ["RateLimiting:InvitationRedemption:Window"] = "01:00:00",
+        };
+        foreach (var (key, value) in overrides ?? [])
+            settings[key] = value;
+        return settings;
+    }
+
+    private async Task<HttpStatusCode> EnrollWithAnUnknownTokenAsync(HttpClient api)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/agents")
+        {
+            Content = JsonContent.Create(Signal9ApiFactory.Enrollment("s9e_not-a-real-token", TestCertificates.AgentCertificate()),
+                options: OSI.Signal9.Contracts.Serialization.Signal9Json.Options),
+        };
+        request.Headers.Add(Signal9ApiFactory.ClientIpHeader, "203.0.113.1");
+        return (await api.SendAsync(request, Ct)).StatusCode;
+    }
+
+    /// <summary>Sends <paramref name="send"/> until it's refused, and returns how many got through.</summary>
+    private static async Task<int> PermittedAsync(Func<Task<HttpStatusCode>> send, int atMost)
+    {
+        for (var sent = 0; sent <= atMost; sent++)
+        {
+            if (await send() == HttpStatusCode.TooManyRequests)
+                return sent;
+        }
+        return atMost + 1;
+    }
+
+    // Anonymous endpoints that make the database work are limited out of the box (OWASP API4:2023, unrestricted
+    // resource consumption); the defaults are per minute.
+    [TestMethod]
+    public async Task Token_enrollment_and_invitation_redemption_are_limited_by_default()
+    {
+        using var factory = new Signal9ApiFactory(settings: Defaults());
+        using var auth = factory.Auth.CreateClient();
+        using var api = factory.CreateAnonymousClient();
+
+        Assert.AreEqual(300, await PermittedAsync(async () => (await RequestTokenAsync(auth, "unknown-app")).StatusCode, 300));
+        Assert.AreEqual(60, await PermittedAsync(() => EnrollWithAnUnknownTokenAsync(api), 60));
+        Assert.AreEqual(30, await PermittedAsync(async () => (await GetAsync(auth, "invitations/s9i_not-a-real-reference")).StatusCode, 30));
+    }
+
+    [TestMethod]
+    public async Task Other_policies_are_off_by_default()
+    {
+        using var factory = new Signal9ApiFactory(settings: Defaults());
         await factory.SeedClientAsync("busy-app");
         using var auth = factory.Auth.CreateClient();
         using var api = factory.CreateClient();
@@ -55,7 +109,23 @@ public sealed class RateLimitingTests
         {
             Assert.AreEqual(HttpStatusCode.OK, (await RequestTokenAsync(auth, "busy-app")).StatusCode);
             Assert.AreEqual(HttpStatusCode.OK, (await GetAsync(api, "api/v1/tenants")).StatusCode);
+            Assert.AreEqual(HttpStatusCode.OK, (await GetAsync(auth, ".well-known/openid-configuration")).StatusCode);
         }
+    }
+
+    [TestMethod]
+    public async Task A_default_can_be_changed_or_turned_off()
+    {
+        using var factory = new Signal9ApiFactory(settings: Defaults(new()
+        {
+            ["RateLimiting:Token:PermitLimit"] = "1",
+            ["RateLimiting:Enrollment:PermitLimit"] = "",
+        }));
+        using var auth = factory.Auth.CreateClient();
+        using var api = factory.CreateAnonymousClient();
+
+        Assert.AreEqual(1, await PermittedAsync(async () => (await RequestTokenAsync(auth, "unknown-app")).StatusCode, 300));
+        Assert.AreEqual(61, await PermittedAsync(() => EnrollWithAnUnknownTokenAsync(api), 60));
     }
 
     [TestMethod]

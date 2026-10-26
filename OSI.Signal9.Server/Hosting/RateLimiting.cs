@@ -15,9 +15,12 @@ namespace OSI.Signal9.Server.Hosting;
 
 /// <summary>
 /// Rate limiting with ASP.NET Core's built-in limiter (stories 128, 129). Every policy is configured under
-/// <c>RateLimiting:{name}</c> and applies no limit until its <see cref="RateLimitOptions.PermitLimit"/> is set.
-/// <see cref="Global"/> covers every request on a host; named policies add their own limit on the endpoints that
-/// require them. Later tickets register theirs with <see cref="AddRateLimitPolicy"/>.
+/// <c>RateLimiting:{name}</c>. The anonymous, database-backed endpoints (<see cref="Token"/>, <see cref="Enrollment"/> and
+/// <see cref="InvitationRedemption"/>) have conservative <see cref="Defaults"/> (OWASP ASVS anti-automation, API Security
+/// Top 10 API4:2023); every other policy applies no limit until its <see cref="RateLimitOptions.PermitLimit"/> is set,
+/// and an empty <c>PermitLimit</c> turns a default off. <see cref="Global"/> covers every request on a host; named
+/// policies add their own limit on the endpoints that require them. Later tickets register theirs with
+/// <see cref="AddRateLimitPolicy"/>.
 /// </summary>
 public static class RateLimiting
 {
@@ -46,6 +49,18 @@ public static class RateLimiting
     /// the endpoint acquires the permit itself from <see cref="RequestRateLimits"/>.
     /// </summary>
     public const string EnrollmentToken = "EnrollmentToken";
+
+    /// <summary>
+    /// The permits per minute a policy allows when its configuration doesn't say. Generous for legitimate use (web
+    /// refreshes every signed-in person's tokens as one client from one address; a site enrolls its machines through
+    /// one address, and agents retry with backoff), while bounding what one address can make the database do.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, int> Defaults = new Dictionary<string, int>
+    {
+        [Token] = 300,
+        [Enrollment] = 60,
+        [InvitationRedemption] = 30,
+    };
 
     public static IServiceCollection AddSignal9RateLimiting(this IServiceCollection services)
     {
@@ -132,7 +147,9 @@ public static class RateLimiting
     private static bool IsPerCaller(HttpContext context) => PolicyName(context) == Api;
 
     private static void AddLimitOptions(IServiceCollection services, string name) =>
-        services.AddOptions<RateLimitOptions>(name).BindConfiguration($"{SectionName}:{name}")
+        services.AddOptions<RateLimitOptions>(name)
+            .Configure(options => options.PermitLimit = Defaults.TryGetValue(name, out var permits) ? permits : null)
+            .BindConfiguration($"{SectionName}:{name}")
             .ValidateDataAnnotations().ValidateOnStart();
 
     private static RateLimitPartition<string> Partition(HttpContext context, string policy, string key) =>
@@ -204,7 +221,10 @@ public sealed class RequestRateLimits(IOptionsMonitor<RateLimitOptions> options)
     public void Dispose() => _limiter.Dispose();
 }
 
-/// <summary>One rate limit policy's settings. Without a <see cref="PermitLimit"/>, nothing is limited.</summary>
+/// <summary>
+/// One rate limit policy's settings. Without a <see cref="PermitLimit"/>, nothing is limited; an empty one in
+/// configuration clears a policy's default.
+/// </summary>
 public sealed class RateLimitOptions
 {
     /// <summary>Requests allowed per partition in each window, or <see langword="null"/> for no limit.</summary>

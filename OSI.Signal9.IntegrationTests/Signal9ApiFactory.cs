@@ -262,6 +262,13 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
             builder.UseSetting("ForwardedHeaders:KnownNetworks:0", TrustedProxyNetwork);
         builder.UseSetting("ForwardedHeaders:ForwardClientCertificate", "true");
         builder.UseSetting("Identity:TlsClientCertificateAuthorities:0", TestCertificates.AuthorityPem);
+        // Tests request tokens and enroll agents far faster than anyone would; a test that sets DefaultRateLimits keeps
+        // the production defaults.
+        if (!settings.ContainsKey(DefaultRateLimits))
+        {
+            foreach (var policy in OSI.Signal9.Server.Hosting.RateLimiting.Defaults.Keys)
+                builder.UseSetting($"RateLimiting:{policy}:PermitLimit", string.Empty);
+        }
         foreach (var (key, value) in settings)
             builder.UseSetting(key, value);
         builder.ConfigureTestServices(services =>
@@ -271,6 +278,9 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
             services.AddSingleton<TimeProvider>(time);
         });
     }
+
+    /// <summary>A setting that keeps the default rate limits, which the fixture otherwise turns off.</summary>
+    public const string DefaultRateLimits = "Testing:DefaultRateLimits";
 
     /// <summary>The network the fixture trusts forwarded headers from, standing in for Container Apps' ingress.</summary>
     public const string TrustedProxyNetwork = "10.0.0.0/24";
