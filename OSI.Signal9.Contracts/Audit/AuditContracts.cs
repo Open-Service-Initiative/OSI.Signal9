@@ -115,6 +115,12 @@ public static class AuditActions
     /// application's tenant. <c>Detail</c> lists every scope the consent now covers.
     /// </summary>
     public const string ApiApplicationConsentGranted = "api-application.consent-granted";
+
+    /// <summary>
+    /// A person's connection to a delegated API application was revoked (stories 88-89), by the person or an
+    /// Administrator, stored at the application's tenant. <c>Detail</c> names the person by subject.
+    /// </summary>
+    public const string ApiApplicationConsentRevoked = "api-application.consent-revoked";
     public const string ApiApplicationCredentialAdded = "api-application.credential-added";
     public const string ApiApplicationCredentialRemoved = "api-application.credential-removed";
 

@@ -88,6 +88,14 @@ public enum TenantScopeBypass
     /// </summary>
     [NotAudited("Answers only yes or no, and the revocation it guards is audited.")]
     AdministratorLockoutGuard,
+
+    /// <summary>
+    /// Finding a connected application (#126) to list or revoke the caller's own: the person's consent to an API
+    /// application registered anywhere. Only connections whose subject is the person the token names are returned;
+    /// others are returned only within the caller's reach.
+    /// </summary>
+    [NotAudited("Reads only the caller's own connections, and each revocation is audited.")]
+    CallerConnections,
 }
 
 /// <summary>Each use of this <see cref="TenantScopeBypass"/> is recorded in the audit log.</summary>

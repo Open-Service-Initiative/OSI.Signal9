@@ -103,15 +103,30 @@ public sealed class Consent(
         EntraPerson person, IEnumerable<string> scopes)
     {
         var cancellationToken = context.RequestAborted;
-        // What the person consented to before, then what's new.
+        // What the person consented to before, then what's new. One authorization is the person's connection to the
+        // application (#126): more scopes extend it, so the tokens already issued from it keep working.
         var granted = new List<string>();
+        object? authorization = null;
         await foreach (var existing in authorizations.FindAsync(person.Subject, client, Statuses.Valid,
                            AuthorizationTypes.Permanent, scopes: null, cancellationToken))
+        {
+            authorization ??= existing;
             granted.AddRange((await authorizations.GetScopesAsync(existing, cancellationToken)).Where(s => !granted.Contains(s)));
+        }
         granted.AddRange(scopes.Where(s => !granted.Contains(s)));
 
-        var authorization = await authorizations.CreateAsync(identity, person.Subject, client!, AuthorizationTypes.Permanent,
-            [.. granted], cancellationToken);
+        if (authorization is null)
+        {
+            authorization = await authorizations.CreateAsync(identity, person.Subject, client!, AuthorizationTypes.Permanent,
+                [.. granted], cancellationToken);
+        }
+        else
+        {
+            var descriptor = new OpenIddictAuthorizationDescriptor();
+            await authorizations.PopulateAsync(descriptor, authorization, cancellationToken);
+            descriptor.Scopes.UnionWith(granted);
+            await authorizations.UpdateAsync(authorization, descriptor, cancellationToken);
+        }
         identity.SetAuthorizationId(await authorizations.GetIdAsync(authorization, cancellationToken));
 
         var owner = ApiApplicationClient.Owner(await applications.GetPropertiesAsync(application, cancellationToken));

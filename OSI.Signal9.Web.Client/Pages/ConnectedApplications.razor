@@ -1,0 +1,82 @@
+@page "/connected-applications"
+@attribute [Authorize]
+@inject Signal9ApiClient Api
+@inject IDialogService Dialogs
+
+<PageTitle>Connected applications - Signal9</PageTitle>
+
+<div class="page-header">
+    <FluentText As="TextTag.H1" Size="TextSize.Size800">Connected applications</FluentText>
+</div>
+<p>Applications you allowed to act for you. Each can do only what you can, within the tenant it's registered at. Revoking one stops it at once; it has to ask you again.</p>
+
+<ProblemBar Error="error" />
+@if (notice is not null)
+{
+    <FluentMessageBar Class="notice-bar" Intent="MessageBarIntent.Success">@notice</FluentMessageBar>
+}
+
+<FluentDataGrid Items="@connections.AsQueryable()" TGridItem="ConnectionDto" Loading="loading" ItemKey="@(c => c.Id)">
+    <PropertyColumn Title="Application" Property="@(c => c.ApiApplicationName)" />
+    <TemplateColumn Title="Allowed">@string.Join(", ", context.Scopes)</TemplateColumn>
+    <TemplateColumn Title="Connected">@context.ConnectedAt.ToLocalTime().ToString("g")</TemplateColumn>
+    <TemplateColumn Title="Actions" Align="DataGridCellAlignment.End">
+        <FluentButton Id="@($"revoke-{context.Id}")" Appearance="ButtonAppearance.Subtle"
+                      OnClick="@(() => RevokeAsync(context))">Revoke</FluentButton>
+    </TemplateColumn>
+</FluentDataGrid>
+<FluentPaginator State="pagination" CurrentPageIndexChanged="LoadAsync" />
+
+@code {
+    private const int PageSize = 25;
+
+    private readonly PaginationState pagination = new() { ItemsPerPage = PageSize };
+    private List<ConnectionDto> connections = [];
+    private bool loading = true;
+    private ApiException? error;
+    private string? notice;
+
+    protected override Task OnInitializedAsync() => LoadAsync(0);
+
+    private async Task LoadAsync(int pageIndex)
+    {
+        loading = true;
+        try
+        {
+            var page = await Api.ListMyConnectionsAsync(pageIndex + 1, PageSize);
+            connections = [.. page.Items];
+            await pagination.SetTotalItemCountAsync(page.TotalCount);
+            error = null;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task RevokeAsync(ConnectionDto connection)
+    {
+        var confirm = await Dialogs.ShowConfirmationAsync(
+            $"Revoke {connection.ApiApplicationName}? It stops acting for you on its next request.",
+            "Revoke application", "Revoke", "Cancel");
+        if (confirm.Cancelled)
+            return;
+
+        notice = null;
+        try
+        {
+            await Api.RevokeConnectionAsync(connection.Url);
+            connections.Remove(connection);
+            notice = $"Revoked {connection.ApiApplicationName}.";
+            error = null;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+    }
+}

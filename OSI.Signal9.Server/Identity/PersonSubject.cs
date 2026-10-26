@@ -21,6 +21,13 @@ public static class PersonSubject
         var subject = principal.FindFirst(Claims.Subject)?.Value;
         if (subject is null || subject == principal.FindFirst(Claims.ClientId)?.Value)
             return false;
+        return TryParse(subject, out entraTenantId, out entraObjectId);
+    }
+
+    /// <summary>The person a subject names, if it's a person's <c>{tid}:{oid}</c>.</summary>
+    public static bool TryParse(string subject, out Guid entraTenantId, out Guid entraObjectId)
+    {
+        entraTenantId = entraObjectId = Guid.Empty;
         var parts = subject.Split(':');
         return parts.Length == 2
             && Guid.TryParseExact(parts[0], "D", out entraTenantId)

@@ -143,6 +143,22 @@ public sealed class Signal9ApiClient(HttpClient http, BffAuthenticationStateProv
         SendAsync<object>(HttpMethod.Delete,
             $"api/v1/tenants/{tenantId}/api-applications/{apiApplicationId}/credentials/{credentialId}", null, cancellationToken);
 
+    // Connected applications
+
+    /// <summary>The applications connected to the signed-in person's account.</summary>
+    public Task<PagedResult<ConnectionDto>> ListMyConnectionsAsync(int page, int pageSize, CancellationToken cancellationToken = default) =>
+        SendAsync<PagedResult<ConnectionDto>>(HttpMethod.Get, $"api/v1/me/connections?page={page}&pageSize={pageSize}", null, cancellationToken);
+
+    /// <summary>The connections to the applications registered at the tenant and its descendants.</summary>
+    public Task<PagedResult<ConnectionDto>> ListTenantConnectionsAsync(Guid tenantId, int page, int pageSize,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<PagedResult<ConnectionDto>>(HttpMethod.Get,
+            $"api/v1/tenants/{tenantId}/connections?page={page}&pageSize={pageSize}", null, cancellationToken);
+
+    /// <summary>Revokes the connection at its canonical <paramref name="url"/>.</summary>
+    public Task RevokeConnectionAsync(string url, CancellationToken cancellationToken = default) =>
+        SendAsync<object>(HttpMethod.Delete, url.TrimStart('/'), null, cancellationToken);
+
     private static JsonContent Patch<T>(T request) =>
         JsonContent.Create(request, new MediaTypeHeaderValue(MergePatch), Signal9Json.Options);
 

@@ -21,7 +21,7 @@ namespace OSI.Signal9.IntegrationTests;
 /// the person's access ∩ the application's scopes ∩ the application's subtree.
 /// </summary>
 [TestClass]
-public sealed class DelegatedApiApplicationTests : IDisposable
+public sealed partial class DelegatedApiApplicationTests : IDisposable
 {
     private readonly Signal9ApiFactory _factory = new();
     private readonly HttpClient _superadministrator;
