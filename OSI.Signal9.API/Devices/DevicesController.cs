@@ -1,3 +1,4 @@
+using OSI.Signal9.API.Agents;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using OSI.Signal9.API.Audit;
@@ -208,24 +209,17 @@ public sealed class DevicesController(
     /// </summary>
     private async Task<bool> HardwareTakenAsync(Device device, Guid tenantId, CancellationToken cancellationToken)
     {
-        var (uuid, manufacturer, serial) = (device.SmbiosUuid, device.Manufacturer, device.SerialNumber);
-        if (uuid is null && (manufacturer is null || serial is null))
+        var hardware = HardwareIdentifiers.Of(device);
+        if (hardware.IsEmpty)
             return false;
-        var root = await RootOfAsync(tenantId, cancellationToken);
-        if (root == await RootOfAsync(device.TenantId, cancellationToken))
+        var root = await TenantTree.RootOfAsync(db, tenantId, cancellationToken);
+        if (root == await TenantTree.RootOfAsync(db, device.TenantId, cancellationToken))
             return false;
 
         return await db.Devices.IgnoreTenantScope(TenantScopeBypass.DeviceTransferHardwareCheck)
-            .AnyAsync(d => d.Id != device.Id
-                && db.TenantClosures.Any(c => c.AncestorId == root && c.DescendantId == d.TenantId)
-                && ((uuid != null && d.SmbiosUuid == uuid)
-                    || (serial != null && manufacturer != null && d.SerialNumber == serial && d.Manufacturer == manufacturer)),
-                cancellationToken);
+            .Where(d => d.Id != device.Id && db.TenantClosures.Any(c => c.AncestorId == root && c.DescendantId == d.TenantId))
+            .AnyAsync(hardware.MatchingDevices(), cancellationToken);
     }
-
-    private Task<Guid> RootOfAsync(Guid tenantId, CancellationToken cancellationToken) =>
-        db.TenantClosures.Where(c => c.DescendantId == tenantId)
-            .OrderByDescending(c => c.Depth).Select(c => c.AncestorId).FirstAsync(cancellationToken);
 
     private ObjectResult Conflict(string title, string detail) =>
         Problem(statusCode: StatusCodes.Status409Conflict, title: title, detail: detail);

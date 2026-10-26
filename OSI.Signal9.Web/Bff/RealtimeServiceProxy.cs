@@ -113,20 +113,15 @@ public static class RealtimeServiceProxy
         {
             await base.TransformRequestAsync(httpContext, proxyRequest, destinationPrefix, cancellationToken);
             proxyRequest.RequestUri = destination;
-            proxyRequest.Headers.Remove("Cookie");
-            proxyRequest.Headers.Remove(BffRoutes.CsrfHeader);
-            proxyRequest.Headers.Remove("Forwarded");
-            foreach (var name in proxyRequest.Headers.Select(h => h.Key)
-                         .Where(name => name.StartsWith("X-Forwarded-", StringComparison.OrdinalIgnoreCase)).ToList())
-                proxyRequest.Headers.Remove(name);
+            // Authorization stays: it's the service token the service issued the client, not a Signal9 credential.
+            ProxyHeaders.RemoveFromRequest(proxyRequest);
         }
 
         public override async ValueTask<bool> TransformResponseAsync(HttpContext httpContext,
             HttpResponseMessage? proxyResponse, CancellationToken cancellationToken)
         {
             var result = await base.TransformResponseAsync(httpContext, proxyResponse, cancellationToken);
-            // Only web sets cookies on its own origin.
-            httpContext.Response.Headers.Remove("Set-Cookie");
+            ProxyHeaders.RemoveFromResponse(httpContext);
             return result;
         }
     }

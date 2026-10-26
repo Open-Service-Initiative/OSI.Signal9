@@ -1,3 +1,4 @@
+using OSI.Signal9.API.Agents;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Net.Http.Headers;
@@ -327,8 +328,8 @@ public sealed class TenantTransfersController(
     /// </summary>
     private async Task<List<DuplicateDeviceDto>> DuplicateDevicesAsync(TenantTransfer transfer, CancellationToken cancellationToken)
     {
-        var fromRoot = await RootOfAsync(transfer.TenantId, cancellationToken);
-        var toRoot = await RootOfAsync(transfer.ToParentTenantId, cancellationToken);
+        var fromRoot = await TenantTree.RootOfAsync(db, transfer.TenantId, cancellationToken);
+        var toRoot = await TenantTree.RootOfAsync(db, transfer.ToParentTenantId, cancellationToken);
         if (fromRoot == toRoot)
             return [];
 
@@ -354,16 +355,12 @@ public sealed class TenantTransfersController(
         [
             .. from m in moving
                from r in receiving
-               where (m.SmbiosUuid != null && m.SmbiosUuid == r.SmbiosUuid)
-                   || (m.SerialNumber != null && m.Manufacturer != null && m.SerialNumber == r.SerialNumber && m.Manufacturer == r.Manufacturer)
+               where new HardwareIdentifiers(m.SmbiosUuid, m.Manufacturer, m.SerialNumber)
+                   .Matches(new HardwareIdentifiers(r.SmbiosUuid, r.Manufacturer, r.SerialNumber))
                orderby m.Id, r.Id
                select new DuplicateDeviceDto(m.Id, r.Id),
         ];
     }
-
-    private Task<Guid> RootOfAsync(Guid tenantId, CancellationToken cancellationToken) =>
-        db.TenantClosures.Where(c => c.DescendantId == tenantId)
-            .OrderByDescending(c => c.Depth).Select(c => c.AncestorId).FirstAsync(cancellationToken);
 
     /// <summary>The names of the tenant each transfer moves and its new parent, which both sides of it see.</summary>
     private async Task<Dictionary<Guid, string>> NamesAsync(IReadOnlyCollection<TenantTransfer> transfers,

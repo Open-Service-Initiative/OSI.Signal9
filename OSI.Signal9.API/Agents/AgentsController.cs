@@ -281,13 +281,9 @@ public sealed class AgentsController(
     /// manufacturer and serial (story 103). The subtree lies within one root tenant tree, so identification never
     /// crosses root trees. Machine names play no part (story 106).
     /// </summary>
-    private IQueryable<Device> CandidateDevices(IQueryable<Device> devices, PendingIdentification reported)
-    {
-        var (uuid, manufacturer, serial) = (reported.SmbiosUuid, reported.Manufacturer, reported.SerialNumber);
-        return devices.Where(d => db.TenantClosures.Any(c => c.AncestorId == reported.TenantId && c.DescendantId == d.TenantId)
-            && ((uuid != null && d.SmbiosUuid == uuid)
-                || (serial != null && manufacturer != null && d.SerialNumber == serial && d.Manufacturer == manufacturer)));
-    }
+    private IQueryable<Device> CandidateDevices(IQueryable<Device> devices, PendingIdentification reported) =>
+        devices.Where(d => db.TenantClosures.Any(c => c.AncestorId == reported.TenantId && c.DescendantId == d.TenantId))
+            .Where(new HardwareIdentifiers(reported.SmbiosUuid, reported.Manufacturer, reported.SerialNumber).MatchingDevices());
 
     /// <summary>The certificate the agent authenticates with: its thumbprint and validity.</summary>
     [RequireScope(Scopes.Devices.Read)]

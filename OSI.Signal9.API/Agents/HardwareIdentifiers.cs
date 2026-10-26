@@ -1,3 +1,6 @@
+using System.Linq.Expressions;
+using OSI.Signal9.Server.Data;
+
 namespace OSI.Signal9.API.Agents;
 
 /// <summary>
@@ -25,6 +28,28 @@ internal sealed record HardwareIdentifiers(Guid? SmbiosUuid, string? Manufacture
         "None", "N/A", "NA", "Unknown", "Undefined", "Invalid", "Empty", "Null", "OEM", "O.E.M.", "OEM_Serial",
         "Manufacturer", "Default_String", "123456789", "1234567890", "0123456789",
     };
+
+    /// <summary>A device's stored identifiers, which were normalized when it was created or matched.</summary>
+    public static HardwareIdentifiers Of(Device device) => new(device.SmbiosUuid, device.Manufacturer, device.SerialNumber);
+
+    /// <summary>Whether there's anything to match on: an SMBIOS UUID, or a manufacturer and serial.</summary>
+    public bool IsEmpty => SmbiosUuid is null && (Manufacturer is null || SerialNumber is null);
+
+    /// <summary>
+    /// Whether <paramref name="other"/> is the same machine: the same SMBIOS UUID, or the same manufacturer and serial
+    /// (a serial alone never matches). Machine names play no part (story 106).
+    /// </summary>
+    public bool Matches(HardwareIdentifiers other) =>
+        (SmbiosUuid != null && SmbiosUuid == other.SmbiosUuid)
+        || (SerialNumber != null && Manufacturer != null && SerialNumber == other.SerialNumber && Manufacturer == other.Manufacturer);
+
+    /// <summary><see cref="Matches"/> as a query filter: the devices that are the same machine as these identifiers.</summary>
+    public Expression<Func<Device, bool>> MatchingDevices()
+    {
+        var (uuid, manufacturer, serial) = (SmbiosUuid, Manufacturer, SerialNumber);
+        return d => (uuid != null && d.SmbiosUuid == uuid)
+            || (serial != null && manufacturer != null && d.SerialNumber == serial && d.Manufacturer == manufacturer);
+    }
 
     public static HardwareIdentifiers From(Guid? smbiosUuid, string? manufacturer, string? serialNumber)
     {

@@ -42,6 +42,11 @@ public sealed class TenantTree(Signal9DbContext db, CallerAudit audit, IOptions<
     /// <summary>Key of the transaction-level advisory lock every tree change holds.</summary>
     public const long LockKey = 0x5167_6E39_5472_6565; // "Sig9Tree"
 
+    /// <summary>The root of <paramref name="tenantId"/>'s tenant tree (itself, for a root).</summary>
+    public static Task<Guid> RootOfAsync(Signal9DbContext db, Guid tenantId, CancellationToken cancellationToken) =>
+        db.TenantClosures.Where(c => c.DescendantId == tenantId)
+            .OrderByDescending(c => c.Depth).Select(c => c.AncestorId).FirstAsync(cancellationToken);
+
     /// <summary>Adds <paramref name="tenant"/> under its <see cref="Tenant.ParentTenantId"/>, or as a root.</summary>
     public Task<TenantTreeError> AddAsync(Tenant tenant, CancellationToken cancellationToken) =>
         ChangeAsync(async () =>
