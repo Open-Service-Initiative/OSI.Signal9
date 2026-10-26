@@ -136,18 +136,21 @@ public sealed class RoleAssignmentsController(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete(Guid tenantId, Guid roleAssignmentId, CancellationToken cancellationToken)
     {
-        var found = await db.RoleAssignments.AsNoTracking()
-            .Where(a => a.TenantId == tenantId && a.Id == roleAssignmentId)
-            .Select(a => new { Assignment = a, a.User!.EntraTenantId, a.User.EntraObjectId })
-            .SingleOrDefaultAsync(cancellationToken);
-        if (found is null)
+        var assignment = await db.RoleAssignments.AsNoTracking()
+            .SingleOrDefaultAsync(a => a.TenantId == tenantId && a.Id == roleAssignmentId, cancellationToken);
+        if (assignment is null)
             return NotFound();
-        if (this.Preconditions(found.Assignment.ETag()) is { } refused)
+        if (this.Preconditions(assignment.ETag()) is { } refused)
             return refused;
+        // The holder may be owned by a tenant outside the caller's reach (an invitation can assign an existing user).
+        var holder = await db.Users.AsNoTracking().IgnoreTenantScope(TenantScopeBypass.RoleAssignmentHolder)
+            .Where(u => u.Id == assignment.UserId)
+            .Select(u => new { u.EntraTenantId, u.EntraObjectId })
+            .SingleAsync(cancellationToken);
 
-        var administrator = found.Assignment.RoleId == BuiltInRoles.Administrator.Id;
+        var administrator = assignment.RoleId == BuiltInRoles.Administrator.Id;
         var own = PersonSubject.TryParse(User, out var entraTenantId, out var entraObjectId)
-            && found.EntraTenantId == entraTenantId && found.EntraObjectId == entraObjectId;
+            && holder.EntraTenantId == entraTenantId && holder.EntraObjectId == entraObjectId;
         if (administrator && !own && !await AncestorAdministrator.AdmitsAsync(HttpContext, tenantId))
             return Problem(statusCode: StatusCodes.Status403Forbidden, title: "Peer Administrator",
                 detail: "Only an Administrator above this tenant can revoke another Administrator at it.");
@@ -158,10 +161,9 @@ public sealed class RoleAssignmentsController(
             await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
             // The tree lock: tenant moves and other revocations change who administers the tenant.
             await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({TenantTree.LockKey})", cancellationToken);
-            if (administrator && !caller.IsSuperadministrator && !await OtherAdministratorRemainsAsync(found.Assignment, cancellationToken))
+            if (administrator && !caller.IsSuperadministrator && !await OtherAdministratorRemainsAsync(assignment, cancellationToken))
                 return true;
 
-            var assignment = found.Assignment;
             db.RoleAssignments.Attach(assignment);
             db.RoleAssignments.Remove(assignment);
             audit.Record(new AuditEntry
@@ -182,7 +184,7 @@ public sealed class RoleAssignmentsController(
                 detail: "This is the last Administrator at this tenant or above it; grant another Administrator first.");
 
         // Removing a user's last role assignment cuts their access at once, open sessions included (story 27).
-        var person = PersonSubject.Format(found.EntraTenantId, found.EntraObjectId);
+        var person = PersonSubject.Format(holder.EntraTenantId, holder.EntraObjectId);
         if (!await sessions.HoldsRoleAssignmentAsync(person, cancellationToken))
         {
             await sessions.EndForPersonAsync(person, new SessionEnd("No role assignment left",

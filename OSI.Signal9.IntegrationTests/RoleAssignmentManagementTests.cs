@@ -78,6 +78,23 @@ public sealed class RoleAssignmentManagementTests : IDisposable
     }
 
     [TestMethod]
+    public async Task An_administrator_revokes_an_assignment_in_their_subtree_held_by_a_user_owned_elsewhere()
+    {
+        var tree = await TreeAsync();
+        using var administrator = await PersonAsync(tree.Msp, ("Administrator", tree.Msp));
+        var person = EntraUser.WithMfa();
+        var user = await CreateUserAsync(tree.Sibling, person);
+        var assignment = await AssignAsync(tree.Client, user.Id, "Viewer");
+        using var viewer = await _factory.CreatePersonClientAsync(person);
+
+        var revoked = await administrator.DeleteAsync($"api/v1/tenants/{tree.Client}/role-assignments/{assignment.Id}", Ct);
+
+        Assert.AreEqual(HttpStatusCode.NoContent, revoked.StatusCode, await revoked.Content.ReadAsStringAsync(Ct));
+        // It was their last, so their session ended too (story 27).
+        Assert.AreEqual(HttpStatusCode.Unauthorized, (await viewer.GetAsync($"api/v1/tenants/{tree.Client}", Ct)).StatusCode);
+    }
+
+    [TestMethod]
     public async Task Granting_a_role_beyond_your_own_access_is_refused()
     {
         var tree = await TreeAsync();

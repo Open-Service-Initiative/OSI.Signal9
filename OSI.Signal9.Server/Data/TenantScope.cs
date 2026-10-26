@@ -153,6 +153,15 @@ public enum TenantScopeBypass
     UserRoleAssignmentGuard,
 
     /// <summary>
+    /// Naming the person whose role assignment the caller is revoking, which the caller has already found within their
+    /// reach, to end their session if it was their last (story 27). The holder may be owned by a tenant outside the
+    /// caller's reach (an invitation can assign an existing user). Only that one user's Entra identity is read, and
+    /// it's never returned.
+    /// </summary>
+    [NotAudited("Reads only the identity of a visible assignment's holder, and the revocation is audited.")]
+    RoleAssignmentHolder,
+
+    /// <summary>
     /// A person redeeming an invitation at auth (#121): finding the invitation by its reference's hash, naming its tenant
     /// and role on the offer, and finding or creating the person's own user and the role assignment. The person has no
     /// role assignments yet; the invitation is their only authority, as an enrollment token is an agent's.
