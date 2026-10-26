@@ -13,6 +13,8 @@ builder.AddHostHardening();
 builder.AddSignal9Database();
 builder.AddSignal9ForwardedHeaders();
 builder.Services.AddSingleton(TimeProvider.System);
+// Sign-outs are audited (story 53).
+builder.Services.AddSignal9Audit();
 
 // web's client certificate and the Data Protection key ring, stored wrapped by the key-encryption key (ADR-0008).
 builder.Services.AddSignal9StoredKeys(builder.Configuration, StoredKeyUse.WebClient);

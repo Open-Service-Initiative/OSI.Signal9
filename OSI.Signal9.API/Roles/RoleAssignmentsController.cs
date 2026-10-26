@@ -19,7 +19,8 @@ namespace OSI.Signal9.API.Roles;
 [ApiController]
 [Route("api/v1/tenants/{tenantId:guid}/role-assignments")]
 public sealed class RoleAssignmentsController(
-    Signal9DbContext db, CallerAudit audit, CallerAccess access, IAssignedTenants caller, TimeProvider time) : ControllerBase
+    Signal9DbContext db, CallerAudit audit, CallerAccess access, IAssignedTenants caller, TimeProvider time,
+    SignInSessions sessions) : ControllerBase
 {
     /// <summary>Lists the role assignments made at the tenant.</summary>
     [RequireScope(Scopes.RoleAssignments.Read)]
@@ -173,6 +174,16 @@ public sealed class RoleAssignmentsController(
         if (lockedOut)
             return Problem(statusCode: StatusCodes.Status409Conflict, title: "Last Administrator",
                 detail: "This is the last Administrator at this tenant or above it; grant another Administrator first.");
+
+        // Removing a user's last role assignment cuts their access at once, open sessions included (story 27).
+        var person = PersonSubject.Format(found.EntraTenantId, found.EntraObjectId);
+        if (!await sessions.HoldsRoleAssignmentAsync(person, cancellationToken))
+        {
+            await sessions.EndForPersonAsync(person, new SessionEnd("No role assignment left",
+                PersonSubject.TryParse(User, out _, out _) ? AuditActorKind.Person : AuditActorKind.Application,
+                User.FindFirst(OpenIddictConstants.Claims.Subject)?.Value,
+                HttpContext.Connection.RemoteIpAddress?.ToString()), cancellationToken);
+        }
         return NoContent();
     }
 

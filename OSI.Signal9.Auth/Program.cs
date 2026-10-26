@@ -14,6 +14,10 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSignal9Audit();
 builder.AddSignal9EntraSignIn();
 builder.Services.AddScoped<Consent>();
+// The hourly session check against Entra (#119, story 52).
+builder.Services.AddScoped<IEntraRefresh, EntraRefresh>();
+builder.Services.AddScoped<EntraSessionChecker>();
+builder.Services.AddHostedService<EntraSessionCheck>();
 // The consent screen's antiforgery cookie: host-only, HTTPS-only and never sent cross-site (RFC 6265bis).
 builder.Services.AddAntiforgery(options =>
 {
@@ -64,6 +68,7 @@ app.UseAuthorization();
 
 app.MapAuthorizationEndpoint().RequireRateLimiting(RateLimiting.Authorize);
 app.MapTokenEndpoint().RequireRateLimiting(RateLimiting.Token);
+app.MapFrontChannelLogout().RequireRateLimiting(RateLimiting.Authorize);
 
 app.Run();
 

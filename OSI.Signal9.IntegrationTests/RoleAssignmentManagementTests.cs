@@ -210,6 +210,8 @@ public sealed class RoleAssignmentManagementTests : IDisposable
         var person = EntraUser.WithMfa();
         var user = await CreateUserAsync(tree.Client, person);
         var assignment = await AssignAsync(tree.Client, user.Id, "Viewer");
+        // Not their last, which would end their session too (#119, SessionCheckTests).
+        await AssignAsync(tree.Sibling, user.Id, "Viewer");
         using var viewer = await _factory.CreatePersonClientAsync(person);
         Assert.AreEqual(HttpStatusCode.OK, (await viewer.GetAsync($"api/v1/tenants/{tree.Client}", Ct)).StatusCode);
 
@@ -217,6 +219,7 @@ public sealed class RoleAssignmentManagementTests : IDisposable
 
         Assert.AreEqual(HttpStatusCode.NoContent, revoked.StatusCode);
         Assert.AreEqual(HttpStatusCode.NotFound, (await viewer.GetAsync($"api/v1/tenants/{tree.Client}", Ct)).StatusCode);
+        Assert.AreEqual(HttpStatusCode.OK, (await viewer.GetAsync($"api/v1/tenants/{tree.Sibling}", Ct)).StatusCode);
     }
 
     [TestMethod]

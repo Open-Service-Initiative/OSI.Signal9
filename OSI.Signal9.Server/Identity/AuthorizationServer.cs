@@ -90,6 +90,7 @@ public static class AuthorizationServer
             {
                 core.UseEntityFrameworkCore().UseDbContext<Signal9DbContext>();
                 core.ReplaceApplicationManager(typeof(Signal9ApplicationManager<>));
+                core.ReplaceAuthorizationManager(typeof(Signal9AuthorizationManager<>));
             });
 
     /// <summary>
@@ -113,6 +114,20 @@ public static class AuthorizationServer
 
         // The signing and encryption keys are the ones stored in the database (ADR-0008).
         server.Services.AddSignal9Keys(configuration);
+        server.Services.AddScoped<SignInSessions>();
+
+        // Revoking a refresh token revokes its whole grant: the authorization and every token issued under it, access
+        // tokens included (RFC 7009 §2.1). web's sign-out and session ends rely on it (story 53).
+        server.AddEventHandler<OpenIddictServerEvents.HandleRevocationRequestContext>(handler => handler.UseInlineHandler(async context =>
+        {
+            if (context.GenericTokenPrincipal is not { } token || !token.HasTokenType(TokenTypeIdentifiers.RefreshToken)
+                || token.GetAuthorizationId() is not { } authorizationId
+                || context.Transaction.GetHttpRequest()?.HttpContext is not { } http)
+                return;
+            var authorizations = http.RequestServices.GetRequiredService<IOpenIddictAuthorizationManager>();
+            if (await authorizations.FindByIdAsync(authorizationId, http.RequestAborted) is { } authorization)
+                await authorizations.TryRevokeAsync(authorization, http.RequestAborted);
+        }).SetOrder(OpenIddictServerHandlers.Revocation.RevokeToken.Descriptor.Order + 1));
 
         // A client that fails to authenticate counts toward the repeated-failure audit (story 121).
         server.AddEventHandler<OpenIddictServerEvents.ApplyTokenResponseContext>(handler => handler.UseInlineHandler(async context =>
@@ -141,6 +156,13 @@ public static class AuthorizationServer
         server.UseAspNetCore().EnableTokenEndpointPassthrough();
         return server;
     }
+
+    private static IResult InvalidGrant(string description) =>
+        Results.Forbid(new AuthenticationProperties(new Dictionary<string, string?>
+        {
+            [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidGrant,
+            [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = description,
+        }), [OpenIddictServerAspNetCoreDefaults.AuthenticationScheme]);
 
     /// <summary>
     /// The authorization code flow, as auth issues codes and auth and api redeem them: codes last 5 minutes, and PKCE
@@ -200,6 +222,19 @@ public static class AuthorizationServer
             {
                 var grant = await context.AuthenticateAsync(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
                 var principal = grant.Principal!;
+                if (request.IsRefreshTokenGrantType() && PersonSubject.TryParse(principal.GetClaim(Claims.Subject)!, out _, out _))
+                {
+                    // auth's checks on every refresh (#119): the person, their Entra session and their role assignments.
+                    var check = await context.RequestServices.GetRequiredService<SignInSessions>()
+                        .CheckRefreshAsync(principal, context.RequestAborted);
+                    if (check.Refusal is { } refusal)
+                        return InvalidGrant(refusal);
+                    // Superadministrator as Entra last said (story 59), not as it was at sign-in.
+                    principal.RemoveClaims(Claims.Role);
+                    if (check.Superadministrator)
+                        principal.Identities.First().AddClaim(new Claim(Claims.Role, Superadministrator.Role)
+                            .SetDestinations(Destinations.AccessToken, Destinations.IdentityToken));
+                }
                 if (request.ClientId == DashboardClientId)
                 {
                     // web's refresh tokens end with the session: 12 hours from sign-in, however often they rotate.

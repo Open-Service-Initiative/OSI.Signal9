@@ -28,7 +28,8 @@ public sealed class SessionRefreshTests : IDisposable
     private async Task<DashboardBrowser> SignedInAsync(EntraUser? user = null)
     {
         var browser = new DashboardBrowser(_factory);
-        var landing = await browser.SignInAsync(user ?? EntraUser.WithMfa());
+        // A person holding a role assignment, so the session survives its refreshes (#119).
+        var landing = await browser.SignInAsync(user ?? (await _factory.AssignedPersonAsync()).User);
         Assert.AreEqual(HttpStatusCode.OK, landing.StatusCode, await landing.Content.ReadAsStringAsync(Ct));
         return browser;
     }
@@ -319,6 +320,13 @@ public sealed class SessionRefreshTests : IDisposable
         Assert.AreEqual(HttpStatusCode.OK, tenants.StatusCode, await tenants.Content.ReadAsStringAsync(Ct));
     }
 
+    /// <summary>Waits for web's revocation at auth to have been answered.</summary>
+    private async Task RevokedAsync()
+    {
+        for (var waited = 0; !_factory.Web.AnsweredApiRequests.Any(u => u.AbsolutePath == "/connect/revoke") && waited < 100; waited++)
+            await Task.Delay(100, Ct);
+    }
+
     [TestMethod]
     public async Task An_hour_idle_ends_the_session_and_revokes_its_refresh_token_at_auth()
     {
@@ -327,6 +335,8 @@ public sealed class SessionRefreshTests : IDisposable
 
         _factory.Time.Advance(TimeSpan.FromMinutes(60));
         var me = await browser.GetAsync(BffRoutes.User);
+        // The request or web's sweeper ends the session, whichever is first; the sweeper revokes in the background.
+        await RevokedAsync();
         var (status, body) = await RedeemAsWebAsync(refreshToken);
 
         Assert.AreEqual(HttpStatusCode.Unauthorized, me.StatusCode);
@@ -341,8 +351,7 @@ public sealed class SessionRefreshTests : IDisposable
         var refreshToken = _factory.Web.IssuedRefreshTokens.Single();
 
         _factory.Time.Advance(TimeSpan.FromMinutes(61));
-        for (var waited = 0; !_factory.Web.ApiRequests.Any(r => r.Uri.AbsolutePath == "/connect/revoke") && waited < 100; waited++)
-            await Task.Delay(100, Ct);
+        await RevokedAsync();
         var (status, body) = await RedeemAsWebAsync(refreshToken);
 
         Assert.AreEqual(HttpStatusCode.BadRequest, status, "The idle session's refresh token still works at auth.");

@@ -39,6 +39,9 @@ public sealed class Signal9WebFactory : WebApplicationFactory<WebHost>
     /// <summary>Every request web sent to <c>api</c>, as api's ingress received it.</summary>
     public ConcurrentQueue<ApiHop> ApiRequests { get; } = new();
 
+    /// <summary>Every request web sent to <c>api</c> that has had its answer, by URI, as they complete.</summary>
+    public ConcurrentQueue<Uri> AnsweredApiRequests { get; } = new();
+
     /// <summary>The refresh tokens api's token endpoint issued to web, in order.</summary>
     public ConcurrentQueue<string> IssuedRefreshTokens { get; } = new();
 
@@ -109,6 +112,7 @@ public sealed class Signal9WebFactory : WebApplicationFactory<WebHost>
                 return fault;
 
             var response = await base.SendAsync(request, cancellationToken);
+            web.AnsweredApiRequests.Enqueue(request.RequestUri!);
             if (request.RequestUri!.AbsolutePath == "/connect/token" && response.IsSuccessStatusCode)
             {
                 await response.Content.LoadIntoBufferAsync(cancellationToken);

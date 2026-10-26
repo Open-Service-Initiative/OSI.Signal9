@@ -33,7 +33,7 @@ public sealed class Consent(
     /// <summary>What the authorization endpoint does next.</summary>
     public abstract record Outcome
     {
-        /// <summary>Issue the code: the client needs no consent, or has it, with the authorization attached.</summary>
+        /// <summary>Issue the code: the client needs no consent, or has it.</summary>
         public sealed record Granted : Outcome;
 
         /// <summary>Show the person the consent screen.</summary>
@@ -81,12 +81,9 @@ public sealed class Consent(
         // A consent covering every requested scope is reused, unless the client asks for the screen (prompt=consent).
         if (!request.HasPromptValue(PromptValues.Consent))
         {
-            await foreach (var existing in authorizations.FindAsync(person.Subject, client, Statuses.Valid,
+            await foreach (var _ in authorizations.FindAsync(person.Subject, client, Statuses.Valid,
                                AuthorizationTypes.Permanent, scopes, cancellationToken))
-            {
-                identity.SetAuthorizationId(await authorizations.GetIdAsync(existing, cancellationToken));
                 return new Outcome.Granted();
-            }
         }
         if (request.HasPromptValue(PromptValues.None))
             return new Outcome.Required();
@@ -104,7 +101,7 @@ public sealed class Consent(
     {
         var cancellationToken = context.RequestAborted;
         // What the person consented to before, then what's new. One authorization is the person's connection to the
-        // application (#126): more scopes extend it, so the tokens already issued from it keep working.
+        // application (#126): more scopes extend it.
         var granted = new List<string>();
         object? authorization = null;
         await foreach (var existing in authorizations.FindAsync(person.Subject, client, Statuses.Valid,
@@ -115,9 +112,11 @@ public sealed class Consent(
         }
         granted.AddRange(scopes.Where(s => !granted.Contains(s)));
 
+        // The consent itself. The tokens are issued under the session's own authorization (SignInSessions, #119), so
+        // ending a session leaves the consent; revoking the connection revokes both (#126).
         if (authorization is null)
         {
-            authorization = await authorizations.CreateAsync(identity, person.Subject, client!, AuthorizationTypes.Permanent,
+            await authorizations.CreateAsync(identity, person.Subject, client!, AuthorizationTypes.Permanent,
                 [.. granted], cancellationToken);
         }
         else
@@ -127,7 +126,6 @@ public sealed class Consent(
             descriptor.Scopes.UnionWith(granted);
             await authorizations.UpdateAsync(authorization, descriptor, cancellationToken);
         }
-        identity.SetAuthorizationId(await authorizations.GetIdAsync(authorization, cancellationToken));
 
         var owner = ApiApplicationClient.Owner(await applications.GetPropertiesAsync(application, cancellationToken));
         await audit.WriteAsync(new AuditEntry

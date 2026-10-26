@@ -33,6 +33,9 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<EnrollmentToken> EnrollmentTokens => Set<EnrollmentToken>();
     public DbSet<ApiApplication> ApiApplications => Set<ApiApplication>();
+    public DbSet<SignInSession> SignInSessions => Set<SignInSession>();
+    public DbSet<EndedEntraSession> EndedEntraSessions => Set<EndedEntraSession>();
+    public DbSet<EntraTokenCacheEntry> EntraTokenCache => Set<EntraTokenCacheEntry>();
 
     /// <summary>The ASP.NET Core Data Protection key ring, each key wrapped by the key-encryption key (ADR-0008).</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
@@ -169,6 +172,33 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
             session.Property(s => s.Subject).HasMaxLength(200);
             // Sessions are looked up by person for sign-out everywhere (#119).
             session.HasIndex(s => s.Subject);
+        });
+
+        modelBuilder.Entity<SignInSession>(session =>
+        {
+            session.HasKey(s => s.AuthorizationId);
+            session.Property(s => s.AuthorizationId).HasMaxLength(100);
+            session.Property(s => s.Subject).HasMaxLength(200);
+            session.Property(s => s.ClientId).HasMaxLength(100);
+            session.Property(s => s.EntraSessionId).HasMaxLength(200);
+            session.Property(s => s.EntraAccountId).HasMaxLength(200);
+            // Looked up by person and by Entra session (front-channel logout, live-connection teardown), and by account
+            // for the hourly Entra check.
+            session.HasIndex(s => s.Subject);
+            session.HasIndex(s => new { s.EntraTenantId, s.EntraSessionId });
+            session.HasIndex(s => new { s.EntraAccountId, s.EntraCheckedAt });
+        });
+
+        modelBuilder.Entity<EndedEntraSession>(ended =>
+        {
+            ended.HasKey(e => new { e.EntraTenantId, e.EntraSessionId });
+            ended.Property(e => e.EntraSessionId).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<EntraTokenCacheEntry>(entry =>
+        {
+            entry.HasKey(e => e.Key);
+            entry.Property(e => e.Key).HasMaxLength(300);
         });
 
         modelBuilder.Entity<TelemetrySample>(sample =>

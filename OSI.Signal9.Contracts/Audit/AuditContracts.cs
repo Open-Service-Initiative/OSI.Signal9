@@ -73,6 +73,16 @@ public static class AuditActions
     /// <summary>A person signed in at Entra through auth, or was refused (<see cref="AuditOutcome.Failed"/>).</summary>
     public const string SignIn = "sign-in";
 
+    /// <summary>A person signed out of the dashboard, revoking every token behind their session (story 53).</summary>
+    public const string SignOut = "sign-out";
+
+    /// <summary>
+    /// A person's session was revoked with all its tokens without them signing out (#119): Entra's front-channel logout
+    /// (story 51), Entra refusing the person at the hourly check (story 52), or their last role assignment going (story
+    /// 27). The detail says which.
+    /// </summary>
+    public const string SessionRevoked = "session.revoked";
+
     /// <summary>Authentication failed repeatedly from one client address (story 121). Deployment-level.</summary>
     public const string RepeatedAuthenticationFailures = "authentication.repeated-failures";
 

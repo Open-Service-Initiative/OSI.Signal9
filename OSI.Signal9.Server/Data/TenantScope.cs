@@ -103,6 +103,14 @@ public enum TenantScopeBypass
     /// </summary>
     [NotAudited("Answers only yes or no about tenants the caller can already see.")]
     InheritedTenantSettings,
+
+    /// <summary>
+    /// Checking a person's session (#119): whether the person a refresh token was issued for, or whose role assignment
+    /// was just revoked, still holds any role assignment, wherever it is, and placing the audit entry when their session
+    /// ends. Only yes or no, and the person's own user ID and owning tenant, are read.
+    /// </summary>
+    [NotAudited("Runs on every refresh and reads only yes or no about the token's own person; ending a session is audited.")]
+    SessionCheck,
 }
 
 /// <summary>Each use of this <see cref="TenantScopeBypass"/> is recorded in the audit log.</summary>

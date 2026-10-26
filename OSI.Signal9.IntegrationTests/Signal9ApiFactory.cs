@@ -469,6 +469,32 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         return new FormUrlEncodedContent(form);
     }
 
+    /// <summary>
+    /// A person with a user record at a new tenant holding one <paramref name="role"/> assignment there, ready to sign
+    /// in: a session needs a role assignment to survive its first refresh (#119).
+    /// </summary>
+    public async Task<AssignedPerson> AssignedPersonAsync(EntraUser? user = null, string role = "Viewer")
+    {
+        user ??= EntraUser.WithMfa();
+        // A token from now: the default client's may have expired on the fixture's clock.
+        using var client = await CreateClientAsync(GrantableScopes);
+        var tenant = await CreateTenantAsync(client, $"Org{Interlocked.Increment(ref _clients)}");
+        var created = await client.PostAsJsonAsync("api/v1/users", new OSI.Signal9.Contracts.Users.CreateUserRequest
+        {
+            TenantId = tenant.Id,
+            EntraTenantId = user.TenantId,
+            EntraObjectId = user.ObjectId,
+            DisplayName = "Alex Wilber",
+        }, Signal9Json.Options);
+        created.EnsureSuccessStatusCode();
+        var userId = (await created.Content.ReadFromJsonAsync<OSI.Signal9.Contracts.Users.UserDto>(Signal9Json.Options))!.Id;
+        var roleId = OSI.Signal9.Server.Identity.BuiltInRoles.All.Single(r => r.Name == role).Id;
+        var assigned = await client.PostAsJsonAsync($"api/v1/tenants/{tenant.Id}/role-assignments",
+            new OSI.Signal9.Contracts.Roles.CreateRoleAssignmentRequest { UserId = userId, RoleId = roleId }, Signal9Json.Options);
+        assigned.EnsureSuccessStatusCode();
+        return new AssignedPerson(user, userId, tenant.Id, assigned.Headers.Location!);
+    }
+
     public async Task<TenantDto> CreateTenantAsync(HttpClient client, string name, int maxDevices = 25, Guid? parentTenantId = null)
     {
         var response = await client.PostAsJsonAsync("api/v1/tenants",
@@ -626,3 +652,6 @@ public sealed class TestAgent(AgentDto agent, X509Certificate2 certificate, Http
         Certificate.Dispose();
     }
 }
+
+/// <summary>A person with a user record and one role assignment, at <see cref="Assignment"/>.</summary>
+public sealed record AssignedPerson(EntraUser User, Guid UserId, Guid TenantId, Uri Assignment);

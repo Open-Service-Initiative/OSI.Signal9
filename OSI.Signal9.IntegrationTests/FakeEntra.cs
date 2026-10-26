@@ -68,6 +68,32 @@ public sealed class FakeEntra
     private sealed record PendingCode(EntraUser User, string RedirectUri, string Nonce, string? Challenge,
         DateTimeOffset AuthenticatedAt);
 
+    private readonly ConcurrentDictionary<string, (EntraUser User, DateTimeOffset AuthenticatedAt)> _refreshTokens = new();
+    private readonly ConcurrentDictionary<(Guid, Guid), string> _refusals = new();
+    private readonly ConcurrentDictionary<(Guid, Guid), string[]> _roles = new();
+    private int _refreshes;
+
+    /// <summary>How many times auth refreshed a person's tokens here.</summary>
+    public int Refreshes => _refreshes;
+
+    /// <summary>The <c>scope</c> of each refresh auth made, in order.</summary>
+    public ConcurrentQueue<string> RefreshScopes { get; } = new();
+
+    /// <summary>
+    /// Stands in for Entra failing to answer a refresh: when it returns a response (or throws), auth gets that instead.
+    /// </summary>
+    public Func<HttpRequestMessage, HttpResponseMessage?>? RefreshFault { get; set; }
+
+    /// <summary>
+    /// From now on, Entra refuses to refresh the person's tokens with <paramref name="error"/>, as when they're disabled,
+    /// deleted or their sessions are revoked (<c>invalid_grant</c>), or Conditional Access needs them back
+    /// (<c>interaction_required</c>).
+    /// </summary>
+    public void Refuse(EntraUser user, string error = "invalid_grant") => _refusals[(user.TenantId, user.ObjectId)] = error;
+
+    /// <summary>From now on, the person's ID tokens carry these app roles, as after a change at Entra.</summary>
+    public void SetRoles(EntraUser user, params string[] roles) => _roles[(user.TenantId, user.ObjectId)] = roles;
+
     /// <param name="time">The clock people authenticate by (<c>auth_time</c>): the fixture's, so tests can age it.</param>
     public FakeEntra(TimeProvider? time = null)
     {
@@ -175,6 +201,8 @@ public sealed class FakeEntra
     private async Task<HttpResponseMessage> RedeemAsync(HttpRequestMessage request, string tenant)
     {
         var form = QueryHelpers.ParseQuery(await request.Content!.ReadAsStringAsync());
+        if (form["grant_type"] == "refresh_token")
+            return await RefreshAsync(request, form);
         if (form["grant_type"] != "authorization_code" || !_codes.TryRemove(form["code"].ToString(), out var pending))
             return Error("invalid_grant", "The code is unknown or was already redeemed.");
         if (form["redirect_uri"] != pending.RedirectUri)
@@ -184,7 +212,31 @@ public sealed class FakeEntra
         if (!await IsCertificateAssertionAsync(form, request.RequestUri!))
             return Error("invalid_client", "The client must authenticate with its certificate credential.");
 
-        var user = pending.User;
+        return Tokens(pending.User, pending.AuthenticatedAt, pending.Nonce);
+    }
+
+    private async Task<HttpResponseMessage> RefreshAsync(HttpRequestMessage request,
+        Dictionary<string, Microsoft.Extensions.Primitives.StringValues> form)
+    {
+        Interlocked.Increment(ref _refreshes);
+        RefreshScopes.Enqueue(form["scope"].ToString());
+        if (RefreshFault?.Invoke(request) is { } fault)
+            return fault;
+        if (!await IsCertificateAssertionAsync(form, request.RequestUri!))
+            return Error("invalid_client", "The client must authenticate with its certificate credential.");
+        if (!_refreshTokens.TryGetValue(form["refresh_token"].ToString(), out var grant))
+            return Error("invalid_grant", "AADSTS9002313: The refresh token is unknown.");
+        if (_refusals.TryGetValue((grant.User.TenantId, grant.User.ObjectId), out var error))
+            return Error(error, error == "invalid_grant"
+                ? "AADSTS50057: The user account is disabled."
+                : "AADSTS50076: Due to a configuration change made by your administrator, you must use multi-factor authentication.");
+        return Tokens(grant.User, grant.AuthenticatedAt, nonce: null, form["scope"].ToString());
+    }
+
+    private HttpResponseMessage Tokens(EntraUser signedIn, DateTimeOffset authenticatedAt, string? nonce,
+        string scope = "openid profile offline_access")
+    {
+        var user = _roles.TryGetValue((signedIn.TenantId, signedIn.ObjectId), out var roles) ? signedIn with { Roles = roles } : signedIn;
         var now = DateTime.UtcNow;
         var claims = new Dictionary<string, object>
         {
@@ -192,17 +244,18 @@ public sealed class FakeEntra
             ["oid"] = user.ObjectId.ToString(),
             ["sub"] = Base64UrlEncoder.Encode(SHA256.HashData(Encoding.UTF8.GetBytes($"{user.TenantId}{user.ObjectId}"))),
             ["amr"] = user.Amr,
-            ["nonce"] = pending.Nonce,
             ["ver"] = "2.0",
             ["name"] = "Alex Example",
             ["preferred_username"] = user.Email,
             ["email"] = user.Email,
             ["upn"] = user.Email,
         };
+        if (nonce is not null)
+            claims["nonce"] = nonce;
         if (user.SessionId is not null)
             claims["sid"] = user.SessionId;
         if (user.SendsAuthTime)
-            claims["auth_time"] = pending.AuthenticatedAt.ToUnixTimeSeconds();
+            claims["auth_time"] = authenticatedAt.ToUnixTimeSeconds();
         if (user.Roles is { Length: > 0 })
             claims["roles"] = user.Roles;
 
@@ -218,14 +271,16 @@ public sealed class FakeEntra
             SigningCredentials = new SigningCredentials(_signingKey, SecurityAlgorithms.RsaSha256),
         });
         var clientInfo = Base64UrlEncoder.Encode(JsonSerializer.Serialize(new { uid = user.ObjectId, utid = user.TenantId }));
+        var refreshToken = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32));
+        _refreshTokens[refreshToken] = (signedIn, authenticatedAt);
         return Json(new Dictionary<string, object>
         {
             ["token_type"] = "Bearer",
-            ["scope"] = "openid profile offline_access",
+            ["scope"] = scope,
             ["expires_in"] = 3600,
             ["ext_expires_in"] = 3600,
             ["access_token"] = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32)),
-            ["refresh_token"] = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32)),
+            ["refresh_token"] = refreshToken,
             ["id_token"] = idToken,
             ["client_info"] = clientInfo,
         });

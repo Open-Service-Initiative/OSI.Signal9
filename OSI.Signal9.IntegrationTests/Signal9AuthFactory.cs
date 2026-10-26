@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -36,6 +38,9 @@ public sealed class Signal9AuthFactory : WebApplicationFactory<AuthHost>
     /// <summary>The stand-in for Entra that every outbound call of this host reaches.</summary>
     public FakeEntra Entra { get; }
 
+    /// <summary>Every warning or worse this host logged, formatted.</summary>
+    public ConcurrentQueue<string> Logs { get; } = new();
+
     public const string Issuer = "https://auth.signal9.test/";
     public const string ApiUri = "https://api.signal9.test/";
 
@@ -55,6 +60,8 @@ public sealed class Signal9AuthFactory : WebApplicationFactory<AuthHost>
             services.Configure<OpenIdConnectOptions>(OpenIdConnectDefaults.AuthenticationScheme,
                 options => options.BackchannelHttpHandler = Entra.CreateHandler());
 
+            services.AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(Logs));
+
             foreach (var quartz in services.Where(IsQuartzHostedService).ToList())
                 services.Remove(quartz);
         });
@@ -63,4 +70,28 @@ public sealed class Signal9AuthFactory : WebApplicationFactory<AuthHost>
     private static bool IsQuartzHostedService(ServiceDescriptor service) =>
         service.ServiceType == typeof(IHostedService)
         && service.ImplementationType?.Namespace?.StartsWith("Quartz", StringComparison.Ordinal) == true;
+}
+
+/// <summary>Keeps every warning or worse a host logs, for tests that check what was logged.</summary>
+internal sealed class CapturingLoggerProvider(ConcurrentQueue<string> logs) : ILoggerProvider
+{
+    public ILogger CreateLogger(string categoryName) => new Logger(logs);
+
+    public void Dispose()
+    {
+    }
+
+    private sealed class Logger(ConcurrentQueue<string> logs) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (IsEnabled(logLevel))
+                logs.Enqueue(formatter(state, exception));
+        }
+    }
 }

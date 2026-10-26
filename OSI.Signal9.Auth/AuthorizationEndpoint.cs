@@ -26,7 +26,7 @@ public static class AuthorizationEndpoint
 
     public static IEndpointConventionBuilder MapAuthorizationEndpoint(this IEndpointRouteBuilder endpoints) =>
         endpoints.MapMethods(Path, [HttpMethods.Get, HttpMethods.Post], async (HttpContext context, DeployingDirectory deploying,
-            TimeProvider time, Consent consent) =>
+            TimeProvider time, Consent consent, SignInSessions sessions, IOpenIddictApplicationManager applications) =>
         {
             var request = context.GetOpenIddictServerRequest()
                 ?? throw new InvalidOperationException("The OpenIddict server request can't be retrieved.");
@@ -35,6 +35,16 @@ public static class AuthorizationEndpoint
                 return Deny(EntraSignIn.Describe(rejection));
 
             var session = await context.AuthenticateAsync(EntraSignIn.CookieScheme);
+            // A sign-in from an Entra session that has since ended (front-channel logout, story 51, or Entra refusing
+            // the person, story 52) counts for nothing: the person signs in at Entra again.
+            if (session.Succeeded && EntraPerson.From(session.Principal!) is { } signedIn
+                && session.Principal!.FindFirst("sid")?.Value is { } sid
+                && await sessions.HasEndedAsync(signedIn.TenantId, sid,
+                    EntraSignIn.SignedInAt(session.Properties!) ?? DateTimeOffset.MinValue, context.RequestAborted))
+            {
+                await context.SignOutAsync(EntraSignIn.CookieScheme);
+                session = AuthenticateResult.NoResult();
+            }
             // Kept until a code is issued or refused, so answering the consent screen doesn't send a Superadministrator
             // back to Entra.
             var fresh = session.Succeeded && session.Properties!.Items.ContainsKey(EntraSignIn.FreshSignInItem);
@@ -99,6 +109,15 @@ public static class AuthorizationEndpoint
                         [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "The person hasn't consented to this request.",
                     }), [OpenIddictServerAspNetCoreDefaults.AuthenticationScheme]);
             }
+
+            // Every code starts a session of its own (#119), which every refresh then checks and which Entra's logout
+            // can end. Entra vouched for the person when they signed in there.
+            var application = await applications.FindByClientIdAsync(request.ClientId!, context.RequestAborted)
+                ?? throw new InvalidOperationException("OpenIddict validated a client that doesn't exist.");
+            await sessions.StartAsync(identity, (await applications.GetIdAsync(application, context.RequestAborted))!,
+                request.ClientId!, person.TenantId, session.Principal!.FindFirst("sid")?.Value,
+                EntraSignIn.AccountId(session.Principal!, person), deploying.IsSuperadministrator(session.Principal!),
+                EntraSignIn.SignedInAt(session.Properties!) ?? time.GetUtcNow(), context.RequestAborted);
 
             await TakeFreshSignInAsync(context, session);
             return Results.SignIn(new ClaimsPrincipal(identity), properties: null,

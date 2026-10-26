@@ -63,6 +63,10 @@ _Avoid_: Permission set, group, profile
 A grant of one role to one user at one tenant (the assigned tenant), covering that tenant and its descendants. The only source of a user's access, apart from being a Superadministrator.
 _Avoid_: Permission, membership, grant, home tenant (that means owning tenant; here, say "assigned tenant")
 
+**Session**:
+A person's use of one client from one sign-in through auth, from one Entra session (`sid`). Every token the client gets for it belongs to it, so ending a session (sign-out, Entra's logout, Entra refusing the person, or losing their last role assignment) revokes them all.
+_Avoid_: Login, authorization (OpenIddict's record behind a session), consent (which outlives sessions)
+
 **Superadministrator**:
 A user with full authority over the whole deployment, above every tenant tree. Not a role assignment.
 _Avoid_: Owner, operator, global admin, root

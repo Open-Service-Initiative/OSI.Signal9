@@ -2,7 +2,10 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http.HttpResults;
+using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Bff;
+using OSI.Signal9.Server.Data;
+using OSI.Signal9.Server.Identity;
 
 namespace OSI.Signal9.Web.Bff;
 
@@ -35,8 +38,23 @@ public static class BffEndpoints
         }).AllowAnonymous();
 
         // Needs the CSRF header like any POST, so another site can't sign the person out.
-        app.MapPost(BffRoutes.Logout, async (HttpContext context, DashboardSessions sessions) =>
+        // Ending the session revokes its refresh token at auth, which revokes every token behind it (story 53).
+        app.MapPost(BffRoutes.Logout, async (HttpContext context, DashboardSessions sessions, AuditLog audit) =>
         {
+            if (context.User.FindFirst("sub")?.Value is { } subject)
+            {
+                await audit.WriteAsync(new AuditEntry
+                {
+                    Action = AuditActions.SignOut,
+                    TenantId = PersonSubject.TryParse(subject, out var entraTenantId, out var entraObjectId)
+                        ? await audit.TenantOfPersonAsync(entraTenantId, entraObjectId, context.RequestAborted)
+                        : null,
+                    ActorKind = AuditActorKind.Person,
+                    ActorSubject = subject,
+                    ActorClientId = WebClientRegistration.ClientId,
+                    ClientIp = context.Connection.RemoteIpAddress?.ToString(),
+                }, context.RequestAborted);
+            }
             await sessions.EndAsync(context.User);
             await context.SignOutAsync(BffAuthentication.CookieScheme);
             return TypedResults.NoContent();

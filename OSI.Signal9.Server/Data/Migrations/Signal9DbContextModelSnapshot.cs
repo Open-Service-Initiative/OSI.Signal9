@@ -421,6 +421,23 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.ToTable("Devices");
                 });
 
+            modelBuilder.Entity("OSI.Signal9.Server.Data.EndedEntraSession", b =>
+                {
+                    b.Property<Guid>("EntraTenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EntraSessionId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("EndedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("EntraTenantId", "EntraSessionId");
+
+                    b.ToTable("EndedEntraSessions");
+                });
+
             modelBuilder.Entity("OSI.Signal9.Server.Data.EnrollmentToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -475,6 +492,24 @@ namespace OSI.Signal9.Server.Data.Migrations
                     b.HasIndex("TenantId");
 
                     b.ToTable("EnrollmentTokens");
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.EntraTokenCacheEntry", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<byte[]>("Value")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("EntraTokenCache");
                 });
 
             modelBuilder.Entity("OSI.Signal9.Server.Data.PendingIdentification", b =>
@@ -634,6 +669,57 @@ namespace OSI.Signal9.Server.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("RoleAssignments");
+                });
+
+            modelBuilder.Entity("OSI.Signal9.Server.Data.SignInSession", b =>
+                {
+                    b.Property<string>("AuthorizationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ClientId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EntraAccountId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("EntraCheckedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EntraSessionId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("EntraTenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("SignedInAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<bool>("Superadministrator")
+                        .HasColumnType("boolean");
+
+                    b.HasKey("AuthorizationId");
+
+                    b.HasIndex("Subject");
+
+                    b.HasIndex("EntraAccountId", "EntraCheckedAt");
+
+                    b.HasIndex("EntraTenantId", "EntraSessionId");
+
+                    b.ToTable("SignInSessions");
                 });
 
             modelBuilder.Entity("OSI.Signal9.Server.Data.TelemetrySample", b =>

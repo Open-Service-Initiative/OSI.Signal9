@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Identity.Abstractions;
 using Microsoft.Identity.Web;
-using Microsoft.Identity.Web.TokenCacheProviders.InMemory;
+using Microsoft.Identity.Web.TokenCacheProviders;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using OSI.Signal9.Server.Identity;
 
@@ -22,6 +22,9 @@ namespace OSI.Signal9.Auth;
 public static class EntraSignIn
 {
     public const string SectionName = "Entra";
+
+    /// <summary>Entra's public cloud, unless the operator's registration lives in another.</summary>
+    public const string DefaultInstance = "https://login.microsoftonline.com/";
 
     /// <summary>The session at auth between Entra sign-in and the authorization response.</summary>
     public const string CookieScheme = CookieAuthenticationDefaults.AuthenticationScheme;
@@ -55,7 +58,7 @@ public static class EntraSignIn
                 options =>
                 {
                     section.Bind(options);
-                    options.Instance ??= "https://login.microsoftonline.com/";
+                    options.Instance ??= DefaultInstance;
                     // Work and school accounts from any directory: the registration is multi-tenant (story 39).
                     options.TenantId ??= "organizations";
                     // The authorization code flow with PKCE upstream too (RFC 9700 §2.1.1).
@@ -78,8 +81,7 @@ public static class EntraSignIn
                     cookies.SlidingExpiration = true;
                     cookies.Events.OnValidatePrincipal = context =>
                     {
-                        if (!context.Properties.Items.TryGetValue(SignedInAtItem, out var value)
-                            || !DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var signedInAt)
+                        if (SignedInAt(context.Properties) is not { } signedInAt
                             || context.Options.TimeProvider!.GetUtcNow() - signedInAt >= AuthorizationServer.DashboardSessionLifetime)
                         {
                             context.RejectPrincipal();
@@ -90,8 +92,9 @@ public static class EntraSignIn
                 },
                 openIdConnectScheme: ChallengeScheme,
                 cookieScheme: CookieScheme)
-            .EnableTokenAcquisitionToCallDownstreamApi()
-            .AddInMemoryTokenCaches();
+            .EnableTokenAcquisitionToCallDownstreamApi();
+        // Entra's tokens, the refresh token the hourly check uses included, in the database for every replica (#119).
+        builder.Services.AddSingleton<IMsalTokenCacheProvider, EntraTokenCache>();
 
         builder.Services.Configure<OpenIdConnectOptions>(ChallengeScheme, options =>
         {
@@ -210,6 +213,23 @@ public static class EntraSignIn
 
         return null;
     }
+
+    /// <summary>When the person signed in at Entra, as the sign-in's session at auth recorded it.</summary>
+    public static DateTimeOffset? SignedInAt(AuthenticationProperties properties) =>
+        properties.Items.TryGetValue(SignedInAtItem, out var value)
+        && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var signedInAt)
+            ? signedInAt
+            : null;
+
+    /// <summary>
+    /// The person's account in auth's Entra token cache: MSAL's home account ID, from Entra's <c>client_info</c>
+    /// (<c>uid</c>, <c>utid</c>), which for a guest names their home directory rather than <c>tid</c>.
+    /// </summary>
+    public static string AccountId(ClaimsPrincipal signIn, EntraPerson person) =>
+        signIn.FindFirst(ClaimConstants.UniqueObjectIdentifier)?.Value is { Length: > 0 } uid
+        && signIn.FindFirst(ClaimConstants.UniqueTenantIdentifier)?.Value is { Length: > 0 } utid
+            ? $"{uid}.{utid}"
+            : $"{person.ObjectId:D}.{person.TenantId:D}";
 
     /// <summary>When the person last authenticated at Entra: the ID token's <c>auth_time</c> (OpenID Connect Core §2).</summary>
     public static DateTimeOffset? AuthenticatedAt(ClaimsPrincipal signIn) =>

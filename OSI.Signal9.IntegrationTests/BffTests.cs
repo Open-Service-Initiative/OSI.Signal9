@@ -33,7 +33,8 @@ public sealed partial class BffTests : IDisposable
     private async Task<DashboardBrowser> SignedInAsync(EntraUser? user = null)
     {
         var browser = new DashboardBrowser(_factory);
-        var landing = await browser.SignInAsync(user ?? EntraUser.WithMfa());
+        // A person holding a role assignment, so the session survives its refreshes (#119).
+        var landing = await browser.SignInAsync(user ?? (await _factory.AssignedPersonAsync()).User);
         Assert.AreEqual(HttpStatusCode.OK, landing.StatusCode, await landing.Content.ReadAsStringAsync(Ct));
         return browser;
     }
