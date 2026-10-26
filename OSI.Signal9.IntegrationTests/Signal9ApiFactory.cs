@@ -568,16 +568,22 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
     /// An agent's enrollment request (POST /api/v1/agents), sent with no access token, from <paramref name="from"/> if
     /// given.
     /// </summary>
+    /// <param name="version">The agent version it sends (<see cref="AgentProtocol.VersionHeader"/>); this build's by default.</param>
     public async Task<HttpResponseMessage> EnrollAsync(string enrollmentToken, X509Certificate2 certificate,
-        string machineName = "PC01", IPAddress? from = null, Func<EnrollAgentRequest, EnrollAgentRequest>? hardware = null)
+        string machineName = "PC01", IPAddress? from = null, Func<EnrollAgentRequest, EnrollAgentRequest>? hardware = null,
+        string? version = null)
     {
         using var client = CreateAnonymousClient();
         if (from is not null)
             client.DefaultRequestHeaders.Add(ClientIpHeader, from.ToString());
+        client.DefaultRequestHeaders.Add(AgentProtocol.VersionHeader, version ?? AgentVersion);
         var request = Enrollment(enrollmentToken, certificate, machineName);
-        return await client.PostAsJsonAsync("api/v1/agents", hardware is null ? request : hardware(request),
+        return await client.PostAsJsonAsync(AgentProtocol.Routes.Enroll, hardware is null ? request : hardware(request),
             Signal9Json.Options);
     }
+
+    /// <summary>The version the real agent sends, which the deployment supports by default: both come from one build.</summary>
+    public static string AgentVersion { get; } = OSI.Signal9.Agent.Services.AgentVersion.Current.ToString();
 
     public static EnrollAgentRequest Enrollment(string enrollmentToken, X509Certificate2 certificate,
         string machineName = "PC01") => new()
@@ -591,10 +597,11 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
 
     /// <summary>The agent's token request at api's mTLS alias: client credentials, authenticated by its certificate.</summary>
     public async Task<HttpResponseMessage> RequestAgentTokenAsync(Guid agentId, X509Certificate2 certificate,
-        string scope = OSI.Signal9.Server.Identity.Scopes.Agent)
+        string scope = AgentProtocol.Scope, string? version = null)
     {
         using var api = CreateForwardedCertificateClient(certificate);
-        return await api.PostAsync("connect/token", MtlsClientCredentials(agentId.ToString(), scope));
+        api.DefaultRequestHeaders.Add(AgentProtocol.VersionHeader, version ?? AgentVersion);
+        return await api.PostAsync(AgentProtocol.TokenEndpoint, MtlsClientCredentials(agentId.ToString(), scope));
     }
 
     /// <summary>A client for <paramref name="server"/> acting as <paramref name="agent"/>, with its certificate and token.</summary>
@@ -603,6 +610,7 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         var client = CreatePeerClient(server, TrustedProxy, null);
         client.DefaultRequestHeaders.Add(ClientCertificateHeader, TestCertificates.ContainerAppsHeader(agent.Certificate));
         client.DefaultRequestHeaders.Authorization = agent.Client.DefaultRequestHeaders.Authorization;
+        client.DefaultRequestHeaders.Add(AgentProtocol.VersionHeader, AgentVersion);
         return client;
     }
 
@@ -615,6 +623,7 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
         var token = (await response.Content.ReadFromJsonAsync<AccessToken>())!;
         var client = CreateForwardedCertificateClient(certificate);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Value);
+        client.DefaultRequestHeaders.Add(AgentProtocol.VersionHeader, AgentVersion);
         return client;
     }
 

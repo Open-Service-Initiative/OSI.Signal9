@@ -13,6 +13,7 @@ using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
 using OpenIddict.Server;
 using OpenIddict.Server.AspNetCore;
+using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Server.Data;
 using OSI.Signal9.Server.Keys;
 using static OpenIddict.Abstractions.OpenIddictConstants;
@@ -39,7 +40,8 @@ public static class AuthorizationServer
     /// </summary>
     public const string PushedAuthorizationEndpoint = "connect/par";
 
-    public const string TokenEndpoint = "connect/token";
+    /// <summary>The token endpoint; agents find api's alias of it through <see cref="AgentProtocol.TokenEndpoint"/>.</summary>
+    public const string TokenEndpoint = AgentProtocol.TokenEndpoint;
     public const string RevocationEndpoint = "connect/revoke";
     public const string IntrospectionEndpoint = "connect/introspect";
 
@@ -115,6 +117,10 @@ public static class AuthorizationServer
         // The signing and encryption keys are the ones stored in the database (ADR-0008).
         server.Services.AddSignal9Keys(configuration);
         server.Services.AddScoped<SignInSessions>();
+        // Agents' token requests are refused when the deployment doesn't support their version.
+        server.Services.AddOptions<AgentVersionOptions>().BindConfiguration(AgentVersionOptions.SectionName)
+            .ValidateDataAnnotations().ValidateOnStart();
+        server.Services.AddSingleton<AgentVersions>();
 
         // Revoking a refresh token revokes its whole grant: the authorization and every token issued under it, access
         // tokens included (RFC 7009 §2.1). web's sign-out and session ends rely on it (story 53). It runs before
@@ -273,18 +279,23 @@ public static class AuthorizationServer
             if (!request.IsClientCredentialsGrantType())
                 throw new InvalidOperationException($"The grant type '{request.GrantType}' isn't handled.");
 
-            // A revoked agent still holds its certificate, so it authenticates; it's told it was revoked, so it stops
-            // rather than retrying or enrolling again (#129). Only an authenticated client learns this.
-            if (Guid.TryParse(request.ClientId, out var agentId)
-                && await context.RequestServices.GetRequiredService<Signal9DbContext>().Agents
+            // An agent's client ID is its agent ID. Only an authenticated client learns why it's refused.
+            var agent = Guid.TryParse(request.ClientId, out var agentId)
+                ? await context.RequestServices.GetRequiredService<Signal9DbContext>().Agents
                     .IgnoreTenantScope(TenantScopeBypass.AgentSelfService)
-                    .AnyAsync(a => a.Id == agentId && a.RevokedAt != null, context.RequestAborted))
+                    .Where(a => a.Id == agentId).Select(a => new { a.RevokedAt }).SingleOrDefaultAsync(context.RequestAborted)
+                : null;
+            if (agent is not null)
             {
-                return Results.Forbid(new AuthenticationProperties(new Dictionary<string, string?>
-                {
-                    [OpenIddictServerAspNetCoreConstants.Properties.Error] = Contracts.Agents.AgentErrors.Revoked,
-                    [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "This agent has been revoked.",
-                }), [OpenIddictServerAspNetCoreDefaults.AuthenticationScheme]);
+                // A revoked agent still holds its certificate, so it authenticates; it's told it was revoked, so it
+                // stops rather than retrying or enrolling again (#129).
+                if (agent.RevokedAt is not null)
+                    return AgentRefused(Contracts.Agents.AgentErrors.Revoked, "This agent has been revoked.");
+                // One whose version the deployment doesn't support is told so, so it stops until it's updated.
+                var versions = context.RequestServices.GetRequiredService<AgentVersions>();
+                var version = context.Request.Headers[AgentProtocol.VersionHeader].ToString();
+                if (versions.Supported(version) is null)
+                    return AgentRefused(AgentProtocol.UnsupportedVersion.Error, versions.Refusal(version));
             }
 
             // An application acting as itself is its own subject (RFC 9068 §2.2).
@@ -300,4 +311,12 @@ public static class AuthorizationServer
         .AllowAnonymous()
         // OpenIddict's own endpoint, described by discovery rather than the API description.
         .ExcludeFromDescription();
+
+    /// <summary>An OAuth error (RFC 6749 §5.2, 400) refusing an authenticated agent a token.</summary>
+    private static IResult AgentRefused(string error, string description) =>
+        Results.Forbid(new AuthenticationProperties(new Dictionary<string, string?>
+        {
+            [OpenIddictServerAspNetCoreConstants.Properties.Error] = error,
+            [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = description,
+        }), [OpenIddictServerAspNetCoreDefaults.AuthenticationScheme]);
 }

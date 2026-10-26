@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Routing;
 using OSI.Signal9.API;
+using OSI.Signal9.API.Agents;
 using OSI.Signal9.API.Infrastructure;
 using OSI.Signal9.Contracts;
 
@@ -61,6 +62,29 @@ public sealed class ArchitectureTests
             select $"{controller.Name}.{action.Name} ({scope})").ToList();
 
         Assert.IsEmpty(violations, $"Add these scopes to Scopes.RequiringRecentMfa: {string.Join(", ", violations)}");
+    }
+
+    /// <summary>
+    /// Every endpoint and hub requiring the agent scope checks the agent's version (<see cref="AgentEndpointAttribute"/>),
+    /// so an agent the deployment no longer supports is refused everywhere it calls.
+    /// </summary>
+    [TestMethod]
+    public void Every_endpoint_requiring_the_agent_scope_checks_the_agent_s_version()
+    {
+        static bool RequiresAgentScope(MemberInfo member) =>
+            member.GetCustomAttributes<OSI.Signal9.API.Authorization.RequireScopeAttribute>()
+                .Any(r => r.Scopes.Contains(OSI.Signal9.Server.Identity.Scopes.Agent));
+
+        var types = typeof(ApiHost).Assembly.GetTypes()
+            .Where(t => t.IsAssignableTo(typeof(ControllerBase)) || t.IsAssignableTo(typeof(Microsoft.AspNetCore.SignalR.Hub)));
+        var violations = (
+            from type in types
+            from member in new MemberInfo[] { type }.Concat(type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+            where RequiresAgentScope(member)
+            where member.GetCustomAttribute<AgentEndpointAttribute>() is null && type.GetCustomAttribute<AgentEndpointAttribute>() is null
+            select member == type ? type.Name : $"{type.Name}.{member.Name}").ToList();
+
+        Assert.IsEmpty(violations, $"Add [AgentEndpoint] to: {string.Join(", ", violations)}");
     }
 
     private static bool ReturnsCollection(MethodInfo action) =>

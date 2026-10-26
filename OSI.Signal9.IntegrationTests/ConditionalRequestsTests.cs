@@ -405,7 +405,7 @@ public sealed class ConditionalRequestsTests : IDisposable
         using var racing = RaceWith($"""UPDATE "Agents" SET "AgentVersion" = 'Concurrent' WHERE "Id" = '{agent.Id}'; UPDATE "Devices" SET "GroupName" = 'Concurrent' WHERE "Id" = '{agent.DeviceId}'""");
         using var client = Signal9ApiFactory.AsAgent(racing.Server, agent);
         var heartbeat = await client.PutAsJsonAsync($"api/v1/agents/{agent.Id}/heartbeat",
-            new HeartbeatRequest { AgentVersion = "2.0.0", IpAddress = "10.0.0.2" }, Signal9Json.Options, Ct);
+            new HeartbeatRequest { IpAddress = "10.0.0.2" }, Signal9Json.Options, Ct);
         var telemetry = await client.PostAsJsonAsync($"api/v1/agents/{agent.Id}/telemetry",
             new CreateTelemetrySampleRequest { CollectedAt = _factory.Time.GetUtcNow() }, Signal9Json.Options, Ct);
 

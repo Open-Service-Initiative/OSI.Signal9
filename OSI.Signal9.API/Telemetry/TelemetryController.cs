@@ -5,6 +5,7 @@ using OSI.Signal9.Server.Identity;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using OSI.Signal9.API.Agents;
+using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Server.Data;
 using OSI.Signal9.API.Hubs;
 using OSI.Signal9.API.Infrastructure;
@@ -67,7 +68,8 @@ public sealed class TelemetryController(
     /// for (409). The sample's canonical URL is under the device.
     /// </summary>
     [RequireScope(Scopes.Agent)]
-    [HttpPost("agents/{agentId:guid}/telemetry")]
+    [AgentEndpoint]
+    [HttpPost("/" + AgentProtocol.Routes.Telemetry)]
     [OptimisticConcurrency]
     [Consumes("application/json")]
     [ProducesResponseType<TelemetrySampleDto>(StatusCodes.Status201Created)]

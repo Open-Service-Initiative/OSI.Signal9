@@ -141,8 +141,6 @@ public sealed record EnrollAgentRequest
     [StringLength(17)]
     public string? MacAddress { get; init; }
 
-    [StringLength(50)]
-    public string? AgentVersion { get; init; }
 
     /// <summary>
     /// The machine's SMBIOS system UUID (SMBIOS type 1), if it could be read. Used with <see cref="Manufacturer"/> and
@@ -168,15 +166,14 @@ public sealed record EnrollAgentRequest
 }
 
 /// <summary>
-/// Body of PUT /api/v1/agents/{agentId}/heartbeat. All fields are optional facts that may have changed.
+/// Body of PUT /api/v1/agents/{agentId}/heartbeat. All fields are optional facts that may have changed. The agent's
+/// version travels in <see cref="AgentProtocol.VersionHeader"/>, as on every agent request.
 /// </summary>
 public sealed record HeartbeatRequest
 {
     [StringLength(45)]
     public string? IpAddress { get; init; }
 
-    [StringLength(50)]
-    public string? AgentVersion { get; init; }
 }
 
 /// <summary>Response to a heartbeat.</summary>

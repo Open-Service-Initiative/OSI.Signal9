@@ -6,7 +6,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UserSecretsId>osi-signal9-agent</UserSecretsId>
-    <Version>0.1.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

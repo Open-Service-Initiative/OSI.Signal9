@@ -18,6 +18,7 @@ namespace OSI.Signal9.API.Hubs;
 /// revoked or rotates its certificate (#129).
 /// </summary>
 [RequireScope(Scopes.Agent)]
+[AgentEndpoint]
 public sealed class AgentHub(Signal9DbContext db, AgentHubConnections connections) : Hub<IAgentHubClient>
 {
     public static string GroupFor(Guid agentId) => $"agent:{agentId}";

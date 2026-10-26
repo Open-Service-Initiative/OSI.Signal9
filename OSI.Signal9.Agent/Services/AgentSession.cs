@@ -80,7 +80,7 @@ public sealed class AgentSession(
         {
             var (ipAddress, _) = SystemInfoProvider.GetPrimaryNetworkAddress();
             var response = await api.SendHeartbeatAsync(agentId,
-                new HeartbeatRequest { IpAddress = ipAddress, AgentVersion = SystemInfoProvider.AgentVersion }, cancellationToken);
+                new HeartbeatRequest { IpAddress = ipAddress }, cancellationToken);
             if (response.HasPendingWork)
                 work.RequestFetch();
         }

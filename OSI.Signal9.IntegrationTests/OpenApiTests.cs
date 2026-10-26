@@ -45,6 +45,24 @@ public sealed class OpenApiTests : IDisposable
     }
 
     [TestMethod]
+    public async Task Agent_operations_document_the_version_header_and_its_refusal()
+    {
+        var document = await DocumentAsync();
+        var heartbeat = document.Paths["/api/v1/agents/{agentId}/heartbeat"]!.Operations![HttpMethod.Put];
+        var enroll = document.Paths["/api/v1/agents"]!.Operations![HttpMethod.Post];
+        var tenant = document.Paths["/api/v1/tenants/{tenantId}"]!.Operations![HttpMethod.Get];
+
+        foreach (var operation in new[] { heartbeat, enroll })
+        {
+            Assert.IsTrue(operation.Parameters!.Any(p => p.In == ParameterLocation.Header
+                && p.Name == OSI.Signal9.Contracts.Agents.AgentProtocol.VersionHeader && p.Required), operation.OperationId);
+            StringAssert.Contains(operation.Responses!["400"].Description,
+                OSI.Signal9.Contracts.Agents.AgentProtocol.UnsupportedVersion.ProblemType, operation.OperationId);
+        }
+        Assert.IsFalse(HasHeaderParameter(tenant, OSI.Signal9.Contracts.Agents.AgentProtocol.VersionHeader));
+    }
+
+    [TestMethod]
     public async Task Collections_do_not_document_etags()
     {
         var list = (await DocumentAsync()).Paths["/api/v1/tenants"]!.Operations![HttpMethod.Get];

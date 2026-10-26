@@ -50,6 +50,10 @@ These rules are Signal9's own, drawn from Google's AIP-122, AIP-159 and AIP-216 
 - Every action and hub requires a scope from the catalogue (`OSI.Signal9.Server/Identity/Scopes.cs`) with `[RequireScope(Scopes.Devices.Read)]` on the action, or is explicitly `[AllowAnonymous]`. An architecture test fails the build otherwise, and the OpenAPI document shows each operation's scopes.
 - Scopes are `{noun}.{verb}` with one of five verbs: `read`, `write`, `delete`, `transfer`, `execute` (ADR-0010). Add new ones to the catalogue, never ad hoc.
 
+### Agent endpoints
+
+- Endpoints and hubs agents call carry `[AgentEndpoint]` (an architecture test requires it alongside the agent scope): `api` refuses an agent whose `Signal9-Agent-Version` it doesn't support. Agent paths, the token endpoint and the `agent` scope come from `AgentProtocol` in Contracts on both sides. See `docs/agent-protocol.md`.
+
 ### Payloads
 
 - Collections take `?page=&pageSize=` (maximum 100) and return `PagedResult<T>`. Don't name an action parameter `page`; it breaks query binding.

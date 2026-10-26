@@ -102,7 +102,7 @@ public static class Scopes
     }
 
     /// <summary>Only agents can obtain it: what an agent sends about itself and the work it's given.</summary>
-    public const string Agent = "agent";
+    public const string Agent = Contracts.Agents.AgentProtocol.Scope;
 
     /// <summary>
     /// The scopes whose endpoints need a recent MFA (<c>[RequireRecentMfa]</c>): running code (#82) and deleting

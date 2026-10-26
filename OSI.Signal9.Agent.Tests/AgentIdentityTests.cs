@@ -232,7 +232,8 @@ public sealed class AgentIdentityTests : IDisposable
         public HttpClient CreateClient(AgentIdentity? identity, params DelegatingHandler[] handlers) =>
             new(MutualTlsTransport.Chain(handlers, network), disposeHandler: false) { BaseAddress = new Uri("https://api.invalid") };
 
-        public Microsoft.AspNetCore.SignalR.Client.HubConnection ConnectToHub(AgentIdentity identity, Func<Task<string?>> accessToken) =>
+        public Microsoft.AspNetCore.SignalR.Client.HubConnection ConnectToHub(AgentIdentity identity, Func<Task<string?>> accessToken,
+            IReadOnlyDictionary<string, string> headers) =>
             throw new NotSupportedException();
     }
 

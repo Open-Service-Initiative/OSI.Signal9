@@ -1,6 +1,5 @@
 using System.Text.Json;
 using OSI.Signal9.Contracts.Commands;
-using OSI.Signal9.Contracts.Serialization;
 
 namespace OSI.Signal9.Agent.Services;
 
@@ -16,7 +15,7 @@ public sealed class CollectSystemInfoHandler(IMachineFactsSource systemInfo, ITe
         return Task.FromResult(new CommandResultRequest
         {
             Succeeded = true,
-            Output = JsonSerializer.Serialize(output, Signal9Json.Options),
+            Output = JsonSerializer.Serialize(output, AgentJson.Options),
         });
     }
 }

@@ -196,7 +196,8 @@ public sealed class AgentKeyRotationTests : IDisposable
         public HttpClient CreateClient(AgentIdentity? identity, params DelegatingHandler[] handlers) =>
             new(MutualTlsTransport.Chain(handlers, new Network(api, identity?.Certificate))) { BaseAddress = new Uri("https://api.invalid") };
 
-        public Microsoft.AspNetCore.SignalR.Client.HubConnection ConnectToHub(AgentIdentity identity, Func<Task<string?>> accessToken) =>
+        public Microsoft.AspNetCore.SignalR.Client.HubConnection ConnectToHub(AgentIdentity identity, Func<Task<string?>> accessToken,
+            IReadOnlyDictionary<string, string> headers) =>
             throw new NotSupportedException();
 
         private sealed class Network(FakeApi api, X509Certificate2? certificate) : HttpMessageHandler

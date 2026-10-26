@@ -2,7 +2,6 @@ using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
 using OSI.Signal9.Agent.Services;
 using OSI.Signal9.Contracts.Agents;
-using OSI.Signal9.Contracts.Serialization;
 
 namespace OSI.Signal9.Agent.Identity;
 
@@ -29,11 +28,11 @@ public sealed class AgentEnrollment(
                 $"Agent instance '{options.Value.InstanceId}' isn't enrolled, and no enrollment token is configured (Agent:EnrollmentToken).");
 
         var certificate = identities.CreateCertificate();
-        using var http = transport.CreateClient(identity: null);
-        using var response = await http.PostAsJsonAsync("api/v1/agents",
-            systemInfo.GetEnrollment(enrollmentToken, certificate.ExportCertificatePem()), Signal9Json.Options, cancellationToken);
+        using var http = transport.CreateClient(identity: null, new AgentVersionHandler());
+        using var response = await http.PostAsJsonAsync(AgentProtocol.Routes.Enroll,
+            systemInfo.GetEnrollment(enrollmentToken, certificate.ExportCertificatePem()), AgentJson.Options, cancellationToken);
         await AgentApiClient.EnsureSuccessAsync(response, cancellationToken);
-        var agent = (await response.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options, cancellationToken))!;
+        var agent = (await response.Content.ReadFromJsonAsync<AgentDto>(AgentJson.Options, cancellationToken))!;
 
         identities.Save(agent.Id, certificate);
         logger.LogInformation("Instance {Instance} enrolled as agent {AgentId} of device {DeviceId} in tenant {TenantId}",

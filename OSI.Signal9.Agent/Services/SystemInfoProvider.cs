@@ -1,6 +1,5 @@
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using OSI.Signal9.Contracts.Agents;
 
@@ -24,10 +23,6 @@ public sealed class SystemInfoProvider(Func<HardwareIdentity>? readHardware = nu
     private readonly Func<HardwareIdentity> _readHardware = readHardware ?? HardwareIdentity.Read;
     private readonly Func<DateTimeOffset?> _readOsInstalledAt = readOsInstalledAt ?? OsInstallTime.Read;
 
-    public static string AgentVersion { get; } =
-        typeof(SystemInfoProvider).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]
-        ?? "0.0.0";
-
     /// <summary>What this machine is: the facts the agent reports when it enrolls.</summary>
     public MachineFacts GetFacts()
     {
@@ -43,7 +38,7 @@ public sealed class SystemInfoProvider(Func<HardwareIdentity>? readHardware = nu
             TotalMemoryMb: NativeMetrics.ReadMemory()?.TotalMb ?? 0,
             IpAddress: ipAddress,
             MacAddress: macAddress,
-            AgentVersion: AgentVersion);
+            AgentVersion: Services.AgentVersion.Current.ToString());
     }
 
     /// <summary>An enrollment request presenting <paramref name="enrollmentToken"/> and the agent's certificate.</summary>
@@ -65,7 +60,6 @@ public sealed class SystemInfoProvider(Func<HardwareIdentity>? readHardware = nu
             TotalMemoryMb = facts.TotalMemoryMb,
             IpAddress = facts.IpAddress,
             MacAddress = facts.MacAddress,
-            AgentVersion = facts.AgentVersion,
             SmbiosUuid = hardware.SmbiosUuid,
             Manufacturer = Truncate(hardware.Manufacturer),
             SerialNumber = Truncate(hardware.SerialNumber),

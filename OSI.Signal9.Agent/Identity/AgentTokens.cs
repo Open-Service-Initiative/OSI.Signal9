@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using OSI.Signal9.Agent.Services;
+using OSI.Signal9.Contracts.Agents;
 
 namespace OSI.Signal9.Agent.Identity;
 
@@ -30,11 +31,11 @@ public sealed class AgentTokens(Guid agentId, HttpClient http, TimeProvider time
                 return _token;
 
             var requestedAt = time.GetUtcNow();
-            using var response = await http.PostAsync("connect/token", new FormUrlEncodedContent(new Dictionary<string, string>
+            using var response = await http.PostAsync(AgentProtocol.TokenEndpoint, new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["grant_type"] = "client_credentials",
                 ["client_id"] = agentId.ToString(),
-                ["scope"] = "agent",
+                ["scope"] = AgentProtocol.Scope,
             }), cancellationToken);
             await AgentApiClient.EnsureSuccessAsync(response, cancellationToken);
             var token = (await response.Content.ReadFromJsonAsync<TokenResponse>(cancellationToken))!;

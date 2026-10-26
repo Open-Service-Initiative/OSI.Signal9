@@ -5,7 +5,8 @@ namespace OSI.Signal9.Agent.Services;
 /// <summary>
 /// Enrolls this agent instance if it hasn't yet, rotates its key and certificate when they're due, then runs an
 /// <see cref="AgentSession"/> as it until it ends: when the certificate next falls due for rotation, or on failure. Any
-/// failure starts over with exponential backoff.
+/// failure starts over with exponential backoff, except api refusing the agent's version, which stops it until it's
+/// updated.
 /// </summary>
 public sealed class AgentWorker(
     AgentEnrollment enrollment,
@@ -46,6 +47,14 @@ public sealed class AgentWorker(
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
+                return;
+            }
+            catch (UnsupportedAgentVersionException ex)
+            {
+                // Retrying can't help: only an update can. The agent stays installed but sends nothing more.
+                logger.LogCritical(ex,
+                    "The deployment no longer supports agent version {AgentVersion} (it supports {MinimumVersion} to {MaximumVersion}); the agent has stopped and must be updated",
+                    AgentVersion.Current, ex.MinimumVersion ?? "unknown", ex.MaximumVersion ?? "unknown");
                 return;
             }
             catch (Exception ex)

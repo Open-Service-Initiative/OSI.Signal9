@@ -45,9 +45,18 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
         _testContext = testContext;
         // SignalR closes a connection when its token expires by the real clock, so the expiry test starts the hosts'
         // clock just short of a token lifetime ago: its first tokens expire for real a few seconds in.
-        _factory = testContext.TestName == nameof(When_its_token_expires_the_hub_closes_and_the_agent_reconnects_with_a_fresh_token)
-            ? new Signal9ApiFactory(start: DateTimeOffset.UtcNow - AuthorizationServer.AccessTokenLifetime + TimeSpan.FromSeconds(10))
-            : new Signal9ApiFactory();
+        _factory = testContext.TestName switch
+        {
+            nameof(When_its_token_expires_the_hub_closes_and_the_agent_reconnects_with_a_fresh_token) =>
+                new Signal9ApiFactory(start: DateTimeOffset.UtcNow - AuthorizationServer.AccessTokenLifetime + TimeSpan.FromSeconds(10)),
+            nameof(An_agent_whose_version_the_deployment_no_longer_supports_stops_instead_of_retrying) =>
+                new Signal9ApiFactory(settings: new Dictionary<string, string?>
+                {
+                    ["AgentVersions:Minimum"] = "99.0.0",
+                    ["AgentVersions:Maximum"] = "99.0.0",
+                }),
+            _ => new Signal9ApiFactory(),
+        };
         _agentTime = new FakeTimeProvider(_factory.Time.GetUtcNow());
         _client = _factory.CreateClient();
         _stop = CancellationTokenSource.CreateLinkedTokenSource(testContext.CancellationToken);
@@ -171,12 +180,25 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
         Assert.AreEqual(CommandStatus.Completed, (await WaitUntilFinishedAsync(command)).Status);
     }
 
+    [TestMethod]
+    public async Task An_agent_whose_version_the_deployment_no_longer_supports_stops_instead_of_retrying()
+    {
+        var agent = await StartAgentAsync(waitUntilRunning: false);
+
+        // It would otherwise back off on the agent's clock, which never moves here, and never finish.
+        await agent.Worker.ExecuteTask!.WaitAsync(Timeout, Ct);
+
+        Assert.IsNull(agent.Identities.Load(), "it enrolled");
+        Assert.AreEqual(1, agent.Network.Completed($"/{AgentProtocol.Routes.Enroll}"));
+    }
+
     /// <summary>
     /// Starts an agent instance in a new root tenant (or on its existing enrollment when there's no token), returning
     /// once it has enrolled, connected, fetched its work and sent its first heartbeat, so the only things left to make it
     /// fetch again are the doorbell, a reconnect and the heartbeat timer.
     /// </summary>
-    private async Task<RunningAgent> StartAgentAsync(string instanceId = "default", string? enrollmentToken = "issue")
+    private async Task<RunningAgent> StartAgentAsync(string instanceId = "default", string? enrollmentToken = "issue",
+        bool waitUntilRunning = true)
     {
         if (enrollmentToken == "issue")
         {
@@ -210,6 +232,8 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
         await worker.StartAsync(_stop.Token);
         var running = new RunningAgent(worker, network, options, identities);
         _agents.Add(running);
+        if (!waitUntilRunning)
+            return running;
 
         await WaitUntilAsync(() => Task.FromResult(identities.Load() is not null));
         var agentId = identities.Load()!.AgentId;
@@ -358,7 +382,8 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
             };
         }
 
-        public HubConnection ConnectToHub(AgentIdentity identity, Func<Task<string?>> accessToken) => Hub = new HubConnectionBuilder()
+        public HubConnection ConnectToHub(AgentIdentity identity, Func<Task<string?>> accessToken,
+            IReadOnlyDictionary<string, string> headers) => Hub = new HubConnectionBuilder()
             .WithUrl(new Uri(Signal9ApiFactory.HttpsLocalhost, HubRoutes.Agents.TrimStart('/')), options =>
             {
                 options.Transports = HttpTransportType.WebSockets;
@@ -376,6 +401,8 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
                         request.HttpContext.Connection.RemoteIpAddress = Signal9ApiFactory.TrustedProxy;
                         request.Headers.Authorization = $"Bearer {token}";
                         request.Headers[Signal9ApiFactory.ClientCertificateHeader] = TestCertificates.ContainerAppsHeader(identity.Certificate);
+                        foreach (var (name, value) in headers)
+                            request.Headers[name] = value;
                     };
                     _socket = await client.ConnectAsync(context.Uri, cancellationToken);
                     Interlocked.Increment(ref _connections);

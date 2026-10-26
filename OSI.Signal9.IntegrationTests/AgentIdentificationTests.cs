@@ -480,6 +480,7 @@ public sealed class AgentIdentificationTests : IDisposable
         {
             using var anonymous = racing.Server.CreateClient();
             anonymous.BaseAddress = Signal9ApiFactory.HttpsLocalhost;
+            anonymous.DefaultRequestHeaders.Add(AgentProtocol.VersionHeader, Signal9ApiFactory.AgentVersion);
             using var certificate = TestCertificates.AgentCertificate();
             var response = await anonymous.PostAsJsonAsync("api/v1/agents",
                 Hardware(Uuid)(Signal9ApiFactory.Enrollment(secret, certificate)), Signal9Json.Options, Ct);
@@ -659,6 +660,7 @@ public sealed class AgentIdentificationTests : IDisposable
         {
             using var anonymous = racing.Server.CreateClient();
             anonymous.BaseAddress = Signal9ApiFactory.HttpsLocalhost;
+            anonymous.DefaultRequestHeaders.Add(AgentProtocol.VersionHeader, Signal9ApiFactory.AgentVersion);
             using var certificate = TestCertificates.AgentCertificate();
             var response = await anonymous.PostAsJsonAsync("api/v1/agents",
                 Hardware(Uuid)(Signal9ApiFactory.Enrollment(secret, certificate)), Signal9Json.Options, Ct);
@@ -698,6 +700,7 @@ public sealed class AgentIdentificationTests : IDisposable
                 options.Transports = HttpTransportType.LongPolling;
                 options.AccessTokenProvider = () => Task.FromResult(agent.Client.DefaultRequestHeaders.Authorization!.Parameter);
                 options.Headers[Signal9ApiFactory.ClientCertificateHeader] = TestCertificates.ContainerAppsHeader(agent.Certificate);
+                options.Headers[AgentProtocol.VersionHeader] = Signal9ApiFactory.AgentVersion;
             })
             .AddJsonProtocol(o => Signal9Json.Configure(o.PayloadSerializerOptions))
             .Build();

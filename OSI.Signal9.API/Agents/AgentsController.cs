@@ -343,7 +343,8 @@ public sealed class AgentsController(
     /// <response code="403">The caller isn't this agent, or it's revoked.</response>
     /// <response code="409">The agent isn't its device's active agent.</response>
     [RequireScope(Scopes.Agent)]
-    [HttpPut("{agentId:guid}/certificate")]
+    [AgentEndpoint]
+    [HttpPut("/" + AgentProtocol.Routes.Certificate)]
     [OptimisticConcurrency]
     [Consumes("application/json")]
     [ProducesResponseType<AgentCertificateDto>(StatusCodes.Status200OK)]
@@ -468,8 +469,9 @@ public sealed class AgentsController(
     /// <response code="409">The tenant isn't active, or has reached its device limit.</response>
     /// <response code="429">Too many enrollments from this address or with this token.</response>
     [AllowAnonymous]
+    [AgentEndpoint]
     [EnableRateLimiting(RateLimiting.Enrollment)]
-    [HttpPost]
+    [HttpPost("/" + AgentProtocol.Routes.Enroll)]
     [OptimisticConcurrency]
     [Consumes("application/json")]
     [ProducesResponseType<AgentDto>(StatusCodes.Status201Created)]
@@ -559,7 +561,7 @@ public sealed class AgentsController(
         {
             Id = Guid.CreateVersion7(time.GetUtcNow()),
             EnrollmentTokenId = tokenId,
-            AgentVersion = request.AgentVersion,
+            AgentVersion = HttpContext.AgentVersion().ToString(),
             EnrolledAt = now,
             LastSeenAt = now,
         };
@@ -754,7 +756,8 @@ public sealed class AgentsController(
     /// approval or an identification decision receives no work, so its list is empty.
     /// </summary>
     [RequireScope(Scopes.Agent)]
-    [HttpGet("{agentId:guid}/pending-commands")]
+    [AgentEndpoint]
+    [HttpGet("/" + AgentProtocol.Routes.PendingCommands)]
     [ProducesResponseType<PagedResult<CommandDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -780,7 +783,8 @@ public sealed class AgentsController(
     /// approval or an identification decision is accepted too, but never told work is waiting.
     /// </summary>
     [RequireScope(Scopes.Agent)]
-    [HttpPut("{agentId:guid}/heartbeat")]
+    [AgentEndpoint]
+    [HttpPut("/" + AgentProtocol.Routes.Heartbeat)]
     [OptimisticConcurrency(Representation = false)]
     [Consumes("application/json")]
     [ProducesResponseType<HeartbeatResponse>(StatusCodes.Status200OK)]
@@ -802,10 +806,12 @@ public sealed class AgentsController(
         var device = agent.Device;
         var wasOnline = device is not null && presence.StatusOf(device) == Contracts.Devices.DeviceStatus.Online;
         agent.LastSeenAt = time.GetUtcNow().UtcDateTime;
-        agent.AgentVersion = request.AgentVersion ?? agent.AgentVersion;
+        // The version the agent named in its request, which the version check has accepted.
+        var version = HttpContext.AgentVersion().ToString();
+        agent.AgentVersion = version;
         if (device is not null)
             device.IpAddress = request.IpAddress ?? device.IpAddress;
-        await db.RecordCheckInAsync(agent.Id, agent.LastSeenAt, cancellationToken, request.AgentVersion, request.IpAddress);
+        await db.RecordCheckInAsync(agent.Id, agent.LastSeenAt, cancellationToken, version, request.IpAddress);
 
         if (device is not null && !wasOnline)
             await dashboard.DeviceChangedAsync(device.TenantId, device.Id, cancellationToken);

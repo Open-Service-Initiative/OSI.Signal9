@@ -206,6 +206,7 @@ public sealed class AgentRevocationTests : IDisposable
                 options.Transports = HttpTransportType.LongPolling;
                 options.AccessTokenProvider = () => Task.FromResult(agent.Client.DefaultRequestHeaders.Authorization!.Parameter);
                 options.Headers[Signal9ApiFactory.ClientCertificateHeader] = TestCertificates.ContainerAppsHeader(agent.Certificate);
+                options.Headers[AgentProtocol.VersionHeader] = Signal9ApiFactory.AgentVersion;
             })
             .AddJsonProtocol(o => Signal9Json.Configure(o.PayloadSerializerOptions))
             .Build();

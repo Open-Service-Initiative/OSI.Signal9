@@ -153,6 +153,7 @@ public sealed class AgentEnrollmentTests : IDisposable
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
         var token = await _factory.IssueEnrollmentTokenAsync(tenant.Id, maxUses: 2);
         using var first = AgentCertificate();
+        anonymous.DefaultRequestHeaders.Add(AgentProtocol.VersionHeader, Signal9ApiFactory.AgentVersion);
         using var second = AgentCertificate();
         using var third = AgentCertificate();
 
@@ -423,6 +424,7 @@ public sealed class AgentEnrollmentTests : IDisposable
         var token = await _factory.IssueEnrollmentTokenAsync(tenant.Id);
         using var anonymous = _factory.CreateAnonymousClient();
 
+        anonymous.DefaultRequestHeaders.Add(AgentProtocol.VersionHeader, Signal9ApiFactory.AgentVersion);
         var response = await anonymous.PostAsJsonAsync("api/v1/agents",
             Signal9ApiFactory.Enrollment(token.Secret!, AgentCertificate()) with { MachineName = "" }, Signal9Json.Options, Ct);
 
@@ -452,6 +454,7 @@ public sealed class AgentEnrollmentTests : IDisposable
         return problem.GetProperty("errors").Deserialize<Dictionary<string, string[]>>()!;
     }
 
+        anonymous.DefaultRequestHeaders.Add(AgentProtocol.VersionHeader, Signal9ApiFactory.AgentVersion);
     /// <summary>Introspects a token as the api resource server, the only party that sees all of its claims.</summary>
     private async Task<JsonElement> IntrospectAsync(string token)
     {

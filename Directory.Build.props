@@ -4,5 +4,7 @@
     <TreatWarningsAsErrors Condition="'$(CI)' == 'true'">true</TreatWarningsAsErrors>
     <!-- Informational: we don't use the Aspire CLI bundle. -->
     <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
+    <!-- One version for every project: an agent is paired with the api it was built with (AGENTS.md, Agent versions). -->
+    <Version>0.1.0</Version>
   </PropertyGroup>
 </Project>

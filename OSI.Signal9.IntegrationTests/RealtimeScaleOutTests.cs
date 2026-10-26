@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using OSI.Signal9.API;
 using OSI.Signal9.API.Hubs;
 using OSI.Signal9.Contracts.Commands;
+using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.Hubs;
 using OSI.Signal9.Contracts.Serialization;
 
@@ -166,6 +167,7 @@ public sealed class RealtimeScaleOutTests : IAsyncDisposable
                 options.AccessTokenProvider = () => Task.FromResult<string?>(token);
                 if (certificate is not null)
                     options.Headers[Signal9ApiFactory.ClientCertificateHeader] = TestCertificates.ContainerAppsHeader(certificate);
+                options.Headers[AgentProtocol.VersionHeader] = Signal9ApiFactory.AgentVersion;
                 options.WebSocketFactory = async (context, cancellationToken) =>
                 {
                     var client = _replica.Server.CreateWebSocketClient();
@@ -173,6 +175,7 @@ public sealed class RealtimeScaleOutTests : IAsyncDisposable
                     {
                         request.HttpContext.Connection.RemoteIpAddress = Signal9ApiFactory.TrustedProxy;
                         request.Headers.Authorization = $"Bearer {token}";
+                        request.Headers[AgentProtocol.VersionHeader] = Signal9ApiFactory.AgentVersion;
                         if (certificate is not null)
                             request.Headers[Signal9ApiFactory.ClientCertificateHeader] = TestCertificates.ContainerAppsHeader(certificate);
                     };

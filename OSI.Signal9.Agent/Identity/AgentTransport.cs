@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Options;
 using OSI.Signal9.Agent.Services;
 using OSI.Signal9.Contracts.Hubs;
-using OSI.Signal9.Contracts.Serialization;
 
 namespace OSI.Signal9.Agent.Identity;
 
@@ -19,8 +18,11 @@ public interface IAgentTransport
     /// </summary>
     HttpClient CreateClient(AgentIdentity? identity, params DelegatingHandler[] handlers);
 
-    /// <summary>A connection to the agent hub, with automatic reconnects, presenting the certificate and a current token.</summary>
-    HubConnection ConnectToHub(AgentIdentity identity, Func<Task<string?>> accessToken);
+    /// <summary>
+    /// A connection to the agent hub, with automatic reconnects, presenting the certificate, a current token and
+    /// <paramref name="headers"/>.
+    /// </summary>
+    HubConnection ConnectToHub(AgentIdentity identity, Func<Task<string?>> accessToken, IReadOnlyDictionary<string, string> headers);
 }
 
 /// <summary>The real network: mutual TLS to <see cref="AgentOptions.ApiBaseUrl"/>.</summary>
@@ -36,14 +38,16 @@ public sealed class MutualTlsTransport(IOptions<AgentOptions> options) : IAgentT
         return new HttpClient(Chain(handlers, tls)) { BaseAddress = ApiBaseUrl };
     }
 
-    public HubConnection ConnectToHub(AgentIdentity identity, Func<Task<string?>> accessToken) =>
+    public HubConnection ConnectToHub(AgentIdentity identity, Func<Task<string?>> accessToken, IReadOnlyDictionary<string, string> headers) =>
         new HubConnectionBuilder()
             .WithUrl(new Uri(ApiBaseUrl, HubRoutes.Agents.TrimStart('/')), hub =>
             {
                 hub.ClientCertificates = new X509CertificateCollection { identity.Certificate };
                 hub.AccessTokenProvider = accessToken;
+                foreach (var (name, value) in headers)
+                    hub.Headers[name] = value;
             })
-            .AddJsonProtocol(json => Signal9Json.Configure(json.PayloadSerializerOptions))
+            .AddJsonProtocol(json => AgentJson.Configure(json.PayloadSerializerOptions))
             .WithAutomaticReconnect()
             .Build();
 
@@ -74,9 +78,9 @@ public sealed class AgentConnection : IDisposable
     {
         _identity = identity;
         _transport = transport;
-        _tokenHttp = transport.CreateClient(identity);
+        _tokenHttp = transport.CreateClient(identity, new AgentVersionHandler());
         Tokens = new AgentTokens(identity.AgentId, _tokenHttp, time);
-        _apiHttp = transport.CreateClient(identity, new AgentTokenHandler(Tokens));
+        _apiHttp = transport.CreateClient(identity, new AgentVersionHandler(), new AgentTokenHandler(Tokens));
         Api = new AgentApiClient(_apiHttp);
     }
 
@@ -87,7 +91,8 @@ public sealed class AgentConnection : IDisposable
     public AgentApiClient Api { get; }
 
     /// <summary>A new connection to the agent hub; each (re)connect asks for a current token.</summary>
-    public HubConnection ConnectToHub() => _transport.ConnectToHub(_identity, async () => await Tokens.GetAsync());
+    public HubConnection ConnectToHub() =>
+        _transport.ConnectToHub(_identity, async () => await Tokens.GetAsync(), AgentVersion.Headers);
 
     public void Dispose()
     {

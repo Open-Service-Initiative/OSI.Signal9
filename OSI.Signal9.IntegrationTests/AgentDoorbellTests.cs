@@ -192,6 +192,7 @@ public sealed class AgentDoorbellTests : IDisposable
                 options.AccessTokenProvider = () => Task.FromResult<string?>(accessToken);
                 if (certificate is not null)
                     options.Headers[Signal9ApiFactory.ClientCertificateHeader] = TestCertificates.ContainerAppsHeader(certificate);
+                options.Headers[AgentProtocol.VersionHeader] = Signal9ApiFactory.AgentVersion;
             })
             .AddJsonProtocol(o => Signal9Json.Configure(o.PayloadSerializerOptions))
             .Build();

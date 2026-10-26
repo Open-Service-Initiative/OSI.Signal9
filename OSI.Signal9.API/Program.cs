@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.OpenApi;
 using OpenIddict.Validation.AspNetCore;
+using OSI.Signal9.API.Agents;
 using OSI.Signal9.API.Audit;
 using OSI.Signal9.API.Authorization;
 using OSI.Signal9.API.Devices;
@@ -52,6 +53,7 @@ builder.Services.AddOpenApi(options => options
     .AddScopes(identity.Issuer)
     .AddOperationTransformer<DocumentedRequirements>()
     .AddOperationTransformer<RecentMfaResponses>()
+    .AddOperationTransformer<AgentVersionOperationTransformer>()
     .AddOperationTransformer<ConditionalOperationTransformer>());
 builder.Services.AddSingleton<AgentHubConnections>();
 builder.Services.AddOptions<AgentHubOptions>().BindConfiguration(AgentHubOptions.SectionName)
@@ -118,6 +120,8 @@ app.UseCallerAccess();
 // Around authorization, so it sees refusals as well as what endpoints did.
 app.UseRequestAudit();
 app.UseAuthorization();
+// Agents naming a version the deployment doesn't support stop here.
+app.UseAgentVersions();
 app.UseRealtimeNegotiation();
 
 app.MapTokenEndpoint().RequireRateLimiting(RateLimiting.Token);

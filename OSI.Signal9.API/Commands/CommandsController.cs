@@ -1,4 +1,5 @@
 using OSI.Signal9.API.Agents;
+using OSI.Signal9.Contracts.Agents;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OSI.Signal9.API.Audit;
@@ -133,7 +134,8 @@ public sealed class CommandsController(
     /// so it can't report any (409).
     /// </summary>
     [RequireScope(Scopes.Agent)]
-    [HttpPut("{commandId:guid}/result")]
+    [AgentEndpoint]
+    [HttpPut("{commandId:guid}/" + AgentProtocol.Routes.CommandResult)]
     [OptimisticConcurrency]
     [Consumes("application/json")]
     [ProducesResponseType<CommandDto>(StatusCodes.Status200OK)]

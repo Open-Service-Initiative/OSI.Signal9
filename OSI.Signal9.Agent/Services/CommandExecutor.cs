@@ -23,7 +23,12 @@ public sealed class CommandExecutor(IEnumerable<ICommandHandler> handlers, TimeP
     public async Task<CommandResultRequest> ExecuteAsync(CommandDto command, CancellationToken cancellationToken)
     {
         if (!_handlers.TryGetValue(command.Type, out var handler))
-            return new CommandResultRequest { Succeeded = false, Error = $"{command.Type} is not supported by this agent version." };
+            return new CommandResultRequest
+            {
+                Succeeded = false,
+                // A type newer than this agent reads as an undefined value, with no name to give.
+                Error = $"{(Enum.IsDefined(command.Type) ? command.Type : "This command type")} is not supported by this agent version.",
+            };
 
         logger.LogInformation("Executing {CommandType} command {CommandId}", command.Type, command.Id);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(command.TimeoutSeconds), time);
