@@ -13,7 +13,7 @@ namespace OSI.Signal9.Agent.Identity;
 public sealed class AgentEnrollment(
     AgentIdentityStore identities,
     IAgentTransport transport,
-    SystemInfoProvider systemInfo,
+    IMachineFactsSource machine,
     IOptions<AgentOptions> options,
     ILogger<AgentEnrollment> logger)
 {
@@ -30,7 +30,7 @@ public sealed class AgentEnrollment(
         var certificate = identities.CreateCertificate();
         using var http = transport.CreateClient(identity: null, new AgentVersionHandler());
         using var response = await http.PostAsJsonAsync(AgentProtocol.Routes.Enroll,
-            systemInfo.GetEnrollment(enrollmentToken, certificate.ExportCertificatePem()), AgentJson.Options, cancellationToken);
+            Request(machine, enrollmentToken, certificate.ExportCertificatePem()), AgentJson.Options, cancellationToken);
         await AgentApiClient.EnsureSuccessAsync(response, cancellationToken);
         var agent = (await response.Content.ReadFromJsonAsync<AgentDto>(AgentJson.Options, cancellationToken))!;
 
@@ -39,4 +39,36 @@ public sealed class AgentEnrollment(
             options.Value.InstanceId, agent.Id, agent.DeviceId, agent.TenantId);
         return new AgentIdentity(agent.Id, certificate);
     }
+
+    /// <summary>
+    /// The enrollment request presenting <paramref name="enrollmentToken"/> and the certificate, with the machine's facts
+    /// cut to api's limits: an OS's own description can run past them (Darwin's does).
+    /// </summary>
+    private static EnrollAgentRequest Request(IMachineFactsSource machine, string enrollmentToken, string certificatePem)
+    {
+        var facts = machine.GetFacts();
+        var hardware = machine.GetHardware();
+        return new EnrollAgentRequest
+        {
+            EnrollmentToken = enrollmentToken,
+            Certificate = certificatePem,
+            MachineName = facts.MachineName,
+            Domain = facts.Domain,
+            OsFamily = facts.OsFamily,
+            OperatingSystem = Truncate(facts.OperatingSystem, EnrollAgentRequest.OperatingSystemMaxLength)!,
+            OsVersion = facts.OsVersion,
+            Architecture = facts.Architecture,
+            ProcessorName = facts.ProcessorName,
+            ProcessorCores = facts.ProcessorCores,
+            TotalMemoryMb = facts.TotalMemoryMb,
+            IpAddress = facts.IpAddress,
+            MacAddress = facts.MacAddress,
+            SmbiosUuid = hardware.SmbiosUuid,
+            Manufacturer = Truncate(hardware.Manufacturer, EnrollAgentRequest.FirmwareStringMaxLength),
+            SerialNumber = Truncate(hardware.SerialNumber, EnrollAgentRequest.FirmwareStringMaxLength),
+            OsInstalledAt = machine.GetOsInstalledAt(),
+        };
+    }
+
+    private static string? Truncate(string? value, int length) => value is not null && value.Length > length ? value[..length] : value;
 }

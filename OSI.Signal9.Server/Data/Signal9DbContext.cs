@@ -101,6 +101,7 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
             device.Property(d => d.MachineName).HasMaxLength(255);
             device.HasIndex(d => new { d.TenantId, d.MachineName });
             device.Property(d => d.Domain).HasMaxLength(255);
+            device.Property(d => d.OsFamily).HasConversion<string>().HasMaxLength(20);
             device.Property(d => d.OperatingSystem).HasMaxLength(100);
             device.Property(d => d.OsVersion).HasMaxLength(100);
             device.Property(d => d.Architecture).HasMaxLength(20);
@@ -152,6 +153,7 @@ public sealed class Signal9DbContext(DbContextOptions<Signal9DbContext> options,
             pending.HasIndex(p => p.TenantId);
             pending.Property(p => p.MachineName).HasMaxLength(255);
             pending.Property(p => p.Domain).HasMaxLength(255);
+            pending.Property(p => p.OsFamily).HasConversion<string>().HasMaxLength(20);
             pending.Property(p => p.OperatingSystem).HasMaxLength(100);
             pending.Property(p => p.OsVersion).HasMaxLength(100);
             pending.Property(p => p.Architecture).HasMaxLength(20);

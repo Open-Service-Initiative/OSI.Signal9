@@ -3,11 +3,14 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using OSI.Signal9.Agent.Identity;
 using OSI.Signal9.Agent.Services;
+using OSI.Signal9.Contracts.Agents;
+using OSI.Signal9.Contracts.Devices;
 
 namespace OSI.Signal9.Agent.Tests;
 
@@ -185,6 +188,36 @@ public sealed class AgentIdentityTests : IDisposable
     }
 
     [TestMethod]
+    public async Task Enrollment_reports_the_machine_s_facts_within_api_s_limits()
+    {
+        var installedAt = new DateTimeOffset(2026, 10, 25, 9, 30, 0, TimeSpan.Zero);
+        var machine = new FakeMachine
+        {
+            // Darwin's uname -srv runs well past api's 100 characters.
+            Facts = new FakeMachine().Facts with { OsFamily = OsFamily.MacOS, OperatingSystem = "Darwin 24.1.0 " + new string('x', 200) },
+            Hardware = new HardwareIdentity(Guid.Parse("4c4c4544-0042-3510-8058-b4c04f4d5a31"), new string('A', 300), "C02XYZ"),
+            OsInstalledAt = installedAt,
+        };
+        var agentId = Guid.NewGuid();
+        var network = new RecordingHandler(HttpStatusCode.Created,
+            $$"""{"id":"{{agentId}}","url":"/api/v1/agents/{{agentId}}","deviceId":"{{Guid.NewGuid()}}","tenantId":"{{Guid.NewGuid()}}","isActive":true,"enrolledAt":"2026-10-25T12:00:00Z","lastSeenAt":"2026-10-25T12:00:00Z"}""");
+
+        await Enrollment(Agent("default", "s9e_token"), network, machine).EnsureEnrolledAsync(CancellationToken.None);
+
+        var request = JsonSerializer.Deserialize<EnrollAgentRequest>(network.LastBody!, AgentJson.Options)!;
+        Assert.AreEqual(OsFamily.MacOS, request.OsFamily);
+        Assert.HasCount(EnrollAgentRequest.OperatingSystemMaxLength, request.OperatingSystem);
+        StringAssert.StartsWith(request.OperatingSystem, "Darwin 24.1.0 ");
+        Assert.HasCount(EnrollAgentRequest.FirmwareStringMaxLength, request.Manufacturer!);
+        Assert.AreEqual("C02XYZ", request.SerialNumber);
+        Assert.AreEqual(machine.Hardware.SmbiosUuid, request.SmbiosUuid);
+        Assert.AreEqual(installedAt, request.OsInstalledAt);
+        Assert.AreEqual("FAKE-PC", request.MachineName);
+        Assert.AreEqual("10.0.0.2", request.IpAddress);
+        Assert.IsTrue(Validator.TryValidateObject(request, new ValidationContext(request), [], validateAllProperties: true));
+    }
+
+    [TestMethod]
     public async Task A_refused_token_is_replaced_on_the_next_request()
     {
         var network = new RecordingHandler(HttpStatusCode.OK, """{"access_token":"t","token_type":"Bearer","expires_in":600}""");
@@ -197,10 +230,10 @@ public sealed class AgentIdentityTests : IDisposable
         Assert.AreEqual(2, network.Requests);
     }
 
-    private AgentEnrollment Enrollment(AgentOptions options, RecordingHandler network) => new(
+    private AgentEnrollment Enrollment(AgentOptions options, RecordingHandler network, FakeMachine? machine = null) => new(
         new AgentIdentityStore(_keys, Options.Create(options), _time),
         new FakeTransport(network),
-        new SystemInfoProvider(),
+        machine ?? new FakeMachine(),
         Options.Create(options),
         NullLogger<AgentEnrollment>.Instance);
 

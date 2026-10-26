@@ -35,7 +35,7 @@ public sealed class AgentIdentityStore(IAgentKeyStore keys, IOptions<AgentOption
     public string RotatedKeyName => $"Signal9 Agent {Instance} rotated";
 
     /// <summary>The instance's state file, which holds nothing secret: its agent ID and public certificates.</summary>
-    public string StatePath => Path.Combine(options.Value.StateDirectory, Instance, "agent.json");
+    public string StatePath => Path.Combine(options.Value.StateDirectory!, Instance, "agent.json");
 
     /// <summary>When <paramref name="certificate"/> is due to be rotated.</summary>
     public static DateTimeOffset RenewalDue(X509Certificate2 certificate) =>

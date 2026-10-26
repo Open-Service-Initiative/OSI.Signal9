@@ -1,76 +1,55 @@
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
-using OSI.Signal9.Contracts.Agents;
+using OSI.Signal9.Agent.Platforms;
+using OSI.Signal9.Contracts.Devices;
 
 namespace OSI.Signal9.Agent.Services;
 
-/// <summary>Where the agent's facts about its machine come from: the real machine, or a fake in unit tests.</summary>
+/// <summary>Where the agent's facts about its machine come from: the real machine, or a fake in tests.</summary>
 public interface IMachineFactsSource
 {
-    /// <summary>What this machine is: the facts the agent reports when it enrolls.</summary>
+    /// <summary>What this machine is: the facts the agent reports when it enrolls, and in system info.</summary>
     MachineFacts GetFacts();
+
+    /// <summary>The machine's SMBIOS system identifiers, which identify a reinstalled agent's device (#131).</summary>
+    HardwareIdentity GetHardware();
+
+    /// <summary>When the operating system was installed, if the agent can tell.</summary>
+    DateTimeOffset? GetOsInstalledAt();
+
+    /// <summary>The IPv4 address of the interface with a default gateway, which heartbeats report.</summary>
+    string? GetPrimaryIpAddress();
 }
 
-/// <summary>
-/// Facts about this machine that the agent reports when it enrolls.
-/// </summary>
-/// <param name="readHardware">Reads the machine's hardware identifiers; <see cref="HardwareIdentity.Read"/> by default.</param>
-/// <param name="readOsInstalledAt">Reads when the operating system was installed; <see cref="OsInstallTime.Read"/> by default.</param>
-public sealed class SystemInfoProvider(Func<HardwareIdentity>? readHardware = null, Func<DateTimeOffset?>? readOsInstalledAt = null)
-    : IMachineFactsSource
+/// <summary>The real machine's facts: what .NET reports on every OS, and the rest from its <see cref="IPlatform"/>.</summary>
+public sealed class SystemInfoProvider(IPlatform platform) : IMachineFactsSource
 {
-    private readonly Func<HardwareIdentity> _readHardware = readHardware ?? HardwareIdentity.Read;
-    private readonly Func<DateTimeOffset?> _readOsInstalledAt = readOsInstalledAt ?? OsInstallTime.Read;
-
-    /// <summary>What this machine is: the facts the agent reports when it enrolls.</summary>
     public MachineFacts GetFacts()
     {
         var (ipAddress, macAddress) = GetPrimaryNetworkAddress();
         return new MachineFacts(
             MachineName: Environment.MachineName,
-            Domain: OperatingSystem.IsWindows() ? Environment.UserDomainName : null,
+            Domain: platform.ReadDomain(),
+            OsFamily: platform.Family,
             OperatingSystem: RuntimeInformation.OSDescription,
             OsVersion: Environment.OSVersion.Version.ToString(),
             Architecture: RuntimeInformation.OSArchitecture.ToString(),
-            ProcessorName: GetProcessorName(),
+            ProcessorName: platform.ReadProcessorName(),
             ProcessorCores: Environment.ProcessorCount,
-            TotalMemoryMb: NativeMetrics.ReadMemory()?.TotalMb ?? 0,
+            TotalMemoryMb: platform.ReadMemory()?.TotalMb ?? 0,
             IpAddress: ipAddress,
             MacAddress: macAddress,
-            AgentVersion: Services.AgentVersion.Current.ToString());
+            AgentVersion: AgentVersion.Current.ToString());
     }
 
-    /// <summary>An enrollment request presenting <paramref name="enrollmentToken"/> and the agent's certificate.</summary>
-    public EnrollAgentRequest GetEnrollment(string enrollmentToken, string certificatePem)
-    {
-        var facts = GetFacts();
-        var hardware = _readHardware();
-        return new EnrollAgentRequest
-        {
-            EnrollmentToken = enrollmentToken,
-            Certificate = certificatePem,
-            MachineName = facts.MachineName,
-            Domain = facts.Domain,
-            OperatingSystem = facts.OperatingSystem,
-            OsVersion = facts.OsVersion,
-            Architecture = facts.Architecture,
-            ProcessorName = facts.ProcessorName,
-            ProcessorCores = facts.ProcessorCores,
-            TotalMemoryMb = facts.TotalMemoryMb,
-            IpAddress = facts.IpAddress,
-            MacAddress = facts.MacAddress,
-            SmbiosUuid = hardware.SmbiosUuid,
-            Manufacturer = Truncate(hardware.Manufacturer),
-            SerialNumber = Truncate(hardware.SerialNumber),
-            OsInstalledAt = _readOsInstalledAt(),
-        };
-    }
+    public HardwareIdentity GetHardware() => platform.ReadHardware();
 
-    // The API takes at most 255 characters; firmware strings are never meaningfully longer.
-    private static string? Truncate(string? value) => value is { Length: > 255 } ? value[..255] : value;
+    public DateTimeOffset? GetOsInstalledAt() => platform.ReadOsInstalledAt();
 
-    public static (string? IpAddress, string? MacAddress) GetPrimaryNetworkAddress()
+    public string? GetPrimaryIpAddress() => GetPrimaryNetworkAddress().IpAddress;
+
+    private static (string? IpAddress, string? MacAddress) GetPrimaryNetworkAddress()
     {
         var nic = NetworkInterface.GetAllNetworkInterfaces()
             .Where(n => n.OperationalStatus == OperationalStatus.Up && n.NetworkInterfaceType != NetworkInterfaceType.Loopback)
@@ -84,35 +63,14 @@ public sealed class SystemInfoProvider(Func<HardwareIdentity>? readHardware = nu
         var mac = nic.Nic.GetPhysicalAddress().GetAddressBytes();
         return (nic.Address!.ToString(), mac.Length == 6 ? string.Join(':', mac.Select(b => b.ToString("X2"))) : null);
     }
-
-    private static string? GetProcessorName()
-    {
-        try
-        {
-            if (OperatingSystem.IsWindows())
-            {
-                using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"HARDWARE\DESCRIPTION\System\CentralProcessor\0");
-                return (key?.GetValue("ProcessorNameString") as string)?.Trim();
-            }
-            if (OperatingSystem.IsLinux())
-            {
-                return File.ReadLines("/proc/cpuinfo")
-                    .FirstOrDefault(line => line.StartsWith("model name", StringComparison.Ordinal))?
-                    .Split(':', 2)[1].Trim();
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
-        {
-            // Not worth failing enrollment over.
-        }
-        return null;
-    }
 }
 
 /// <summary>Facts about the machine an agent runs on.</summary>
+/// <param name="OperatingSystem">The OS's own description, uncut: enrollment cuts it to api's limit.</param>
 public sealed record MachineFacts(
     string MachineName,
     string? Domain,
+    OsFamily OsFamily,
     string OperatingSystem,
     string? OsVersion,
     string? Architecture,

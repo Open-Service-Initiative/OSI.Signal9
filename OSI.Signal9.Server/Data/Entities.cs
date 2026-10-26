@@ -1,5 +1,6 @@
 using OSI.Signal9.Contracts.Audit;
 using OSI.Signal9.Contracts.Commands;
+using OSI.Signal9.Contracts.Devices;
 using OSI.Signal9.Contracts.Tenants;
 
 namespace OSI.Signal9.Server.Data;
@@ -97,6 +98,7 @@ public sealed class Device : ITenantOwned
 
     public required string MachineName { get; set; }
     public string? Domain { get; set; }
+    public OsFamily OsFamily { get; set; }
     public required string OperatingSystem { get; set; }
     public string? OsVersion { get; set; }
     public string? Architecture { get; set; }
@@ -185,6 +187,7 @@ public sealed class PendingIdentification : ITenantOwned
     public Guid TenantId { get; set; }
     public required string MachineName { get; set; }
     public string? Domain { get; set; }
+    public OsFamily OsFamily { get; set; }
     public required string OperatingSystem { get; set; }
     public string? OsVersion { get; set; }
     public string? Architecture { get; set; }

@@ -677,6 +677,7 @@ public sealed class AgentsController(
             TenantId = tenantId,
             MachineName = request.MachineName,
             Domain = request.Domain,
+            OsFamily = request.OsFamily!.Value,
             OperatingSystem = request.OperatingSystem,
             OsVersion = request.OsVersion,
             Architecture = request.Architecture,
@@ -696,6 +697,7 @@ public sealed class AgentsController(
         Id = Guid.CreateVersion7(time.GetUtcNow()),
         TenantId = reported.TenantId,
         MachineName = reported.MachineName,
+        OsFamily = reported.OsFamily,
         OperatingSystem = reported.OperatingSystem,
         CreatedAt = time.GetUtcNow().UtcDateTime,
     };
@@ -709,6 +711,7 @@ public sealed class AgentsController(
     {
         device.MachineName = reported.MachineName;
         device.Domain = reported.Domain;
+        device.OsFamily = reported.OsFamily;
         device.OperatingSystem = reported.OperatingSystem;
         device.OsVersion = reported.OsVersion;
         device.Architecture = reported.Architecture;

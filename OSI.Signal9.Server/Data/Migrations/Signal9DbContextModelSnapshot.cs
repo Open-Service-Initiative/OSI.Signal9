@@ -399,6 +399,11 @@ namespace OSI.Signal9.Server.Data.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("OsFamily")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.Property<string>("OsVersion")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
@@ -635,6 +640,11 @@ namespace OSI.Signal9.Server.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<string>("OsFamily")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<string>("OsVersion")
                         .HasMaxLength(100)

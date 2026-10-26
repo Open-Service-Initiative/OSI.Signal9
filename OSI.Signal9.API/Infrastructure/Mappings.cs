@@ -124,6 +124,7 @@ internal static class Mappings
         device.ActiveAgentId,
         device.MachineName,
         device.Domain,
+        device.OsFamily,
         device.OperatingSystem,
         device.OsVersion,
         device.Architecture,

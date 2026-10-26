@@ -24,10 +24,12 @@ public sealed class AgentOptions
     [Required, RegularExpression("^[A-Za-z0-9][A-Za-z0-9-]{0,62}$")]
     public string InstanceId { get; set; } = "default";
 
-    /// <summary>Where instances keep their state, each in a folder named after it.</summary>
+    /// <summary>
+    /// Where instances keep their state, each in a folder named after it. By default, the platform's: ProgramData on
+    /// Windows, <c>/var/lib/signal9-agent</c> on Linux, <c>/Library/Application Support/Signal9 Agent</c> on macOS.
+    /// </summary>
     [Required]
-    public string StateDirectory { get; set; } =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Signal9", "Agent");
+    public string? StateDirectory { get; set; }
 
     [Range(typeof(TimeSpan), "00:00:05", "01:00:00")]
     public TimeSpan HeartbeatInterval { get; set; } = TimeSpan.FromSeconds(30);

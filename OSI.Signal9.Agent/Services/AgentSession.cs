@@ -17,7 +17,8 @@ namespace OSI.Signal9.Agent.Services;
 /// </summary>
 public sealed class AgentSession(
     CommandExecutor executor,
-    TelemetryCollector telemetry,
+    ITelemetrySource telemetry,
+    IMachineFactsSource machine,
     TimeProvider time,
     IOptions<AgentOptions> options,
     ILogger<AgentSession> logger)
@@ -78,9 +79,8 @@ public sealed class AgentSession(
         using var timer = new PeriodicTimer(_options.HeartbeatInterval, time);
         do
         {
-            var (ipAddress, _) = SystemInfoProvider.GetPrimaryNetworkAddress();
             var response = await api.SendHeartbeatAsync(agentId,
-                new HeartbeatRequest { IpAddress = ipAddress }, cancellationToken);
+                new HeartbeatRequest { IpAddress = machine.GetPrimaryIpAddress() }, cancellationToken);
             if (response.HasPendingWork)
                 work.RequestFetch();
         }

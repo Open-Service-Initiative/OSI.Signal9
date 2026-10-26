@@ -591,6 +591,7 @@ public sealed class Signal9ApiFactory : WebApplicationFactory<ApiHost>
             EnrollmentToken = enrollmentToken,
             Certificate = certificate.ExportCertificatePem(),
             MachineName = machineName,
+            OsFamily = Contracts.Devices.OsFamily.Windows,
             OperatingSystem = "Windows 11 Pro",
             ProcessorCores = 8,
         };

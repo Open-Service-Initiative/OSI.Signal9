@@ -63,12 +63,6 @@ public sealed class CommandExecutorTests(TestContext testContext)
         Guid.NewGuid(), Guid.NewGuid(), "https://api.invalid/api/v1/devices/x/commands/y", type, null,
         CommandPriority.Normal, timeoutSeconds, CommandStatus.Pending, DateTimeOffset.UnixEpoch, null, null, null);
 
-    private sealed class FakeMachine : IMachineFactsSource
-    {
-        public MachineFacts GetFacts() => new("FAKE-PC", null, "Windows 11 Pro", "10.0.26100", "X64", "Fake CPU", 8, 16384,
-            "10.0.0.2", "00:11:22:33:44:55", "1.0.0");
-    }
-
     private sealed class FakeTelemetry(TimeProvider time) : ITelemetrySource
     {
         public CreateTelemetrySampleRequest Collect() => new() { CollectedAt = time.GetUtcNow(), CpuPercent = 12.5 };

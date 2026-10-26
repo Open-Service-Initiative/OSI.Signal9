@@ -1,23 +1,16 @@
 using System.Buffers.Binary;
-using System.Runtime.InteropServices;
 using System.Text;
 
 namespace OSI.Signal9.Agent.Services;
 
 /// <summary>
 /// This machine's SMBIOS system identifiers (SMBIOS type 1), which the agent reports at enrollment so a reinstall can
-/// rejoin its existing device (#131). Any it can't read are absent. The API decides which are trustworthy: it ignores
-/// zeroed and placeholder values, so the agent reports them as they are.
+/// rejoin its existing device (#131); its platform reads them. Any it can't read are absent. The API decides which are
+/// trustworthy: it ignores zeroed and placeholder values, so the agent reports them as they are.
 /// </summary>
 public sealed record HardwareIdentity(Guid? SmbiosUuid, string? Manufacturer, string? SerialNumber)
 {
     public static readonly HardwareIdentity None = new(null, null, null);
-
-    /// <summary>Reads this machine's identifiers: from the firmware table on Windows, from sysfs on Linux.</summary>
-    public static HardwareIdentity Read() =>
-        OperatingSystem.IsWindows() ? WindowsHardwareIdentity.Read()
-        : OperatingSystem.IsLinux() ? LinuxHardwareIdentity.Read()
-        : None;
 }
 
 /// <summary>Reads the SMBIOS System Information structure from a raw SMBIOS table (SMBIOS spec DSP0134 §7.2).</summary>
@@ -84,50 +77,5 @@ public static class SmbiosTable
                 return Encoding.ASCII.GetString(strings[range]).Trim() is { Length: > 0 } value ? value : null;
         }
         return null;
-    }
-}
-
-/// <summary>Reads the identifiers on Windows from the firmware's raw SMBIOS table.</summary>
-internal static class WindowsHardwareIdentity
-{
-    private const uint RawSmbiosProvider = 0x52534D42; // 'RSMB'
-
-    public static HardwareIdentity Read()
-    {
-        var size = GetSystemFirmwareTable(RawSmbiosProvider, 0, null, 0);
-        if (size == 0)
-            return HardwareIdentity.None;
-        var buffer = new byte[size];
-        return GetSystemFirmwareTable(RawSmbiosProvider, 0, buffer, size) == size
-            ? SmbiosTable.ReadSystemInformation(buffer)
-            : HardwareIdentity.None;
-    }
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern uint GetSystemFirmwareTable(uint firmwareTableProviderSignature, uint firmwareTableId,
-        [Out] byte[]? firmwareTableBuffer, uint bufferSize);
-}
-
-/// <summary>Reads the identifiers on Linux from the kernel's DMI attributes in sysfs (readable by root).</summary>
-public static class LinuxHardwareIdentity
-{
-    public const string DmiDirectory = "/sys/class/dmi/id";
-
-    public static HardwareIdentity Read(string directory = DmiDirectory) => new(
-        Guid.TryParse(ReadAttribute(directory, "product_uuid"), out var uuid) ? uuid : null,
-        ReadAttribute(directory, "sys_vendor"),
-        ReadAttribute(directory, "product_serial"));
-
-    private static string? ReadAttribute(string directory, string name)
-    {
-        try
-        {
-            return File.ReadAllText(Path.Combine(directory, name)).Trim() is { Length: > 0 } value ? value : null;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // Absent on machines without DMI, and root-only for some attributes: report it as unknown.
-            return null;
-        }
     }
 }

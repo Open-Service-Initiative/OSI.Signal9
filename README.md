@@ -11,7 +11,7 @@ Remote monitoring and management (RMM) for MSPs. Pre-alpha: not ready for produc
 | `OSI.Signal9.Server` | Server code shared by Auth and API: EF Core on PostgreSQL, migrations, the OpenIddict token rules and the stored keys. |
 | `OSI.Signal9.Web` | The dashboard's host and backend-for-frontend: signs people in at auth, keeps their tokens server-side and forwards `/api` and `/hubs/dashboard` to api. Serves the public API reference (Scalar) at `/docs`. |
 | `OSI.Signal9.Web.Client` | The dashboard: a Blazor WebAssembly app on Fluent UI Blazor v5, served by web. |
-| `OSI.Signal9.Agent` | Windows Service installed on managed machines. |
+| `OSI.Signal9.Agent` | Agent installed on managed machines: a Windows service, systemd service or launchd daemon. |
 | `OSI.Signal9.Contracts` | Request/response types shared by the API, Web and Agent. |
 | `OSI.Signal9.AppHost` | Aspire orchestration for local development. |
 | `OSI.Signal9.ServiceDefaults` | Aspire defaults: OpenTelemetry, health checks, resilience. |

@@ -63,6 +63,36 @@ public sealed class AgentEnrollmentTests : IDisposable
     }
 
     [TestMethod]
+    [DataRow(OsFamily.Windows)]
+    [DataRow(OsFamily.Linux)]
+    [DataRow(OsFamily.MacOS)]
+    public async Task The_device_records_the_agent_s_operating_system_family(OsFamily family)
+    {
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
+        var token = await _factory.IssueEnrollmentTokenAsync(tenant.Id);
+
+        var response = await _factory.EnrollAsync(token.Secret!, AgentCertificate(), hardware: r => r with { OsFamily = family });
+
+        Assert.AreEqual(HttpStatusCode.Created, response.StatusCode, await response.Content.ReadAsStringAsync(Ct));
+        var agent = (await response.Content.ReadFromJsonAsync<AgentDto>(Signal9Json.Options, Ct))!;
+        var device = await _client.GetFromJsonAsync<DeviceDto>($"api/v1/devices/{agent.DeviceId}", Signal9Json.Options, Ct);
+        Assert.AreEqual(family, device!.OsFamily);
+    }
+
+    [TestMethod]
+    public async Task Enrollment_needs_the_operating_system_family()
+    {
+        var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
+        var token = await _factory.IssueEnrollmentTokenAsync(tenant.Id);
+
+        var response = await _factory.EnrollAsync(token.Secret!, AgentCertificate(), hardware: r => r with { OsFamily = null });
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
+        var errors = await ErrorsAsync(response);
+        Assert.IsTrue(errors.ContainsKey(nameof(EnrollAgentRequest.OsFamily)), string.Join(", ", errors.Keys));
+    }
+
+    [TestMethod]
     public async Task Enrollments_never_match_devices_by_machine_name()
     {
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
@@ -123,6 +153,7 @@ public sealed class AgentEnrollmentTests : IDisposable
 
         var garbage = Signal9ApiFactory.Enrollment(token.Secret!, AgentCertificate()) with { Certificate = "not a certificate" };
         using var anonymous = _factory.CreateAnonymousClient();
+        anonymous.DefaultRequestHeaders.Add(AgentProtocol.VersionHeader, Signal9ApiFactory.AgentVersion);
         Assert.AreEqual(HttpStatusCode.BadRequest,
             (await anonymous.PostAsJsonAsync("api/v1/agents", garbage, Signal9Json.Options, Ct)).StatusCode);
         Assert.AreEqual(0, (await GetTokenAsync(token)).UseCount);
@@ -153,7 +184,6 @@ public sealed class AgentEnrollmentTests : IDisposable
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
         var token = await _factory.IssueEnrollmentTokenAsync(tenant.Id, maxUses: 2);
         using var first = AgentCertificate();
-        anonymous.DefaultRequestHeaders.Add(AgentProtocol.VersionHeader, Signal9ApiFactory.AgentVersion);
         using var second = AgentCertificate();
         using var third = AgentCertificate();
 
@@ -394,6 +424,7 @@ public sealed class AgentEnrollmentTests : IDisposable
                 $"""UPDATE "EnrollmentTokens" SET "SecretHash" = decode(md5(random()::text), 'hex') WHERE "Id" = '{token.Id}'""")))));
         using var anonymous = racing.Server.CreateClient();
         anonymous.BaseAddress = Signal9ApiFactory.HttpsLocalhost;
+        anonymous.DefaultRequestHeaders.Add(AgentProtocol.VersionHeader, Signal9ApiFactory.AgentVersion);
 
         var response = await anonymous.PostAsJsonAsync("api/v1/agents",
             Signal9ApiFactory.Enrollment(token.Secret!, certificate), Signal9Json.Options, Ct);
@@ -423,8 +454,8 @@ public sealed class AgentEnrollmentTests : IDisposable
         var tenant = await _factory.CreateTenantAsync(_client, "Contoso");
         var token = await _factory.IssueEnrollmentTokenAsync(tenant.Id);
         using var anonymous = _factory.CreateAnonymousClient();
-
         anonymous.DefaultRequestHeaders.Add(AgentProtocol.VersionHeader, Signal9ApiFactory.AgentVersion);
+
         var response = await anonymous.PostAsJsonAsync("api/v1/agents",
             Signal9ApiFactory.Enrollment(token.Secret!, AgentCertificate()) with { MachineName = "" }, Signal9Json.Options, Ct);
 
@@ -454,7 +485,6 @@ public sealed class AgentEnrollmentTests : IDisposable
         return problem.GetProperty("errors").Deserialize<Dictionary<string, string[]>>()!;
     }
 
-        anonymous.DefaultRequestHeaders.Add(AgentProtocol.VersionHeader, Signal9ApiFactory.AgentVersion);
     /// <summary>Introspects a token as the api resource server, the only party that sees all of its claims.</summary>
     private async Task<JsonElement> IntrospectAsync(string token)
     {

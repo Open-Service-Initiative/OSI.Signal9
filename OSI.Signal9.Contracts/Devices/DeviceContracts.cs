@@ -24,12 +24,21 @@ public enum DeviceStatus
 /// Whether the active agent may receive commands, if there is one: separate from <see cref="Status"/>, which says only
 /// whether it's checking in.
 /// </param>
+/// <summary>The operating system family a device runs, which decides what its agent can do there.</summary>
+public enum OsFamily
+{
+    Windows,
+    Linux,
+    MacOS,
+}
+
 public sealed record DeviceDto(
     Guid Id,
     Guid TenantId,
     Guid? ActiveAgentId,
     string MachineName,
     string? Domain,
+    OsFamily OsFamily,
     string OperatingSystem,
     string? OsVersion,
     string? Architecture,

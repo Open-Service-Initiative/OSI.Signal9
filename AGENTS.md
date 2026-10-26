@@ -18,7 +18,7 @@ These are Open Service Initiative tenets. Hold every change to them:
 - `OSI.Signal9.Server`: shared by Auth and API: the EF Core model and migrations on PostgreSQL (ADR-0011) and the OpenIddict token rules.
 - `OSI.Signal9.Web`: the dashboard's ASP.NET Core host and backend-for-frontend (ADR-0003): sign-in, the server-side token store, and the YARP proxy to `api`.
 - `OSI.Signal9.Web.Client`: the Blazor WebAssembly dashboard on Fluent UI Blazor v5. It holds no tokens and calls only `web`.
-- `OSI.Signal9.Agent`: Windows Service on managed devices. It enrolls, sends heartbeats and telemetry, and runs commands.
+- `OSI.Signal9.Agent`: the agent on managed devices: a Windows service, systemd service or launchd daemon, with per-OS code behind `IPlatform`. It enrolls, sends heartbeats and telemetry, and runs commands.
 - `OSI.Signal9.Contracts`: DTOs, enums and hub interfaces shared by the other projects. It has no server-side dependencies, because it ships in the WASM bundle.
 - `OSI.Signal9.AppHost` / `OSI.Signal9.ServiceDefaults`: Aspire orchestration, used for local development and deployment.
 

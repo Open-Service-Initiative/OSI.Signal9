@@ -5,13 +5,11 @@ namespace OSI.Signal9.Agent.Tests;
 
 /// <summary>
 /// The hardware identifiers an agent reports at enrollment (#131), which identify a reinstalled agent's device: the
-/// SMBIOS system UUID, manufacturer and serial, read from the firmware table on Windows and from sysfs on Linux.
+/// SMBIOS system UUID, manufacturer and serial, read from the firmware table on Windows (sysfs on Linux: see PlatformTests).
 /// </summary>
 [TestClass]
-public sealed class HardwareIdentityTests : IDisposable
+public sealed class HardwareIdentityTests
 {
-    private readonly string _sysfs = Path.Combine(Path.GetTempPath(), $"signal9-dmi-{Guid.NewGuid():N}");
-
     /// <summary>
     /// A Windows RawSMBIOSData buffer (an 8-byte header with the SMBIOS version, then the structure table) holding a
     /// BIOS structure (type 0) and then a System Information structure (type 1) with the given UUID bytes as stored.
@@ -83,45 +81,5 @@ public sealed class HardwareIdentityTests : IDisposable
 
         Assert.AreEqual("Dell Inc.", identity.Manufacturer);
         Assert.IsNull(identity.SerialNumber);
-    }
-
-    [TestMethod]
-    public void Reads_the_identifiers_from_sysfs_on_Linux()
-    {
-        Directory.CreateDirectory(_sysfs);
-        File.WriteAllText(Path.Combine(_sysfs, "product_uuid"), "4c4c4544-0042-3510-8058-b4c04f4d5a31\n");
-        File.WriteAllText(Path.Combine(_sysfs, "sys_vendor"), "Dell Inc.\n");
-        File.WriteAllText(Path.Combine(_sysfs, "product_serial"), "5CG1234XYZ\n");
-
-        var identity = LinuxHardwareIdentity.Read(_sysfs);
-
-        Assert.AreEqual(new HardwareIdentity(Guid.Parse("4c4c4544-0042-3510-8058-b4c04f4d5a31"), "Dell Inc.", "5CG1234XYZ"), identity);
-    }
-
-    [TestMethod]
-    public void Missing_or_malformed_sysfs_values_are_reported_as_absent()
-    {
-        Directory.CreateDirectory(_sysfs);
-        File.WriteAllText(Path.Combine(_sysfs, "product_uuid"), "not a uuid\n");
-
-        Assert.AreEqual(new HardwareIdentity(null, null, null), LinuxHardwareIdentity.Read(_sysfs));
-    }
-
-    [TestMethod]
-    public void The_enrollment_request_carries_the_hardware_identifiers()
-    {
-        var identity = new HardwareIdentity(Guid.Parse("4c4c4544-0042-3510-8058-b4c04f4d5a31"), "Dell Inc.", "5CG1234XYZ");
-
-        var request = new SystemInfoProvider(() => identity).GetEnrollment("token", "certificate");
-
-        Assert.AreEqual(identity.SmbiosUuid, request.SmbiosUuid);
-        Assert.AreEqual("Dell Inc.", request.Manufacturer);
-        Assert.AreEqual("5CG1234XYZ", request.SerialNumber);
-    }
-
-    public void Dispose()
-    {
-        if (Directory.Exists(_sysfs))
-            Directory.Delete(_sysfs, recursive: true);
     }
 }

@@ -17,7 +17,7 @@ internal static class Samples
 
     public static DeviceDto Device(string machineName, DeviceStatus status = DeviceStatus.Online, Guid? id = null,
         AgentStatus? agentStatus = AgentStatus.Active) =>
-        new(id ?? Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), machineName, "corp.example", "Windows", "11", "x64",
+        new(id ?? Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), machineName, "corp.example", OsFamily.Windows, "Windows", "11", "x64",
             "CPU", 8, 16_384, "10.0.0.5", null, "Servers", ["finance"], false, status, Now, Now, false, agentStatus);
 
     public static AgentDto Agent(string machineName, Guid tenantId, AgentStatus status = AgentStatus.AwaitingApproval,

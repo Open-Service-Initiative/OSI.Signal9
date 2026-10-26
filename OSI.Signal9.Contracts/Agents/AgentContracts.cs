@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using OSI.Signal9.Contracts.Devices;
 
 namespace OSI.Signal9.Contracts.Agents;
 
@@ -117,8 +118,18 @@ public sealed record EnrollAgentRequest
     [StringLength(255)]
     public string? Domain { get; init; }
 
-    [Required, StringLength(100)]
+    /// <summary>The machine's operating system family.</summary>
+    [Required]
+    public OsFamily? OsFamily { get; init; }
+
+    /// <summary>
+    /// The operating system's description, such as <c>Microsoft Windows 10.0.26100</c> or a Linux kernel's
+    /// <c>uname -srv</c>, at most <see cref="OperatingSystemMaxLength"/> characters: agents cut longer ones short.
+    /// </summary>
+    [Required, StringLength(OperatingSystemMaxLength)]
     public string OperatingSystem { get; init; } = string.Empty;
+
+    public const int OperatingSystemMaxLength = 100;
 
     [StringLength(100)]
     public string? OsVersion { get; init; }
@@ -150,12 +161,15 @@ public sealed record EnrollAgentRequest
     public Guid? SmbiosUuid { get; init; }
 
     /// <summary>The system manufacturer (SMBIOS type 1), if it could be read.</summary>
-    [StringLength(255)]
+    [StringLength(FirmwareStringMaxLength)]
     public string? Manufacturer { get; init; }
 
     /// <summary>The system serial number (SMBIOS type 1), if it could be read.</summary>
-    [StringLength(255)]
+    [StringLength(FirmwareStringMaxLength)]
     public string? SerialNumber { get; init; }
+
+    /// <summary>The longest firmware string api takes; agents cut longer ones short.</summary>
+    public const int FirmwareStringMaxLength = 255;
 
     /// <summary>
     /// When the machine's operating system was installed, if the agent could tell. An installation from the last day

@@ -15,8 +15,10 @@ using OSI.Signal9.Agent.Services;
 using OSI.Signal9.Contracts;
 using OSI.Signal9.Contracts.Agents;
 using OSI.Signal9.Contracts.Commands;
+using OSI.Signal9.Contracts.Devices;
 using OSI.Signal9.Contracts.Hubs;
 using OSI.Signal9.Contracts.Serialization;
+using OSI.Signal9.Contracts.Telemetry;
 using OSI.Signal9.Server.Identity;
 
 namespace OSI.Signal9.IntegrationTests;
@@ -181,6 +183,17 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
     }
 
     [TestMethod]
+    public async Task Heartbeats_report_the_machine_s_current_address()
+    {
+        var agent = await StartAgentAsync();
+
+        var device = await _client.GetFromJsonAsync<DeviceDto>($"api/v1/devices/{agent.DeviceId}", Signal9Json.Options, Ct);
+
+        Assert.AreEqual("10.0.0.3", device!.IpAddress);
+        Assert.AreEqual(OsFamily.Linux, device.OsFamily);
+    }
+
+    [TestMethod]
     public async Task An_agent_whose_version_the_deployment_no_longer_supports_stops_instead_of_retrying()
     {
         var agent = await StartAgentAsync(waitUntilRunning: false);
@@ -218,15 +231,15 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
         var wrapped = Options.Create(options);
         var network = new InMemoryTransport(_factory.Server);
         var identities = new AgentIdentityStore(_keys, wrapped, _agentTime);
-        var systemInfo = new SystemInfoProvider();
-        var telemetry = new TelemetryCollector(_agentTime, NullLogger<TelemetryCollector>.Instance);
-        var executor = new CommandExecutor([new CollectSystemInfoHandler(systemInfo, telemetry)], _agentTime,
+        var machine = new FakeMachine();
+        var telemetry = new FakeTelemetry(_agentTime);
+        var executor = new CommandExecutor([new CollectSystemInfoHandler(machine, telemetry)], _agentTime,
             NullLogger<CommandExecutor>.Instance);
         var worker = new AgentWorker(
-            new AgentEnrollment(identities, network, systemInfo, wrapped, NullLogger<AgentEnrollment>.Instance),
+            new AgentEnrollment(identities, network, machine, wrapped, NullLogger<AgentEnrollment>.Instance),
             new AgentCertificateRotation(identities, network, _agentTime, NullLogger<AgentCertificateRotation>.Instance),
             network,
-            new AgentSession(executor, telemetry, _agentTime, wrapped, NullLogger<AgentSession>.Instance),
+            new AgentSession(executor, telemetry, machine, _agentTime, wrapped, NullLogger<AgentSession>.Instance),
             _agentTime,
             NullLogger<AgentWorker>.Instance);
         await worker.StartAsync(_stop.Token);
@@ -437,6 +450,25 @@ public sealed class AgentDeliveryTests : IAsyncDisposable
                 return response;
             }
         }
+    }
+
+    /// <summary>A machine with fixed facts, so the test never reads the one it runs on.</summary>
+    private sealed class FakeMachine : IMachineFactsSource
+    {
+        public MachineFacts GetFacts() => new("FAKE-PC", null, OsFamily.Linux, "Linux 6.18.0 #1 SMP", "6.18.0", "X64", "Fake CPU",
+            8, 16384, "10.0.0.2", "00:11:22:33:44:55", AgentVersion.Current.ToString());
+
+        public HardwareIdentity GetHardware() => HardwareIdentity.None;
+
+        public DateTimeOffset? GetOsInstalledAt() => null;
+
+        // Moved since enrollment, so a heartbeat's report shows.
+        public string? GetPrimaryIpAddress() => "10.0.0.3";
+    }
+
+    private sealed class FakeTelemetry(TimeProvider time) : ITelemetrySource
+    {
+        public CreateTelemetrySampleRequest Collect() => new() { CollectedAt = time.GetUtcNow(), CpuPercent = 12.5 };
     }
 
     private sealed class RetryQuickly : IRetryPolicy
