@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Identity.Client;
@@ -79,7 +79,8 @@ public sealed class EntraRefresh(ITokenAcquisition tokenAcquisition, ILogger<Ent
         // retries) included: the person is asked again at the next run, and the run goes on to everyone else.
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
-            logger.LogWarning(exception, "Checking {Account} at Entra failed; their sessions go on.", accountId);
+            // The person is named by the caller, by Signal9's own IDs: Entra's identifiers stay out of logs.
+            logger.LogWarning(exception, "Checking a person at Entra failed; their sessions go on.");
             return new EntraVerdict.Unavailable();
         }
     }
@@ -148,8 +149,8 @@ public sealed class EntraSessionChecker(Signal9DbContext db, SignInSessions sess
                     var someoneElse = vouched.IdToken is null ? [] : accountSessions.Where(s => s.Subject != answeredFor).ToList();
                     if (someoneElse.Count > 0)
                     {
-                        logger.LogWarning("Entra's refresh for {Account} in {Directory} answered for someone else; their sessions end.",
-                            account.Key.EntraAccountId, account.Key.EntraTenantId);
+                        logger.LogWarning("Entra's refresh for the sessions {Sessions} answered for someone else; they end.",
+                            someoneElse.Select(s => s.AuthorizationId));
                         await EndAsync(someoneElse, "Entra answered for someone else", cancellationToken);
                     }
                     await RereadSuperadministratorAsync([.. accountSessions.Except(someoneElse)], vouched.IdToken, cancellationToken);
@@ -157,6 +158,7 @@ public sealed class EntraSessionChecker(Signal9DbContext db, SignInSessions sess
                 default:
                     // Asked again at the next run.
                     var ids = accountSessions.Select(s => s.AuthorizationId).ToList();
+                    logger.LogInformation("Entra couldn't be asked about the sessions {Sessions}; asked again at the next run.", ids);
                     await db.SignInSessions.Where(s => ids.Contains(s.AuthorizationId))
                         .ExecuteUpdateAsync(s => s.SetProperty(x => x.EntraCheckedAt, due), cancellationToken);
                     break;

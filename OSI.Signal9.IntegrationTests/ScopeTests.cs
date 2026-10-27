@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -243,6 +243,27 @@ public sealed class ScopeTests : IDisposable
         Assert.AreEqual("application/problem+json", scriptWithoutTerminal.Content.Headers.ContentType?.MediaType);
         Assert.AreEqual(HttpStatusCode.Forbidden, scriptWithoutCommands.StatusCode);
         Assert.AreEqual(HttpStatusCode.Created, script.StatusCode);
+    }
+
+    // Enums are names on the wire (AGENTS.md): a number, or no type at all, isn't a command type the api can authorize.
+    [TestMethod]
+    [DataRow("""{"type":2}""", "RunScript's number")]
+    [DataRow("""{"type":7}""", "a number no type has")]
+    [DataRow("""{"type":"2"}""", "a number in a string")]
+    [DataRow("""{}""", "no type")]
+    public async Task A_command_type_must_be_given_by_name(string body, string what)
+    {
+        using var admin = _factory.CreateSuperadministratorClient();
+        var tenant = await _factory.CreateTenantAsync(admin, "Contoso");
+        using var agent = await _factory.EnrollAgentAsync(tenant.Id, "PC01");
+        var commands = $"api/v1/devices/{agent.DeviceId}/commands";
+        using var commandsOnly = await _factory.CreateApplicationClientAsync(tenant.Id, "commands.execute", "commands.read");
+
+        var response = await commandsOnly.PostAsync(commands, new StringContent(body, Encoding.UTF8, "application/json"), Ct);
+        var queued = await commandsOnly.GetFromJsonAsync<JsonElement>(commands, Signal9Json.Options, Ct);
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode, what);
+        Assert.AreEqual(0, queued.GetProperty("items").GetArrayLength(), what);
     }
 
     [TestMethod]

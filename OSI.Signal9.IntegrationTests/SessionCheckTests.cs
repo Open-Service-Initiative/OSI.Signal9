@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -245,6 +245,9 @@ public sealed class SessionCheckTests : IDisposable
         var asked = _factory.Entra.RefreshesOf(assigned.User).Count;
 
         Assert.AreEqual(HttpStatusCode.OK, (await browser.GetAsync("api/v1/tenants")).StatusCode, failure);
+        // Logs name sessions by Signal9's own IDs, never the person's Entra object or directory ID.
+        Assert.DoesNotContain(m => m.Contains(assigned.User.ObjectId.ToString(), StringComparison.OrdinalIgnoreCase)
+            || m.Contains(assigned.User.TenantId.ToString(), StringComparison.OrdinalIgnoreCase), _factory.Auth.Logs, failure);
         _factory.Entra.FailRefreshes(assigned.User, null);
         _factory.Entra.Refuse(assigned.User);
         await EntraCheckAfterAsync(EntraSessionCheck.Interval);

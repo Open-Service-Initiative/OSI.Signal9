@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace OSI.Signal9.Contracts.Commands;
 
@@ -37,8 +37,9 @@ public sealed record CommandDto(
 
 public sealed record CreateCommandRequest
 {
+    /// <summary>Required: without it the command would default to the first type.</summary>
     [Required]
-    public CommandType Type { get; init; }
+    public required CommandType Type { get; init; }
 
     /// <summary>Command-specific JSON payload, e.g. {"serviceName":"Spooler"}.</summary>
     [StringLength(4000)]

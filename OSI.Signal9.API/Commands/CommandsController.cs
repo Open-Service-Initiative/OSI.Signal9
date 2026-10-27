@@ -1,4 +1,4 @@
-using OSI.Signal9.API.Agents;
+﻿using OSI.Signal9.API.Agents;
 using OSI.Signal9.Contracts.Agents;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -85,8 +85,15 @@ public sealed class CommandsController(
         [FromServices] CallerAccess access, CancellationToken cancellationToken)
     {
         // TODO(#82): ad-hoc code moves to script executions, and RunScript leaves the command contract.
+        // What the type needs beyond commands.execute; a type not listed here needs the most.
+        var runsCode = request.Type switch
+        {
+            CommandType.CollectSystemInfo => false,
+            CommandType.RunScript => true,
+            _ => true,
+        };
         var terminal = new RequireScopeAttribute(Scopes.Terminal.Execute);
-        if (request.Type == CommandType.RunScript)
+        if (runsCode)
         {
             if (!(await authorization.AuthorizeAsync(User, null, terminal)).Succeeded)
                 return InsufficientScope.Forbid(Scopes.Terminal.Execute);
