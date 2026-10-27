@@ -1,46 +1,116 @@
 using System.ComponentModel.DataAnnotations;
+using OSI.Signal9.Contracts.Devices;
 
 namespace OSI.Signal9.Contracts.Agents;
 
 /// <summary>
-/// Derived by the API: Maintenance when flagged, otherwise Online/Offline from the last heartbeat.
+/// Whether an agent may receive commands: Active, or the first that applies of Revoked, Needs decision and Awaiting
+/// approval, which all block commands.
 /// </summary>
 public enum AgentStatus
 {
-    Online = 0,
-    Offline = 1,
-    Maintenance = 2
+    /// <summary>It may receive commands.</summary>
+    Active = 0,
+
+    /// <summary>A person revoked it: it can't authenticate.</summary>
+    Revoked = 1,
+
+    /// <summary>
+    /// It enrolled under an approval hold, or onto a device that required approval after a revocation. It sends
+    /// heartbeats but receives no work until a person approves it (POST {url}:approve).
+    /// </summary>
+    AwaitingApproval = 2,
+
+    /// <summary>
+    /// Its hardware identifiers matched an existing device it couldn't be matched to automatically, so it has no device
+    /// yet: it waits in the Needs-decision queue until a person decides (POST {url}:identify) whether it's a reinstall
+    /// of an existing device or a new one (story 105). It sends heartbeats but receives no work.
+    /// </summary>
+    NeedsDecision = 3,
 }
 
-public sealed record AgentDto(
-    Guid Id,
-    Guid TenantId,
-    string MachineName,
-    string? Domain,
-    string OperatingSystem,
-    string? OsVersion,
-    string? Architecture,
-    string? ProcessorName,
-    int ProcessorCores,
-    long TotalMemoryMb,
-    string? IpAddress,
-    string? MacAddress,
-    string? AgentVersion,
-    string? GroupName,
-    IReadOnlyList<string> Tags,
-    bool InMaintenance,
-    AgentStatus Status,
-    DateTimeOffset FirstSeenAt,
-    DateTimeOffset LastSeenAt);
+/// <summary>A person's identification decision for an agent in the Needs-decision queue (story 105).</summary>
+public enum IdentificationDecision
+{
+    /// <summary>It's a reinstall: rebind it to the existing device named, which keeps its history.</summary>
+    Reinstalled,
+
+    /// <summary>It's a different machine: give it a new device, leaving the existing ones as they are.</summary>
+    KeepBoth,
+}
 
 /// <summary>
-/// Sent by an agent to enroll itself (POST /api/agents). Re-sending for the same tenant and
-/// machine name updates the existing agent instead of creating a duplicate.
+/// Body of POST /api/v1/agents/{agentId}:identify, which decides an agent in the Needs-decision queue (story 105).
+/// <see cref="DeviceId"/> names the device for <see cref="IdentificationDecision.Reinstalled"/>, one of the agent's
+/// candidate devices (GET /api/v1/agents/{agentId}/candidate-devices), and must be left out for
+/// <see cref="IdentificationDecision.KeepBoth"/>.
 /// </summary>
-public sealed record RegisterAgentRequest
+public sealed record IdentifyAgentRequest : IValidatableObject
 {
-    [Required, StringLength(32, MinimumLength = 2)]
-    public string TenantCode { get; init; } = string.Empty;
+    [Required]
+    public IdentificationDecision? Decision { get; init; }
+
+    public Guid? DeviceId { get; init; }
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (Decision == IdentificationDecision.Reinstalled && DeviceId is null)
+            yield return new ValidationResult("Name the device the agent was reinstalled on.", [nameof(DeviceId)]);
+        if (Decision == IdentificationDecision.KeepBoth && DeviceId is not null)
+            yield return new ValidationResult("Keep both creates a new device; name no device.", [nameof(DeviceId)]);
+    }
+}
+
+/// <summary>
+/// One enrolled installation of the agent software on a device, holding its own credential. A machine runs one agent
+/// instance per deployment and root tenant tree; each is a separate agent.
+/// </summary>
+/// <param name="Url">The agent's canonical URL.</param>
+/// <param name="DeviceId">Its device, or none while it awaits an identification decision.</param>
+/// <param name="TenantId">Its device's tenant, or while it awaits identification, its enrollment token's.</param>
+/// <param name="EnrollmentTokenId">The enrollment token it enrolled with, while that token exists.</param>
+/// <param name="IsActive">
+/// Whether this is its device's active agent. A replaced or revoked agent is no longer active.
+/// </param>
+/// <param name="MachineName">Its device's machine name, or while it awaits identification, the one it reported.</param>
+/// <param name="Status">Whether it may receive commands, apart from its device's online status.</param>
+/// <param name="RevokedAt">
+/// When a person revoked it (POST {url}:revoke), if they did. A revoked agent can't authenticate, and its device then
+/// requires approval for its next agent.
+/// </param>
+public sealed record AgentDto(
+    Guid Id,
+    string Url,
+    Guid? DeviceId,
+    Guid TenantId,
+    string MachineName,
+    Guid? EnrollmentTokenId,
+    string? AgentVersion,
+    bool IsActive,
+    AgentStatus Status,
+    DateTimeOffset EnrolledAt,
+    DateTimeOffset LastSeenAt,
+    DateTimeOffset? RevokedAt);
+
+/// <summary>
+/// Sent by a new agent to enroll (POST /api/v1/agents), with no access token: the enrollment token is its authority
+/// (stories 95, 98). <see cref="Certificate"/> is the self-signed certificate of the agent's new non-exportable key,
+/// which it then authenticates with at the mTLS token endpoint (<c>self_signed_tls_client_auth</c>, RFC 8705 §2.2). The
+/// hardware identifiers identify a reinstalled agent's existing device (stories 103-106); an enrollment that matches no
+/// existing device creates a new one. Devices are never matched by machine name.
+/// </summary>
+public sealed record EnrollAgentRequest
+{
+    /// <summary>The enrollment token's secret.</summary>
+    [Required, StringLength(100, MinimumLength = 1)]
+    public string EnrollmentToken { get; init; } = string.Empty;
+
+    /// <summary>
+    /// The agent's self-signed client certificate, PEM-encoded: an ECDSA P-256 (or stronger) or RSA 3072+ key, the
+    /// digitalSignature key usage and clientAuth extended key usage, not a CA, valid now and for at most 398 days.
+    /// </summary>
+    [Required, StringLength(16384, MinimumLength = 1)]
+    public string Certificate { get; init; } = string.Empty;
 
     [Required, StringLength(255, MinimumLength = 1)]
     public string MachineName { get; init; } = string.Empty;
@@ -48,8 +118,18 @@ public sealed record RegisterAgentRequest
     [StringLength(255)]
     public string? Domain { get; init; }
 
-    [Required, StringLength(100)]
+    /// <summary>The machine's operating system family.</summary>
+    [Required]
+    public OsFamily? OsFamily { get; init; }
+
+    /// <summary>
+    /// The operating system's description, such as <c>Microsoft Windows 10.0.26100</c> or a Linux kernel's
+    /// <c>uname -srv</c>, at most <see cref="OperatingSystemMaxLength"/> characters: agents cut longer ones short.
+    /// </summary>
+    [Required, StringLength(OperatingSystemMaxLength)]
     public string OperatingSystem { get; init; } = string.Empty;
+
+    public const int OperatingSystemMaxLength = 100;
 
     [StringLength(100)]
     public string? OsVersion { get; init; }
@@ -72,33 +152,73 @@ public sealed record RegisterAgentRequest
     [StringLength(17)]
     public string? MacAddress { get; init; }
 
-    [StringLength(50)]
-    public string? AgentVersion { get; init; }
+
+    /// <summary>
+    /// The machine's SMBIOS system UUID (SMBIOS type 1), if it could be read. Used with <see cref="Manufacturer"/> and
+    /// <see cref="SerialNumber"/> to identify a reinstalled agent's existing device; zeroed and known placeholder
+    /// values are ignored.
+    /// </summary>
+    public Guid? SmbiosUuid { get; init; }
+
+    /// <summary>The system manufacturer (SMBIOS type 1), if it could be read.</summary>
+    [StringLength(FirmwareStringMaxLength)]
+    public string? Manufacturer { get; init; }
+
+    /// <summary>The system serial number (SMBIOS type 1), if it could be read.</summary>
+    [StringLength(FirmwareStringMaxLength)]
+    public string? SerialNumber { get; init; }
+
+    /// <summary>The longest firmware string api takes; agents cut longer ones short.</summary>
+    public const int FirmwareStringMaxLength = 255;
+
+    /// <summary>
+    /// When the machine's operating system was installed, if the agent could tell. An installation from the last day
+    /// with exactly one matching device suggests the machine was wiped or re-imaged; the agent then joins that device,
+    /// but is held for approval before it replaces the device's agent.
+    /// </summary>
+    public DateTimeOffset? OsInstalledAt { get; init; }
 }
 
 /// <summary>
-/// Full replacement of the admin-managed fields of an agent (PUT semantics).
-/// Hardware and OS facts are owned by the agent and change only through registration.
-/// </summary>
-public sealed record UpdateAgentRequest
-{
-    [StringLength(100)]
-    public string? GroupName { get; init; }
-
-    [MaxLength(50)]
-    public IReadOnlyList<string> Tags { get; init; } = [];
-
-    public bool InMaintenance { get; init; }
-}
-
-/// <summary>
-/// Body of PUT /api/agents/{agentId}/heartbeat. All fields are optional facts that may have changed.
+/// Body of PUT /api/v1/agents/{agentId}/heartbeat. All fields are optional facts that may have changed. The agent's
+/// version travels in <see cref="AgentProtocol.VersionHeader"/>, as on every agent request.
 /// </summary>
 public sealed record HeartbeatRequest
 {
     [StringLength(45)]
     public string? IpAddress { get; init; }
 
-    [StringLength(50)]
-    public string? AgentVersion { get; init; }
+}
+
+/// <summary>Response to a heartbeat.</summary>
+/// <param name="HasPendingWork">Whether work is waiting for the agent, which it then fetches from its pending-commands list.</param>
+public sealed record HeartbeatResponse(bool HasPendingWork);
+
+/// <summary>
+/// The agent's client certificate (PUT /api/v1/agents/{agentId}/certificate): the self-signed certificate of its
+/// non-exportable key, which it authenticates with at the mTLS token endpoint (RFC 8705 §2.2). An agent replaces it to
+/// rotate its key (story 102); the old certificate then stops working.
+/// </summary>
+public sealed record AgentCertificateRequest
+{
+    /// <summary>
+    /// The new self-signed client certificate, PEM-encoded, meeting the same rules as at enrollment: an ECDSA P-256 (or
+    /// stronger) or RSA 3072+ key, the digitalSignature key usage and clientAuth extended key usage, not a CA, valid now
+    /// and for at most 398 days.
+    /// </summary>
+    [Required, StringLength(16384, MinimumLength = 1)]
+    public string Certificate { get; init; } = string.Empty;
+}
+
+/// <summary>The certificate an agent authenticates with.</summary>
+/// <param name="Thumbprint">The certificate's SHA-256 thumbprint, base64url-encoded (RFC 8705 §3.1's <c>x5t#S256</c>).</param>
+public sealed record AgentCertificateDto(string Thumbprint, DateTimeOffset NotBefore, DateTimeOffset NotAfter);
+
+/// <summary>OAuth error codes the token endpoint uses for agents, beyond RFC 6749 §5.2's (§8.5).</summary>
+public static class AgentErrors
+{
+    /// <summary>
+    /// The agent authenticated, but a person revoked it. It must stop rather than retry or enroll again on its own.
+    /// </summary>
+    public const string Revoked = "agent_revoked";
 }

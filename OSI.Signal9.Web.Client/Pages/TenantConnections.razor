@@ -1,0 +1,128 @@
+@page "/api-applications/connections"
+@attribute [Authorize]
+@inject Signal9ApiClient Api
+@inject IDialogService Dialogs
+
+<PageTitle>Application connections - Signal9</PageTitle>
+
+<div class="page-header">
+    <FluentText As="TextTag.H1" Size="TextSize.Size800">Application connections</FluentText>
+</div>
+<p>People who allowed the API applications registered at a tenant, or beneath it, to act for them. Revoking a connection stops the application acting for that person at once.</p>
+
+<div class="filters">
+    <FluentSelect Id="connection-tenant" TOption="string" TValue="string" Label="Tenant" Value="@tenantId?.ToString()"
+                  ValueChanged="SelectTenantAsync">
+        @foreach (var tenant in tenants)
+        {
+            <FluentOption TValue="string" Value="@tenant.Id.ToString()">@tenant.Name</FluentOption>
+        }
+    </FluentSelect>
+</div>
+
+<ProblemBar Error="error" />
+@if (notice is not null)
+{
+    <FluentMessageBar Class="notice-bar" Intent="MessageBarIntent.Success">@notice</FluentMessageBar>
+}
+
+<FluentDataGrid Items="@connections.AsQueryable()" TGridItem="ConnectionDto" Loading="loading" ItemKey="@(c => c.Id)">
+    <PropertyColumn Title="Application" Property="@(c => c.ApiApplicationName)" />
+    <TemplateColumn Title="Registered at">@TenantName(context.TenantId)</TemplateColumn>
+    @* A person the caller can't see as a user is named by their Entra subject. *@
+    <TemplateColumn Title="Person">@(context.UserDisplayName ?? context.Subject)</TemplateColumn>
+    <TemplateColumn Title="Allowed">@string.Join(", ", context.Scopes)</TemplateColumn>
+    <TemplateColumn Title="Connected">@context.ConnectedAt.ToLocalTime().ToString("g")</TemplateColumn>
+    <TemplateColumn Title="Actions" Align="DataGridCellAlignment.End">
+        <FluentButton Id="@($"revoke-{context.Id}")" Appearance="ButtonAppearance.Subtle"
+                      OnClick="@(() => RevokeAsync(context))">Revoke</FluentButton>
+    </TemplateColumn>
+</FluentDataGrid>
+<FluentPaginator State="pagination" CurrentPageIndexChanged="LoadAsync" />
+
+@code {
+    private const int PageSize = 25;
+
+    private readonly PaginationState pagination = new() { ItemsPerPage = PageSize };
+    private IReadOnlyList<TenantDto> tenants = [];
+    private Guid? tenantId;
+    private List<ConnectionDto> connections = [];
+    private bool loading = true;
+    private ApiException? error;
+    private string? notice;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // TODO: a search picker once there can be more tenants than one page (the API's maximum is 100).
+            tenants = (await Api.ListTenantsAsync(1, 100)).Items;
+            tenantId = tenants.FirstOrDefault()?.Id;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+        await LoadAsync(0);
+    }
+
+    private async Task SelectTenantAsync(string? value)
+    {
+        tenantId = Guid.TryParse(value, out var id) ? id : null;
+        notice = null;
+        await pagination.SetCurrentPageIndexAsync(0);
+        await LoadAsync(0);
+    }
+
+    private async Task LoadAsync(int pageIndex)
+    {
+        if (tenantId is not { } id)
+        {
+            loading = false;
+            connections = [];
+            return;
+        }
+
+        loading = true;
+        try
+        {
+            var page = await Api.ListTenantConnectionsAsync(id, pageIndex + 1, PageSize);
+            connections = [.. page.Items];
+            await pagination.SetTotalItemCountAsync(page.TotalCount);
+            error = null;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task RevokeAsync(ConnectionDto connection)
+    {
+        var person = connection.UserDisplayName ?? "this person";
+        var confirm = await Dialogs.ShowConfirmationAsync(
+            $"Revoke {connection.ApiApplicationName} for {person}? It stops acting for them on its next request.",
+            "Revoke connection", "Revoke", "Cancel");
+        if (confirm.Cancelled)
+            return;
+
+        notice = null;
+        try
+        {
+            await Api.RevokeConnectionAsync(connection.Url);
+            connections.Remove(connection);
+            notice = $"Revoked {connection.ApiApplicationName} for {person}.";
+            error = null;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+    }
+
+    private string TenantName(Guid id) => tenants.FirstOrDefault(t => t.Id == id)?.Name ?? id.ToString();
+}

@@ -1,0 +1,47 @@
+@inherits FluentDialogInstance
+@inject TimeProvider Time
+
+<FluentDialogBody>
+    <div class="dialog-form">
+        <FluentTextInput Id="token-name" Label="Name" Required="true" MaxLength="200" Placeholder="e.g. Head office installer"
+                         @bind-Value="name" />
+        <FluentSwitch Id="token-single-use" Label="Single use" @bind-Value="singleUse" />
+        @if (!singleUse)
+        {
+            <FluentTextInput Id="token-max-uses" Label="Maximum uses" Placeholder="Unlimited" TextInputType="TextInputType.Number"
+                             @bind-Value="maxUses" />
+        }
+        <FluentTextInput Id="token-expires-days" Label="Expires after (days)" Placeholder="Never" TextInputType="TextInputType.Number"
+                         @bind-Value="expiresAfterDays" />
+    </div>
+</FluentDialogBody>
+
+@code {
+    private string? name;
+    private bool singleUse;
+    private string? maxUses;
+    private string? expiresAfterDays;
+
+    protected override void OnInitializeDialog(DialogOptionsHeader header, DialogOptionsFooter footer)
+    {
+        footer.PrimaryAction.Label = "Issue";
+        footer.SecondaryAction.Label = "Cancel";
+    }
+
+    protected override async Task OnActionClickedAsync(bool primary)
+    {
+        if (!primary)
+        {
+            await DialogInstance.CancelAsync();
+            return;
+        }
+
+        // Blank fields mean the defaults: unlimited uses, no expiry. The API validates the rest.
+        await DialogInstance.CloseAsync(new CreateEnrollmentTokenRequest
+        {
+            Name = name ?? string.Empty,
+            MaxUses = singleUse ? 1 : int.TryParse(maxUses, out var uses) ? uses : null,
+            ExpiresAt = int.TryParse(expiresAfterDays, out var days) ? Time.GetUtcNow().AddDays(days) : null,
+        });
+    }
+}

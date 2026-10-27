@@ -1,0 +1,9 @@
+@inject BffSession Session
+
+<PageTitle>Sign in - Signal9</PageTitle>
+
+<div id="sign-in-prompt" class="sign-in-prompt">
+    <FluentText As="TextTag.H1" Size="TextSize.Size800">Sign in to continue</FluentText>
+    <p>This page shows your organization's data, so you need to be signed in.</p>
+    <FluentButton Appearance="ButtonAppearance.Primary" OnClick="Session.SignIn">Sign in</FluentButton>
+</div>

@@ -1,0 +1,202 @@
+@page "/invitations"
+@attribute [Authorize]
+@using Microsoft.JSInterop
+@inject Signal9ApiClient Api
+@inject IDialogService Dialogs
+@inject IJSRuntime JS
+
+<PageTitle>Invitations - Signal9</PageTitle>
+
+<div class="page-header">
+    <FluentText As="TextTag.H1" Size="TextSize.Size800">Invitations</FluentText>
+    <FluentSpacer />
+    <FluentButton Id="create-invitation" Appearance="ButtonAppearance.Primary" IconStart="@(new Icons.Regular.Size20.PersonAdd())"
+                  Disabled="@(tenantId is null)" OnClick="CreateAsync">Invite</FluentButton>
+</div>
+<p>An invitation offers one role at one tenant. The person signs in with Entra to accept it; it works once and expires after 72 hours. Signal9 doesn't send it: copy the link and share it yourself.</p>
+
+<div class="filters">
+    <FluentSelect Id="invitation-tenant" TOption="string" TValue="string" Label="Tenant" Value="@tenantId?.ToString()"
+                  ValueChanged="SelectTenantAsync">
+        @foreach (var tenant in tenants)
+        {
+            <FluentOption TValue="string" Value="@tenant.Id.ToString()">@tenant.Name</FluentOption>
+        }
+    </FluentSelect>
+</div>
+
+<ProblemBar Error="error" />
+@if (link is not null)
+{
+    <FluentMessageBar Class="secret-bar" Intent="MessageBarIntent.Warning" Title="Invitation link">
+        Copy it now: it won't be shown again.
+        <div class="secret-value">
+            <FluentTextInput Id="invitation-link" ReadOnly="true" Value="@link" aria-label="Invitation link" />
+            <FluentButton Id="copy-link" IconStart="@(new Icons.Regular.Size20.Copy())" OnClick="CopyAsync">Copy</FluentButton>
+        </div>
+    </FluentMessageBar>
+}
+
+<FluentDataGrid Items="@invitations.AsQueryable()" TGridItem="InvitationDto" Loading="loading" ItemKey="@(i => i.Id)">
+    <TemplateColumn Title="Role"><span id="@($"role-{context.Id}")">@RoleName(context.RoleId)</span></TemplateColumn>
+    <TemplateColumn Title="Tenant">@TenantName(context.TenantId)</TemplateColumn>
+    <TemplateColumn Title="For">
+        <span id="@($"for-{context.Id}")">
+            @(context.UserId is { } userId ? UserName(userId)
+                : context.EntraTenantId is { } directory ? $"Anyone from directory {directory}" : "Anyone with the link")
+        </span>
+    </TemplateColumn>
+    <TemplateColumn Title="Status">
+        <span id="@($"status-{context.Id}")">
+            <FluentBadge Appearance="BadgeAppearance.Tint" Color="@StatusColor(context.Status)">@context.Status</FluentBadge>
+        </span>
+    </TemplateColumn>
+    <TemplateColumn Title="Expires">@context.ExpiresAt.ToLocalTime().ToString("g")</TemplateColumn>
+    <TemplateColumn Title="Created">@context.CreatedAt.ToLocalTime().ToString("g")</TemplateColumn>
+    <TemplateColumn Title="Actions" Align="DataGridCellAlignment.End">
+        @if (context.Status == InvitationStatus.Pending)
+        {
+            <FluentButton Id="@($"revoke-{context.Id}")" Appearance="ButtonAppearance.Subtle"
+                          OnClick="@(() => RevokeAsync(context))">Revoke</FluentButton>
+        }
+    </TemplateColumn>
+</FluentDataGrid>
+<FluentPaginator State="pagination" CurrentPageIndexChanged="LoadAsync" />
+
+@code {
+    private const int PageSize = 25;
+
+    private readonly PaginationState pagination = new() { ItemsPerPage = PageSize };
+    // TODO: search pickers once there can be more tenants or users than one page (the API's maximum is 100).
+    private IReadOnlyList<TenantDto> tenants = [];
+    private IReadOnlyList<UserDto> users = [];
+    private IReadOnlyList<RoleDto> roles = [];
+    private Guid? tenantId;
+    private List<InvitationDto> invitations = [];
+    private bool loading = true;
+    private ApiException? error;
+    private string? link;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            tenants = (await Api.ListTenantsAsync(1, 100)).Items;
+            users = (await Api.ListUsersAsync(1, 100)).Items;
+            roles = (await Api.ListRolesAsync()).Items;
+            tenantId = tenants.FirstOrDefault()?.Id;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+        await LoadAsync(0);
+    }
+
+    private async Task SelectTenantAsync(string? value)
+    {
+        tenantId = Guid.TryParse(value, out var id) ? id : null;
+        link = null;
+        await pagination.SetCurrentPageIndexAsync(0);
+        await LoadAsync(0);
+    }
+
+    private async Task LoadAsync(int pageIndex)
+    {
+        if (tenantId is not { } id)
+        {
+            loading = false;
+            invitations = [];
+            return;
+        }
+
+        loading = true;
+        try
+        {
+            var page = await Api.ListInvitationsAsync(id, pageIndex + 1, PageSize);
+            invitations = [.. page.Items];
+            await pagination.SetTotalItemCountAsync(page.TotalCount);
+            error = null;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        if (tenantId is not { } id)
+            return;
+        var result = await Dialogs.ShowDialogAsync<InvitationDialog>(options =>
+        {
+            options.Header.Title = $"Invite someone to {TenantName(id)}";
+            options.Parameters[nameof(InvitationDialog.Users)] = users;
+            options.Parameters[nameof(InvitationDialog.Roles)] = roles;
+        });
+        if (result.Cancelled || result.Value is not CreateInvitationRequest request)
+            return;
+
+        await RunAsync(async () =>
+        {
+            link = (await Api.CreateInvitationAsync(id, request)).Link;
+            await LoadAsync(pagination.CurrentPageIndex);
+        });
+    }
+
+    private async Task RevokeAsync(InvitationDto invitation)
+    {
+        var confirm = await Dialogs.ShowConfirmationAsync(
+            $"Revoke this invitation to be {RoleName(invitation.RoleId)} at {TenantName(invitation.TenantId)}? Its link stops working at once.",
+            "Revoke invitation", "Revoke", "Cancel");
+        if (confirm.Cancelled)
+            return;
+
+        await RunAsync(async () =>
+        {
+            var revoked = await Api.RevokeInvitationAsync(invitation.Url);
+            var index = invitations.FindIndex(i => i.Id == revoked.Id);
+            if (index >= 0)
+                invitations[index] = revoked;
+        });
+    }
+
+    private async Task RunAsync(Func<Task> change)
+    {
+        link = null;
+        try
+        {
+            await change();
+            error = null;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+    }
+
+    // navigator.clipboard is called by name, so it needs no script of our own and no 'unsafe-eval' (CSP).
+    private async Task CopyAsync()
+    {
+        if (link is not null)
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", link);
+    }
+
+    private string TenantName(Guid id) => tenants.FirstOrDefault(t => t.Id == id)?.Name ?? id.ToString();
+
+    private string RoleName(Guid id) => roles.FirstOrDefault(r => r.Id == id)?.Name ?? id.ToString();
+
+    private string UserName(Guid id) => users.FirstOrDefault(u => u.Id == id)?.DisplayName ?? id.ToString();
+
+    private static BadgeColor StatusColor(InvitationStatus status) => status switch
+    {
+        InvitationStatus.Pending => BadgeColor.Brand,
+        InvitationStatus.Redeemed => BadgeColor.Success,
+        InvitationStatus.Expired => BadgeColor.Warning,
+        _ => BadgeColor.Subtle,
+    };
+}

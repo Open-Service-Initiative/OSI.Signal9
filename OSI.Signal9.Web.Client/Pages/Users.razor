@@ -1,0 +1,133 @@
+@page "/users"
+@attribute [Authorize]
+@inject Signal9ApiClient Api
+@inject IDialogService Dialogs
+
+<PageTitle>Users - Signal9</PageTitle>
+
+<div class="page-header">
+    <FluentText As="TextTag.H1" Size="TextSize.Size800">Users</FluentText>
+    <FluentSpacer />
+    <FluentButton Id="add-user" Appearance="ButtonAppearance.Primary" IconStart="@(new Icons.Regular.Size20.Add())"
+                  OnClick="AddAsync">Add user</FluentButton>
+</div>
+<p>People known to Signal9, each belonging to one owning tenant. A user who holds role assignments can be edited only by someone who can assign roles at every tenant where they hold one.</p>
+
+<ProblemBar Error="error" />
+@if (notice is not null)
+{
+    <FluentMessageBar Class="notice-bar" Intent="MessageBarIntent.Success">@notice</FluentMessageBar>
+}
+
+<FluentDataGrid Items="@users.AsQueryable()" TGridItem="UserDto" Loading="loading" ItemKey="@(u => u.Id)">
+    <PropertyColumn Title="Name" Property="@(u => u.DisplayName)" />
+    <TemplateColumn Title="Owning tenant">@TenantName(context.TenantId)</TemplateColumn>
+    <TemplateColumn Title="Added">@context.CreatedAt.ToLocalTime().ToString("g")</TemplateColumn>
+    <TemplateColumn Title="Actions" Align="DataGridCellAlignment.End">
+        <FluentButton Id="@($"edit-{context.Id}")" IconOnly="true" Title="Edit" Appearance="ButtonAppearance.Subtle"
+                      IconStart="@(new Icons.Regular.Size20.Edit())" OnClick="@(() => EditAsync(context))" />
+    </TemplateColumn>
+</FluentDataGrid>
+<FluentPaginator State="pagination" CurrentPageIndexChanged="LoadAsync" />
+
+@code {
+    private const int PageSize = 25;
+
+    private readonly PaginationState pagination = new() { ItemsPerPage = PageSize };
+    // TODO: a search picker once there can be more tenants than one page (the API's maximum is 100).
+    private IReadOnlyList<TenantDto> tenants = [];
+    private List<UserDto> users = [];
+    private bool loading = true;
+    private ApiException? error;
+    private string? notice;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            tenants = (await Api.ListTenantsAsync(1, 100)).Items;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+            loading = false;
+            return;
+        }
+        await LoadAsync(0);
+    }
+
+    private async Task LoadAsync(int pageIndex)
+    {
+        loading = true;
+        try
+        {
+            var page = await Api.ListUsersAsync(pageIndex + 1, PageSize);
+            users = [.. page.Items];
+            await pagination.SetTotalItemCountAsync(page.TotalCount);
+            error = null;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task AddAsync()
+    {
+        var result = await Dialogs.ShowDialogAsync<UserDialog>(options =>
+        {
+            options.Header.Title = "Add a user";
+            options.Parameters[nameof(UserDialog.Tenants)] = tenants;
+        });
+        if (result.Cancelled || result.Value is not CreateUserRequest request)
+            return;
+
+        await RunAsync(async () =>
+        {
+            await Api.CreateUserAsync(request);
+            await LoadAsync(pagination.CurrentPageIndex);
+        }, $"Added {request.DisplayName}.");
+    }
+
+    private async Task EditAsync(UserDto user)
+    {
+        var result = await Dialogs.ShowDialogAsync<UserDialog>(options =>
+        {
+            options.Header.Title = $"Edit {user.DisplayName}";
+            options.Parameters[nameof(UserDialog.User)] = user;
+        });
+        if (result.Cancelled || result.Value is not UpdateUserRequest request)
+            return;
+
+        await RunAsync(async () =>
+        {
+            var saved = await Api.UpdateUserAsync(user.Id, request);
+            var index = users.FindIndex(u => u.Id == saved.Id);
+            if (index >= 0)
+                users[index] = saved;
+        }, $"Saved {request.DisplayName}.");
+    }
+
+    /// <summary>Runs a change, then says how it went.</summary>
+    private async Task RunAsync(Func<Task> change, string done)
+    {
+        notice = null;
+        try
+        {
+            await change();
+            error = null;
+            notice = done;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+    }
+
+    // Names come from the first page of tenants; the rest show as an id.
+    private string TenantName(Guid id) => tenants.FirstOrDefault(t => t.Id == id)?.Name ?? id.ToString();
+}

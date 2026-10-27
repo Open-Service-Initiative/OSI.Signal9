@@ -1,0 +1,39 @@
+@* The consent screen (story 87): posted back to the authorization endpoint with the request's own parameters. *@
+<AuthPage Title="@($"Allow {Application}?")" Heading="@($"Allow {Application} to act for you?")">
+<p>@Application is asking to use Signal9 as you. It can do only what you can do yourself, within the tenant it's registered at, and only the following:</p>
+<ul>
+@foreach (var scope in Scopes)
+{
+<li><code>@scope</code>: @OSI.Signal9.Server.Identity.Scopes.All.GetValueOrDefault(scope, scope)</li>
+}
+</ul>
+<form method="post" action="/@AuthorizationServer.AuthorizationEndpoint">
+@foreach (var (key, values) in Parameters)
+{
+    @foreach (var value in values)
+    {
+<input type="hidden" name="@key" value="@(value ?? "")">
+    }
+}
+<input type="hidden" name="@Antiforgery.FormFieldName" value="@(Antiforgery.RequestToken ?? "")">
+<button type="submit" name="@Consent.DecisionField" value="accept">Allow</button>
+<button type="submit" name="@Consent.DecisionField" value="deny">Don't allow</button>
+</form>
+<p>Your answer is kept until you revoke it. You'll be asked again if @Application wants more.</p>
+</AuthPage>
+
+@code {
+    /// <summary>The application's display name.</summary>
+    [Parameter, EditorRequired]
+    public string Application { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public IEnumerable<string> Scopes { get; set; } = [];
+
+    /// <summary>The authorization request's parameters, posted back with the answer.</summary>
+    [Parameter, EditorRequired]
+    public IEnumerable<KeyValuePair<string, StringValues>> Parameters { get; set; } = [];
+
+    [Parameter, EditorRequired]
+    public AntiforgeryTokenSet Antiforgery { get; set; } = null!;
+}

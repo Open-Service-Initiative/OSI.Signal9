@@ -1,0 +1,39 @@
+@inherits FluentDialogInstance
+
+<FluentDialogBody>
+    <div class="dialog-form">
+        <FluentTextInput Id="device-group" Label="Group" MaxLength="100" @bind-Value="groupName" />
+        <FluentTextInput Id="device-tags" Label="Tags" Placeholder="Comma-separated, e.g. server, finance" @bind-Value="tags" />
+    </div>
+</FluentDialogBody>
+
+@code {
+    [Parameter] public DeviceDto Device { get; set; } = default!;
+
+    private string? groupName;
+    private string? tags;
+
+    protected override void OnInitializeDialog(DialogOptionsHeader header, DialogOptionsFooter footer)
+    {
+        footer.PrimaryAction.Label = "Save";
+        footer.SecondaryAction.Label = "Cancel";
+        groupName = Device.GroupName;
+        tags = string.Join(", ", Device.Tags);
+    }
+
+    protected override async Task OnActionClickedAsync(bool primary)
+    {
+        if (!primary)
+        {
+            await DialogInstance.CancelAsync();
+            return;
+        }
+
+        // The API trims and de-duplicates tags; splitting on commas is all the form does.
+        await DialogInstance.CloseAsync(new UpdateDeviceRequest
+        {
+            GroupName = groupName,
+            Tags = (tags ?? string.Empty).Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries),
+        });
+    }
+}

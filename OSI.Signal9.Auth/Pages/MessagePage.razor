@@ -1,0 +1,22 @@
+@* A page that only tells the person something, with an optional link onwards. *@
+<AuthPage Title="@Title">
+<p>@Message</p>
+@if (Link is not null)
+{
+<p><a href="@Link">@LinkText</a></p>
+}
+</AuthPage>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public string Message { get; set; } = "";
+
+    [Parameter]
+    public Uri? Link { get; set; }
+
+    [Parameter]
+    public string? LinkText { get; set; }
+}

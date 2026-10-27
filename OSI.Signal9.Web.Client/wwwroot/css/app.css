@@ -1,0 +1,92 @@
+/* The dashboard's own styles. Fluent's come from its bundle; this only lays out pages. */
+
+.content {
+    padding: 16px 24px;
+}
+
+.login-display {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.page-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.candidates {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    margin-top: 24px;
+}
+
+.error-bar,
+.notice-bar,
+.secret-bar {
+    margin-bottom: 16px;
+}
+
+.summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.summary-card {
+    min-width: 200px;
+    padding: 16px;
+}
+
+.dialog-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.sign-in-prompt {
+    max-width: 480px;
+}
+
+/* FluentLayout writes its mobile rules into a <style> element, which the CSP (style-src-elem 'self') blocks. These are
+   the same rules as a media query; the layout fills the viewport, so the two agree. Keep in step with Fluent. */
+@media (max-width: 768px) {
+    .fluent-layout {
+        grid-template-areas: "header" "content" "footer";
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr auto;
+        overflow-x: auto;
+    }
+
+    .fluent-layout .fluent-layout-item[area="nav"],
+    .fluent-layout .fluent-layout-item[area="aside"] {
+        display: none;
+    }
+
+    .fluent-layout .fluent-layout-item[area="header"] .fluent-layout-hamburger {
+        display: flex;
+    }
+}
+
+.secret-value {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.secret-value fluent-text-input {
+    flex: 1;
+    font-family: monospace;
+}

@@ -1,0 +1,309 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text;
+
+namespace OSI.Signal9.IntegrationTests;
+
+/// <summary>
+/// Rate limiting (stories 128, 129): named, configurable policies under <c>RateLimiting:{name}</c>, with conservative
+/// defaults on the token, enrollment and invitation-redemption endpoints and no other limits unless configured.
+/// </summary>
+[TestClass]
+public sealed class RateLimitingTests
+{
+    public TestContext TestContext { get; set; } = null!;
+
+    private CancellationToken Ct => TestContext.CancellationToken;
+
+    private static Dictionary<string, string?> Limit(string policy, int permits) => new()
+    {
+        [$"RateLimiting:{policy}:PermitLimit"] = permits.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        // Long enough that no window ends during a test.
+        [$"RateLimiting:{policy}:Window"] = "01:00:00",
+    };
+
+    private static HttpClient Host(Signal9ApiFactory factory, string host) =>
+        host == "auth" ? factory.Auth.CreateClient() : factory.CreateAnonymousClient();
+
+    private Task<HttpResponseMessage> RequestTokenAsync(HttpClient client, string clientId, string ip = "203.0.113.1")
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "connect/token")
+        {
+            Content = Signal9ApiFactory.ClientCredentials(clientId),
+        };
+        request.Headers.Add(Signal9ApiFactory.ClientIpHeader, ip);
+        return client.SendAsync(request, Ct);
+    }
+
+    private Task<HttpResponseMessage> GetAsync(HttpClient client, string path, string ip = "203.0.113.1")
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.Add(Signal9ApiFactory.ClientIpHeader, ip);
+        return client.SendAsync(request, Ct);
+    }
+
+    /// <summary>
+    /// The production defaults, which the fixture otherwise turns off, with windows long enough that none ends during a
+    /// test (only <c>Window</c> is set, so the default <c>PermitLimit</c> still applies).
+    /// </summary>
+    private static Dictionary<string, string?> Defaults(Dictionary<string, string?>? overrides = null)
+    {
+        var settings = new Dictionary<string, string?>
+        {
+            [Signal9ApiFactory.DefaultRateLimits] = "true",
+            ["RateLimiting:Token:Window"] = "01:00:00",
+            ["RateLimiting:Enrollment:Window"] = "01:00:00",
+            ["RateLimiting:InvitationRedemption:Window"] = "01:00:00",
+        };
+        foreach (var (key, value) in overrides ?? [])
+            settings[key] = value;
+        return settings;
+    }
+
+    private async Task<HttpStatusCode> EnrollWithAnUnknownTokenAsync(HttpClient api)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/agents")
+        {
+            Content = JsonContent.Create(Signal9ApiFactory.Enrollment("s9e_not-a-real-token", TestCertificates.AgentCertificate()),
+                options: OSI.Signal9.Contracts.Serialization.Signal9Json.Options),
+        };
+        request.Headers.Add(Signal9ApiFactory.ClientIpHeader, "203.0.113.1");
+        return (await api.SendAsync(request, Ct)).StatusCode;
+    }
+
+    /// <summary>Sends <paramref name="send"/> until it's refused, and returns how many got through.</summary>
+    private static async Task<int> PermittedAsync(Func<Task<HttpStatusCode>> send, int atMost)
+    {
+        for (var sent = 0; sent <= atMost; sent++)
+        {
+            if (await send() == HttpStatusCode.TooManyRequests)
+                return sent;
+        }
+        return atMost + 1;
+    }
+
+    // Anonymous endpoints that make the database work are limited out of the box (OWASP API4:2023, unrestricted
+    // resource consumption); the defaults are per minute.
+    [TestMethod]
+    public async Task Token_enrollment_and_invitation_redemption_are_limited_by_default()
+    {
+        using var factory = new Signal9ApiFactory(settings: Defaults());
+        using var auth = factory.Auth.CreateClient();
+        using var api = factory.CreateAnonymousClient();
+
+        Assert.AreEqual(300, await PermittedAsync(async () => (await RequestTokenAsync(auth, "unknown-app")).StatusCode, 300));
+        Assert.AreEqual(60, await PermittedAsync(() => EnrollWithAnUnknownTokenAsync(api), 60));
+        Assert.AreEqual(30, await PermittedAsync(async () => (await GetAsync(auth, "invitations/s9i_not-a-real-reference")).StatusCode, 30));
+    }
+
+    [TestMethod]
+    public async Task Other_policies_are_off_by_default()
+    {
+        using var factory = new Signal9ApiFactory(settings: Defaults());
+        await factory.SeedClientAsync("busy-app");
+        using var auth = factory.Auth.CreateClient();
+        using var api = factory.CreateSuperadministratorClient();
+
+        for (var i = 0; i < 25; i++)
+        {
+            Assert.AreEqual(HttpStatusCode.OK, (await RequestTokenAsync(auth, "busy-app")).StatusCode);
+            Assert.AreEqual(HttpStatusCode.OK, (await GetAsync(api, "api/v1/tenants")).StatusCode);
+            Assert.AreEqual(HttpStatusCode.OK, (await GetAsync(auth, ".well-known/openid-configuration")).StatusCode);
+        }
+    }
+
+    [TestMethod]
+    public async Task A_default_can_be_changed_or_turned_off()
+    {
+        using var factory = new Signal9ApiFactory(settings: Defaults(new()
+        {
+            ["RateLimiting:Token:PermitLimit"] = "1",
+            ["RateLimiting:Enrollment:PermitLimit"] = "",
+        }));
+        using var auth = factory.Auth.CreateClient();
+        using var api = factory.CreateAnonymousClient();
+
+        Assert.AreEqual(1, await PermittedAsync(async () => (await RequestTokenAsync(auth, "unknown-app")).StatusCode, 300));
+        Assert.AreEqual(61, await PermittedAsync(() => EnrollWithAnUnknownTokenAsync(api), 60));
+    }
+
+    [TestMethod]
+    public async Task Enrollment_is_limited_per_ip()
+    {
+        using var factory = new Signal9ApiFactory(settings: Limit("Enrollment", 1));
+        using var admin = factory.CreateSuperadministratorClient();
+        var tenant = await factory.CreateTenantAsync(admin, "Contoso");
+        var first = await factory.IssueEnrollmentTokenAsync(tenant.Id);
+        var second = await factory.IssueEnrollmentTokenAsync(tenant.Id);
+        var site = IPAddress.Parse("203.0.113.1");
+
+        var allowed = await factory.EnrollAsync(first.Secret!, TestCertificates.AgentCertificate(), from: site);
+        var limited = await factory.EnrollAsync(second.Secret!, TestCertificates.AgentCertificate(), from: site);
+        var otherIp = await factory.EnrollAsync(second.Secret!, TestCertificates.AgentCertificate(), from: IPAddress.Parse("198.51.100.7"));
+
+        Assert.AreEqual(HttpStatusCode.Created, allowed.StatusCode);
+        Assert.AreEqual(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.AreEqual(HttpStatusCode.Created, otherIp.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task Enrollment_is_limited_per_enrollment_token()
+    {
+        using var factory = new Signal9ApiFactory(settings: Limit("EnrollmentToken", 2));
+        using var admin = factory.CreateSuperadministratorClient();
+        var tenant = await factory.CreateTenantAsync(admin, "Contoso");
+        var busy = await factory.IssueEnrollmentTokenAsync(tenant.Id);
+        var other = await factory.IssueEnrollmentTokenAsync(tenant.Id);
+
+        Assert.AreEqual(HttpStatusCode.Created,
+            (await factory.EnrollAsync(busy.Secret!, TestCertificates.AgentCertificate(), from: IPAddress.Parse("203.0.113.1"))).StatusCode);
+        Assert.AreEqual(HttpStatusCode.Created,
+            (await factory.EnrollAsync(busy.Secret!, TestCertificates.AgentCertificate(), from: IPAddress.Parse("203.0.113.2"))).StatusCode);
+        var limited = await factory.EnrollAsync(busy.Secret!, TestCertificates.AgentCertificate(), from: IPAddress.Parse("203.0.113.3"));
+        var otherToken = await factory.EnrollAsync(other.Secret!, TestCertificates.AgentCertificate(), from: IPAddress.Parse("203.0.113.3"));
+
+        Assert.AreEqual(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.AreEqual("application/problem+json", limited.Content.Headers.ContentType?.MediaType);
+        Assert.IsNotNull(limited.Headers.RetryAfter);
+        Assert.AreEqual(HttpStatusCode.Created, otherToken.StatusCode);
+        // A refused attempt isn't a use.
+        using var tokens = factory.CreateSuperadministratorClient();
+        var used = await tokens.GetFromJsonAsync<OSI.Signal9.Contracts.Enrollment.EnrollmentTokenDto>(busy.Url.TrimStart('/'),
+            OSI.Signal9.Contracts.Serialization.Signal9Json.Options, Ct);
+        Assert.AreEqual(2, used!.UseCount);
+    }
+
+    [TestMethod]
+    [DataRow("auth")]
+    [DataRow("api")]
+    public async Task Token_endpoint_limit_is_per_client_id_and_ip(string host)
+    {
+        using var factory = new Signal9ApiFactory(settings: Limit("Token", 2));
+        await factory.SeedClientAsync("app-a");
+        await factory.SeedClientAsync("app-b");
+        using var client = Host(factory, host);
+
+        Assert.AreEqual(HttpStatusCode.OK, (await RequestTokenAsync(client, "app-a")).StatusCode);
+        Assert.AreEqual(HttpStatusCode.OK, (await RequestTokenAsync(client, "app-a")).StatusCode);
+        var limited = await RequestTokenAsync(client, "app-a");
+        var otherClient = await RequestTokenAsync(client, "app-b");
+        var otherIp = await RequestTokenAsync(client, "app-a", ip: "198.51.100.7");
+
+        Assert.AreEqual(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.AreEqual("application/problem+json", limited.Content.Headers.ContentType?.MediaType);
+        Assert.IsNotNull(limited.Headers.RetryAfter);
+        Assert.AreEqual(HttpStatusCode.OK, otherClient.StatusCode);
+        Assert.AreEqual(HttpStatusCode.OK, otherIp.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task Token_endpoint_limit_counts_failed_attempts_and_basic_authentication()
+    {
+        using var factory = new Signal9ApiFactory(settings: Limit("Token", 2));
+        await factory.SeedClientAsync("app-a");
+        using var auth = factory.Auth.CreateClient();
+
+        // A wrong secret still counts, so the limit slows guessing.
+        var wrongSecret = new HttpRequestMessage(HttpMethod.Post, "connect/token")
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["grant_type"] = "client_credentials",
+                ["client_id"] = "app-a",
+                ["client_secret"] = "wrong",
+            }),
+        };
+        wrongSecret.Headers.Add(Signal9ApiFactory.ClientIpHeader, "203.0.113.1");
+        Assert.AreNotEqual(HttpStatusCode.OK, (await auth.SendAsync(wrongSecret, Ct)).StatusCode);
+        Assert.AreEqual(HttpStatusCode.OK, (await RequestTokenAsync(auth, "app-a")).StatusCode);
+
+        // client_secret_basic names the same client in the Authorization header (RFC 6749 §2.3.1).
+        var basic = new HttpRequestMessage(HttpMethod.Post, "connect/token")
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["grant_type"] = "client_credentials" }),
+        };
+        basic.Headers.Authorization = new AuthenticationHeaderValue("Basic",
+            Convert.ToBase64String(Encoding.UTF8.GetBytes($"app-a:{Signal9ApiFactory.ClientSecret}")));
+        basic.Headers.Add(Signal9ApiFactory.ClientIpHeader, "203.0.113.1");
+
+        Assert.AreEqual(HttpStatusCode.TooManyRequests, (await auth.SendAsync(basic, Ct)).StatusCode);
+    }
+
+    [TestMethod]
+    public async Task Authorization_endpoint_limit_is_per_ip()
+    {
+        using var factory = new Signal9ApiFactory(settings: Limit("Authorize", 2));
+        await factory.SeedCodeClientAsync("code-app", "tenants.read");
+        using var auth = factory.Auth.CreateClient();
+        var authorize = new CodeFlow("code-app").AuthorizeRequest();
+
+        Assert.AreEqual(HttpStatusCode.Redirect, (await GetAsync(auth, authorize)).StatusCode);
+        Assert.AreEqual(HttpStatusCode.Redirect, (await GetAsync(auth, authorize)).StatusCode);
+        var limited = await GetAsync(auth, authorize);
+        var otherIp = await GetAsync(auth, authorize, ip: "198.51.100.7");
+        var otherEndpoint = await GetAsync(auth, ".well-known/openid-configuration");
+
+        Assert.AreEqual(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.AreEqual("application/problem+json", limited.Content.Headers.ContentType?.MediaType);
+        Assert.AreEqual(HttpStatusCode.Redirect, otherIp.StatusCode);
+        Assert.AreEqual(HttpStatusCode.OK, otherEndpoint.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task Invitation_redemption_limit_is_per_ip()
+    {
+        using var factory = new Signal9ApiFactory(settings: Limit("InvitationRedemption", 2));
+        using var auth = factory.Auth.CreateClient();
+        // Guessing references is what the limit slows down: an unknown one is simply not found.
+        const string link = "invitations/s9i_not-a-real-reference";
+
+        Assert.AreEqual(HttpStatusCode.NotFound, (await GetAsync(auth, link)).StatusCode);
+        Assert.AreEqual(HttpStatusCode.NotFound, (await GetAsync(auth, link)).StatusCode);
+        var limited = await GetAsync(auth, link);
+        var otherIp = await GetAsync(auth, link, ip: "198.51.100.7");
+        var otherEndpoint = await GetAsync(auth, ".well-known/openid-configuration");
+
+        Assert.AreEqual(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.AreEqual(HttpStatusCode.NotFound, otherIp.StatusCode);
+        Assert.AreEqual(HttpStatusCode.OK, otherEndpoint.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task Api_limit_is_per_caller()
+    {
+        using var factory = new Signal9ApiFactory(settings: Limit("Api", 2));
+        using var callerA = factory.CreateSuperadministratorClient();
+        await factory.SeedClientAsync("caller-b", "tenants.read");
+        var tokenB = await factory.RequestTokenAsync("caller-b", "tenants.read");
+        using var callerB = factory.CreateAnonymousClient();
+        callerB.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokenB.Value);
+
+        Assert.AreEqual(HttpStatusCode.OK, (await GetAsync(callerA, "api/v1/tenants")).StatusCode);
+        Assert.AreEqual(HttpStatusCode.OK, (await GetAsync(callerA, "api/v1/tenants", ip: "198.51.100.7")).StatusCode);
+        var limited = await GetAsync(callerA, "api/v1/tenants", ip: "192.0.2.9");
+        var otherCaller = await GetAsync(callerB, "api/v1/tenants");
+
+        Assert.AreEqual(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.AreEqual("application/problem+json", limited.Content.Headers.ContentType?.MediaType);
+        Assert.AreEqual(HttpStatusCode.OK, otherCaller.StatusCode);
+    }
+
+    [TestMethod]
+    [DataRow("auth", ".well-known/openid-configuration")]
+    [DataRow("api", "api/v1/tenants")]
+    public async Task Global_limit_covers_every_endpoint_per_ip(string host, string path)
+    {
+        using var factory = new Signal9ApiFactory(settings: Limit("Global", 2));
+        // A client whose one token request is all it asks of auth, which the global limit covers too.
+        using var client = host == "auth" ? factory.Auth.CreateClient() : await factory.CreateUnregisteredClientAsync("tenants.read");
+
+        Assert.AreEqual(HttpStatusCode.OK, (await GetAsync(client, path)).StatusCode);
+        Assert.AreEqual(HttpStatusCode.OK, (await GetAsync(client, path)).StatusCode);
+        var limited = await GetAsync(client, path);
+        var otherIp = await GetAsync(client, path, ip: "198.51.100.7");
+
+        Assert.AreEqual(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.AreEqual(HttpStatusCode.OK, otherIp.StatusCode);
+    }
+}

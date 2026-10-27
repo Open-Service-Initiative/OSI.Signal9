@@ -1,0 +1,38 @@
+@inherits FluentDialogInstance
+
+<FluentDialogBody>
+    <div class="dialog-form">
+        <FluentSelect Id="transfer-tenant" TOption="string" TValue="string" Label="Tenant to transfer" Required="true" @bind-Value="TenantId">
+            <FluentOption TValue="string" Value="@string.Empty">Choose a tenant</FluentOption>
+            @foreach (var tenant in Tenants)
+            {
+                <FluentOption TValue="string" Value="@tenant.Id.ToString()">@tenant.Name</FluentOption>
+            }
+        </FluentSelect>
+        <FluentTextInput Id="transfer-new-parent" Label="New parent tenant ID" Required="true" @bind-Value="ToParentTenantId" />
+        <FluentText>The tenant moves with all its descendants once an Administrator at the new parent accepts. The new parent can be in another tenant tree; ask its Administrator for its tenant ID.</FluentText>
+    </div>
+</FluentDialogBody>
+
+@code {
+    [Parameter] public IReadOnlyList<TenantDto> Tenants { get; set; } = [];
+
+    private string? TenantId { get; set; } = string.Empty;
+
+    private string? ToParentTenantId { get; set; } = string.Empty;
+
+    protected override void OnInitializeDialog(DialogOptionsHeader header, DialogOptionsFooter footer)
+    {
+        footer.PrimaryAction.Label = "Propose";
+        footer.SecondaryAction.Label = "Cancel";
+    }
+
+    protected override Task OnActionClickedAsync(bool primary) => primary
+        ? DialogInstance.CloseAsync(new Proposal(
+            Guid.TryParse(TenantId, out var tenant) ? tenant : Guid.Empty,
+            new ProposeTenantTransferRequest { ToParentTenantId = Guid.TryParse(ToParentTenantId?.Trim(), out var parent) ? parent : null }))
+        : DialogInstance.CancelAsync();
+
+    /// <summary>What the dialog closes with: the tenant to transfer, and the request to send at it.</summary>
+    public sealed record Proposal(Guid TenantId, ProposeTenantTransferRequest Request);
+}

@@ -1,18 +1,27 @@
 using System.Diagnostics;
+using OSI.Signal9.Agent.Platforms;
 using OSI.Signal9.Contracts.Telemetry;
 
 namespace OSI.Signal9.Agent.Services;
 
-/// <summary>
-/// Takes a machine-wide telemetry sample. CPU usage is averaged since the previous sample.
-/// </summary>
-public sealed class TelemetryCollector(TimeProvider time, ILogger<TelemetryCollector> logger)
+/// <summary>Where the agent's telemetry samples come from: the real machine, or a fake in unit tests.</summary>
+public interface ITelemetrySource
 {
-    private (ulong Idle, ulong Total)? _previousCpu = NativeMetrics.ReadCpuTimes();
+    /// <summary>Takes a machine-wide telemetry sample.</summary>
+    CreateTelemetrySampleRequest Collect();
+}
+
+/// <summary>
+/// Takes a machine-wide telemetry sample: CPU and memory from the <see cref="IPlatform"/>, the rest from .NET on every
+/// OS. CPU usage is averaged since the previous sample.
+/// </summary>
+public sealed class TelemetryCollector(IPlatform platform, TimeProvider time, ILogger<TelemetryCollector> logger) : ITelemetrySource
+{
+    private CpuTimes? _previousCpu = platform.ReadCpuTimes();
 
     public CreateTelemetrySampleRequest Collect()
     {
-        var memory = Try(NativeMetrics.ReadMemory, "memory");
+        var memory = Try(platform.ReadMemory, "memory");
         return new CreateTelemetrySampleRequest
         {
             CollectedAt = time.GetUtcNow(),
@@ -27,7 +36,7 @@ public sealed class TelemetryCollector(TimeProvider time, ILogger<TelemetryColle
 
     private double? ReadCpuPercent()
     {
-        var current = NativeMetrics.ReadCpuTimes();
+        var current = platform.ReadCpuTimes();
         var previous = _previousCpu;
         _previousCpu = current;
         if (current is not { } now || previous is not { } before || now.Total <= before.Total)

@@ -12,6 +12,10 @@ _Avoid_: Installation, environment
 The organization that runs a deployment and owns its infrastructure and Entra app registration. An organization, unlike a Superadministrator, who is a person; an operator's own MSP is usually also a tenant in its deployment.
 _Avoid_: Host, provider, vendor
 
+**Key-encryption key**:
+The one key that wraps every key a deployment stores: its token signing and encryption keys and its Data Protection keys. A Key Vault key on Azure, a certificate otherwise. The deployment's single root of trust.
+_Avoid_: KEK (in prose), master key, root key
+
 **Setup code**:
 A one-time secret a new deployment writes to its logs while it has no Superadministrator. Presenting it is the only way to start first-run setup, and it stops working once setup completes.
 _Avoid_: Bootstrap token, install code, admin password
@@ -36,6 +40,9 @@ _Avoid_: Children (unless you mean only the direct ones), sub-tenants
 Moving a tenant, with its descendants, to a new parent tenant. One side proposes it and the other accepts it.
 _Avoid_: Move, re-parent, migration
 
+**Tenant deletion**:
+Removing a tenant, once its child tenants and live devices are gone, with everything it owns, including the users it owns. It leaves an anonymous record of its ancestors at that moment, so its audit trail stays readable there.
+
 ## Access
 
 **User**:
@@ -58,6 +65,10 @@ _Avoid_: Permission set, group, profile
 **Role assignment**:
 A grant of one role to one user at one tenant (the assigned tenant), covering that tenant and its descendants. The only source of a user's access, apart from being a Superadministrator.
 _Avoid_: Permission, membership, grant, home tenant (that means owning tenant; here, say "assigned tenant")
+
+**Session**:
+A person's use of one client from one sign-in through auth, from one Entra session (`sid`). Every token the client gets for it belongs to it, so ending a session (sign-out, Entra's logout, Entra refusing the person, or losing their last role assignment) revokes them all.
+_Avoid_: Login, authorization (OpenIddict's record behind a session), consent (which outlives sessions)
 
 **Superadministrator**:
 A user with full authority over the whole deployment, above every tenant tree. Not a role assignment.
@@ -117,9 +128,17 @@ _Avoid_: Move, re-assign
 One enrolled installation of the Signal9 agent software on a device, holding its own credential. A device has at most one active agent.
 _Avoid_: Client, sensor
 
+**Agent instance**:
+One independent copy of the agent running on a machine, for one deployment and one root tenant tree, with its own key, certificate, configuration and state. A machine can run several side by side; each one that enrolls is a separate agent.
+_Avoid_: Side-by-side agent, second agent
+
 **Identification**:
-Deciding which device a newly enrolled agent belongs to: an existing device, or a new one. Ambiguous cases wait for a person to decide.
+Deciding which device a newly enrolled agent belongs to: an existing device anywhere in its enrollment token's root tenant tree, or a new one in the token's tenant. Ambiguous cases wait for a person to decide. An agent that joins an existing device belongs to that device's tenant.
 _Avoid_: Matching, pairing, onboarding
+
+**Fresh-OS claim**:
+An enrollment from an operating system installed within the last day whose hardware matches exactly one device, taken to mean the machine was wiped or re-imaged. The agent joins that device but is always held for approval, and replaces the device's agent only once a person approves it.
+_Avoid_: Re-image match, auto-resolve
 
 **Agent package**:
 A signed build of the agent software for one operating system and install format, published by OSI with each release. One generic package serves every deployment.
@@ -134,7 +153,7 @@ A revocable secret, issued for one tenant, that lets new agents enroll into it. 
 _Avoid_: Tenant code, install key, registration key
 
 **Agent status**:
-Whether an agent may receive commands: Active, or the first that applies of Revoked, Awaiting approval and Update required, all of which block commands.
+Whether an agent may receive commands: Active, or the first that applies of Revoked, Needs decision, Awaiting approval and Update required, all of which block commands. An agent that needs a decision is waiting for Identification and has no device yet.
 _Avoid_: Command block, health, agent state
 
 **Uninstall PIN**:

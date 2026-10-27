@@ -1,13 +1,15 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace OSI.Signal9.Contracts.Commands;
 
+/// <summary>
+/// What a command does. <see cref="RunScript"/> carries the <c>terminal.execute</c> rules until #82 moves ad-hoc code to
+/// script executions; no agent runs it yet.
+/// </summary>
 public enum CommandType
 {
     CollectSystemInfo = 0,
-    RestartService = 1,
-    RunScript = 2,
-    RestartMachine = 3
+    RunScript = 2
 }
 
 public enum CommandStatus
@@ -18,19 +20,14 @@ public enum CommandStatus
     Cancelled = 3
 }
 
-public enum CommandPriority
-{
-    Low = 0,
-    Normal = 1,
-    High = 2
-}
-
-public sealed record AgentCommandDto(
+/// <summary>A command for a device, run by whichever agent is active on it. It stays in the device's history.</summary>
+/// <param name="Url">The command's canonical URL, where agents report its result.</param>
+public sealed record CommandDto(
     Guid Id,
-    Guid AgentId,
+    Guid DeviceId,
+    string Url,
     CommandType Type,
     string? Parameters,
-    CommandPriority Priority,
     int TimeoutSeconds,
     CommandStatus Status,
     DateTimeOffset CreatedAt,
@@ -38,23 +35,22 @@ public sealed record AgentCommandDto(
     string? Output,
     string? Error);
 
-public sealed record CreateAgentCommandRequest
+public sealed record CreateCommandRequest
 {
+    /// <summary>Required: without it the command would default to the first type.</summary>
     [Required]
-    public CommandType Type { get; init; }
+    public required CommandType Type { get; init; }
 
     /// <summary>Command-specific JSON payload, e.g. {"serviceName":"Spooler"}.</summary>
     [StringLength(4000)]
     public string? Parameters { get; init; }
-
-    public CommandPriority Priority { get; init; } = CommandPriority.Normal;
 
     [Range(1, 3600)]
     public int TimeoutSeconds { get; init; } = 300;
 }
 
 /// <summary>
-/// Body of PUT /api/agents/{agentId}/commands/{commandId}/result, sent by the agent when it finishes.
+/// Body of PUT /api/v1/devices/{deviceId}/commands/{commandId}/result, sent by the agent when it finishes.
 /// </summary>
 public sealed record CommandResultRequest
 {

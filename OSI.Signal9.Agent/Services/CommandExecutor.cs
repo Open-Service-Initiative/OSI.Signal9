@@ -1,48 +1,50 @@
-using System.Text.Json;
 using OSI.Signal9.Contracts.Commands;
-using OSI.Signal9.Contracts.Serialization;
 
 namespace OSI.Signal9.Agent.Services;
 
-/// <summary>
-/// Executes commands sent from the dashboard. Unsupported commands fail explicitly instead of pretending to succeed.
-/// </summary>
-public sealed class CommandExecutor(SystemInfoProvider systemInfo, TelemetryCollector telemetry, ILogger<CommandExecutor> logger)
+/// <summary>Runs one type of command.</summary>
+public interface ICommandHandler
 {
-    public async Task<CommandResultRequest> ExecuteAsync(AgentCommandDto command, CancellationToken cancellationToken)
-    {
-        logger.LogInformation("Executing {CommandType} command {CommandId}", command.Type, command.Id);
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(command.TimeoutSeconds));
+    CommandType Type { get; }
 
+    /// <summary>Runs <paramref name="command"/>. Cancellation means the agent is stopping or the command timed out.</summary>
+    Task<CommandResultRequest> HandleAsync(CommandDto command, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Executes commands sent from the dashboard within their timeout. Unsupported commands fail explicitly instead of
+/// pretending to succeed.
+/// </summary>
+public sealed class CommandExecutor(IEnumerable<ICommandHandler> handlers, TimeProvider time, ILogger<CommandExecutor> logger)
+{
+    // TODO(#82): RunScript needs a signed, allow-listed design before it has a handler.
+    private readonly Dictionary<CommandType, ICommandHandler> _handlers = handlers.ToDictionary(h => h.Type);
+
+    public async Task<CommandResultRequest> ExecuteAsync(CommandDto command, CancellationToken cancellationToken)
+    {
+        if (!_handlers.TryGetValue(command.Type, out var handler))
+            return new CommandResultRequest
+            {
+                Succeeded = false,
+                // A type newer than this agent reads as an undefined value, with no name to give.
+                Error = $"{(Enum.IsDefined(command.Type) ? command.Type : "This command type")} is not supported by this agent version.",
+            };
+
+        logger.LogInformation("Executing {CommandType} command {CommandId}", command.Type, command.Id);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(command.TimeoutSeconds), time);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
         try
         {
-            return command.Type switch
-            {
-                CommandType.CollectSystemInfo => await CollectSystemInfoAsync(timeout.Token),
-                // TODO: RestartService, RunScript and RestartMachine need a signed, allow-listed design before they exist.
-                _ => new CommandResultRequest { Succeeded = false, Error = $"{command.Type} is not supported by this agent version." },
-            };
+            return await handler.HandleAsync(command, linked.Token);
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
             return new CommandResultRequest { Succeeded = false, Error = $"Timed out after {command.TimeoutSeconds} seconds." };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogError(ex, "Command {CommandId} failed", command.Id);
             return new CommandResultRequest { Succeeded = false, Error = ex.Message };
         }
-    }
-
-    private Task<CommandResultRequest> CollectSystemInfoAsync(CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var output = new { Registration = systemInfo.GetRegistration(), Telemetry = telemetry.Collect() };
-        return Task.FromResult(new CommandResultRequest
-        {
-            Succeeded = true,
-            Output = JsonSerializer.Serialize(output, Signal9Json.Options),
-        });
     }
 }

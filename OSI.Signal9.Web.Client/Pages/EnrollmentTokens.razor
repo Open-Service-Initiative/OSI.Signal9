@@ -1,0 +1,209 @@
+@page "/enrollment-tokens"
+@attribute [Authorize]
+@using Microsoft.JSInterop
+@inject Signal9ApiClient Api
+@inject IDialogService Dialogs
+@inject IJSRuntime JS
+
+<PageTitle>Enrollment tokens - Signal9</PageTitle>
+
+<div class="page-header">
+    <FluentText As="TextTag.H1" Size="TextSize.Size800">Enrollment tokens</FluentText>
+    <FluentSpacer />
+    <FluentButton Id="create-token" Appearance="ButtonAppearance.Primary" IconStart="@(new Icons.Regular.Size20.Add())"
+                  Disabled="@(tenantId is null)" OnClick="CreateAsync">New token</FluentButton>
+</div>
+<p>Agents enroll into a tenant with one of its tokens. Rotating or revoking a token never affects agents already enrolled with it.</p>
+
+<div class="filters">
+    <FluentSelect Id="token-tenant" TOption="string" TValue="string" Label="Tenant" Value="@tenantId?.ToString()"
+                  ValueChanged="SelectTenantAsync">
+        @foreach (var tenant in tenants)
+        {
+            <FluentOption TValue="string" Value="@tenant.Id.ToString()">@tenant.Name</FluentOption>
+        }
+    </FluentSelect>
+</div>
+
+<ProblemBar Error="error" />
+@if (secret is not null)
+{
+    <FluentMessageBar Class="secret-bar" Intent="MessageBarIntent.Warning" Title="@($"Secret for {secret.Value.Name}")">
+        Copy it now: it won't be shown again.
+        <div class="secret-value">
+            <FluentTextInput Id="token-secret" ReadOnly="true" Value="@secret.Value.Secret" aria-label="Enrollment token secret" />
+            <FluentButton Id="copy-secret" IconStart="@(new Icons.Regular.Size20.Copy())" OnClick="CopyAsync">Copy</FluentButton>
+        </div>
+    </FluentMessageBar>
+}
+
+<FluentDataGrid Items="@tokens.AsQueryable()" TGridItem="EnrollmentTokenDto" Loading="loading" ItemKey="@(t => t.Id)">
+    <PropertyColumn Title="Name" Property="@(t => t.Name)" />
+    <TemplateColumn Title="Tenant">@TenantName(context.TenantId)</TemplateColumn>
+    <TemplateColumn Title="Status">
+        <span id="@($"status-{context.Id}")">
+            <FluentBadge Appearance="BadgeAppearance.Tint" Color="@StatusColor(context.Status)">@context.Status</FluentBadge>
+        </span>
+    </TemplateColumn>
+    <TemplateColumn Title="Uses">
+        <span id="@($"uses-{context.Id}")">@(context.MaxUses switch { null => "Unlimited", 1 => "Single use", var n => $"Up to {n}" })</span>
+    </TemplateColumn>
+    <TemplateColumn Title="Used">
+        <span id="@($"used-{context.Id}")">@(context.LastUsedAt is { } lastUsed ? $"{context.UseCount} · last {lastUsed.ToLocalTime():g}" : "Never")</span>
+    </TemplateColumn>
+    <TemplateColumn Title="Expires">@(context.ExpiresAt?.ToLocalTime().ToString("g") ?? "Never")</TemplateColumn>
+    <TemplateColumn Title="Created">@context.CreatedAt.ToLocalTime().ToString("g")</TemplateColumn>
+    <TemplateColumn Title="Actions" Align="DataGridCellAlignment.End">
+        @if (context.Status != EnrollmentTokenStatus.Revoked)
+        {
+            <FluentButton Id="@($"rotate-{context.Id}")" Appearance="ButtonAppearance.Subtle"
+                          OnClick="@(() => RotateAsync(context))">Rotate</FluentButton>
+            <FluentButton Id="@($"revoke-{context.Id}")" Appearance="ButtonAppearance.Subtle"
+                          OnClick="@(() => RevokeAsync(context))">Revoke</FluentButton>
+        }
+    </TemplateColumn>
+</FluentDataGrid>
+<FluentPaginator State="pagination" CurrentPageIndexChanged="LoadAsync" />
+
+@code {
+    private const int PageSize = 25;
+
+    private readonly PaginationState pagination = new() { ItemsPerPage = PageSize };
+    private IReadOnlyList<TenantDto> tenants = [];
+    private Guid? tenantId;
+    private List<EnrollmentTokenDto> tokens = [];
+    private bool loading = true;
+    private ApiException? error;
+    private (string Name, string Secret)? secret;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // TODO: a search picker once there can be more tenants than one page (the API's maximum is 100).
+            tenants = (await Api.ListTenantsAsync(1, 100)).Items;
+            tenantId = tenants.FirstOrDefault()?.Id;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+        await LoadAsync(0);
+    }
+
+    private async Task SelectTenantAsync(string? value)
+    {
+        tenantId = Guid.TryParse(value, out var id) ? id : null;
+        secret = null;
+        await pagination.SetCurrentPageIndexAsync(0);
+        await LoadAsync(0);
+    }
+
+    private async Task LoadAsync(int pageIndex)
+    {
+        if (tenantId is not { } id)
+        {
+            loading = false;
+            tokens = [];
+            return;
+        }
+
+        loading = true;
+        try
+        {
+            var page = await Api.ListEnrollmentTokensAsync(id, pageIndex + 1, PageSize);
+            tokens = [.. page.Items];
+            await pagination.SetTotalItemCountAsync(page.TotalCount);
+            error = null;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        if (tenantId is not { } id)
+            return;
+        var result = await Dialogs.ShowDialogAsync<EnrollmentTokenDialog>(options => options.Header.Title = $"New token for {TenantName(id)}");
+        if (result.Cancelled || result.Value is not CreateEnrollmentTokenRequest request)
+            return;
+
+        await RunAsync(async () =>
+        {
+            Reveal(await Api.CreateEnrollmentTokenAsync(id, request));
+            await LoadAsync(pagination.CurrentPageIndex);
+        });
+    }
+
+    private async Task RotateAsync(EnrollmentTokenDto token)
+    {
+        var confirm = await Dialogs.ShowConfirmationAsync(
+            $"Rotate {token.Name}? Its current secret stops working at once; agents already enrolled are unaffected.",
+            "Rotate token", "Rotate", "Cancel");
+        if (confirm.Cancelled)
+            return;
+
+        await RunAsync(async () => Reveal(Replace(await Api.TransitionEnrollmentTokenAsync(token.Url, "rotate"))));
+    }
+
+    private async Task RevokeAsync(EnrollmentTokenDto token)
+    {
+        var confirm = await Dialogs.ShowConfirmationAsync(
+            $"Revoke {token.Name}? No new agent can enroll with it again; agents already enrolled are unaffected.",
+            "Revoke token", "Revoke", "Cancel");
+        if (confirm.Cancelled)
+            return;
+
+        await RunAsync(async () => Replace(await Api.TransitionEnrollmentTokenAsync(token.Url, "revoke")));
+    }
+
+    private async Task RunAsync(Func<Task> change)
+    {
+        secret = null;
+        try
+        {
+            await change();
+            error = null;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+    }
+
+    private void Reveal(EnrollmentTokenDto token)
+    {
+        if (token.Secret is not null)
+            secret = (token.Name, token.Secret);
+    }
+
+    private EnrollmentTokenDto Replace(EnrollmentTokenDto token)
+    {
+        var index = tokens.FindIndex(t => t.Id == token.Id);
+        if (index >= 0)
+            tokens[index] = token with { Secret = null };
+        return token;
+    }
+
+    // navigator.clipboard is called by name, so it needs no script of our own and no 'unsafe-eval' (CSP).
+    private async Task CopyAsync()
+    {
+        if (secret is { } shown)
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", shown.Secret);
+    }
+
+    private string TenantName(Guid id) => tenants.FirstOrDefault(t => t.Id == id)?.Name ?? id.ToString();
+
+    private static BadgeColor StatusColor(EnrollmentTokenStatus status) => status switch
+    {
+        EnrollmentTokenStatus.Active => BadgeColor.Success,
+        EnrollmentTokenStatus.Expired or EnrollmentTokenStatus.UsedUp => BadgeColor.Warning,
+        _ => BadgeColor.Subtle,
+    };
+}

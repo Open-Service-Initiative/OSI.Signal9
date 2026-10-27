@@ -1,0 +1,24 @@
+@inject BffSession Session
+
+<div id="login-display" class="login-display">
+    <AuthorizeView>
+        <Authorized>
+            <FluentText>@context.User.Identity?.Name</FluentText>
+            <FluentButton Id="sign-out" Appearance="ButtonAppearance.Subtle" Loading="signingOut"
+                          IconStart="@(new Icons.Regular.Size20.SignOut())" OnClick="SignOutAsync">Sign out</FluentButton>
+        </Authorized>
+        <NotAuthorized>
+            <FluentButton Id="sign-in" Appearance="ButtonAppearance.Primary" OnClick="Session.SignIn">Sign in</FluentButton>
+        </NotAuthorized>
+    </AuthorizeView>
+</div>
+
+@code {
+    private bool signingOut;
+
+    private async Task SignOutAsync()
+    {
+        signingOut = true;
+        await Session.SignOutAsync();
+    }
+}

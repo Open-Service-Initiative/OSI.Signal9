@@ -1,0 +1,167 @@
+@page "/role-assignments"
+@attribute [Authorize]
+@inject Signal9ApiClient Api
+@inject IDialogService Dialogs
+
+<PageTitle>Role assignments - Signal9</PageTitle>
+
+<div class="page-header">
+    <FluentText As="TextTag.H1" Size="TextSize.Size800">Role assignments</FluentText>
+    <FluentSpacer />
+    <FluentButton Id="grant-role" Appearance="ButtonAppearance.Primary" IconStart="@(new Icons.Regular.Size20.Add())"
+                  Disabled="@(tenantId is null)" OnClick="GrantAsync">Grant role</FluentButton>
+</div>
+<p>Who holds which role at a tenant. Each role assignment covers the tenant and every tenant beneath it. Only an Administrator above a tenant can revoke another Administrator at it, and a tenant always keeps an Administrator at it or above it.</p>
+
+<FluentSelect Id="assignment-tenant" TOption="string" TValue="string" Label="Tenant"
+              Value="@tenantId?.ToString()" ValueChanged="@((string? value) => ChooseTenantAsync(value))">
+    @foreach (var tenant in tenants)
+    {
+        <FluentOption TValue="string" Value="@tenant.Id.ToString()">@tenant.Name</FluentOption>
+    }
+</FluentSelect>
+
+<ProblemBar Error="error" />
+@if (notice is not null)
+{
+    <FluentMessageBar Class="notice-bar" Intent="MessageBarIntent.Success">@notice</FluentMessageBar>
+}
+
+<FluentDataGrid Items="@assignments.AsQueryable()" TGridItem="RoleAssignmentDto" Loading="loading" ItemKey="@(a => a.Id)">
+    <TemplateColumn Title="User">@UserName(context.UserId)</TemplateColumn>
+    <TemplateColumn Title="Role">@RoleName(context.RoleId)</TemplateColumn>
+    <TemplateColumn Title="Granted">@context.CreatedAt.ToLocalTime().ToString("g")</TemplateColumn>
+    <TemplateColumn Title="Actions" Align="DataGridCellAlignment.End">
+        <FluentButton Id="@($"revoke-{context.Id}")" IconOnly="true" Title="Revoke" Appearance="ButtonAppearance.Subtle"
+                      IconStart="@(new Icons.Regular.Size20.Delete())" OnClick="@(() => RevokeAsync(context))" />
+    </TemplateColumn>
+</FluentDataGrid>
+<FluentPaginator State="pagination" CurrentPageIndexChanged="LoadAsync" />
+
+@code {
+    private const int PageSize = 25;
+
+    private readonly PaginationState pagination = new() { ItemsPerPage = PageSize };
+    // TODO: search pickers once there can be more tenants or users than one page (the API's maximum is 100).
+    private IReadOnlyList<TenantDto> tenants = [];
+    private IReadOnlyList<UserDto> users = [];
+    private IReadOnlyList<RoleDto> roles = [];
+    private List<RoleAssignmentDto> assignments = [];
+    private Guid? tenantId;
+    private bool loading = true;
+    private ApiException? error;
+    private string? notice;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            tenants = (await Api.ListTenantsAsync(1, 100)).Items;
+            users = (await Api.ListUsersAsync(1, 100)).Items;
+            roles = (await Api.ListRolesAsync()).Items;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+            loading = false;
+            return;
+        }
+
+        tenantId = tenants.FirstOrDefault()?.Id;
+        await LoadAsync(0);
+    }
+
+    private async Task ChooseTenantAsync(string? value)
+    {
+        tenantId = Guid.TryParse(value, out var id) ? id : null;
+        notice = null;
+        await pagination.SetCurrentPageIndexAsync(0);
+        await LoadAsync(0);
+    }
+
+    private async Task LoadAsync(int pageIndex)
+    {
+        if (tenantId is not { } id)
+        {
+            assignments = [];
+            loading = false;
+            return;
+        }
+
+        loading = true;
+        try
+        {
+            var page = await Api.ListRoleAssignmentsAsync(id, pageIndex + 1, PageSize);
+            assignments = [.. page.Items];
+            await pagination.SetTotalItemCountAsync(page.TotalCount);
+            error = null;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task GrantAsync()
+    {
+        if (tenantId is not { } id)
+            return;
+
+        var result = await Dialogs.ShowDialogAsync<RoleAssignmentGrantDialog>(options =>
+        {
+            options.Header.Title = $"Grant a role at {TenantName(id)}";
+            options.Parameters[nameof(RoleAssignmentGrantDialog.Users)] = users;
+            options.Parameters[nameof(RoleAssignmentGrantDialog.Roles)] = roles;
+        });
+        if (result.Cancelled || result.Value is not CreateRoleAssignmentRequest request)
+            return;
+
+        await RunAsync(async () =>
+        {
+            await Api.CreateRoleAssignmentAsync(id, request);
+            await LoadAsync(pagination.CurrentPageIndex);
+        }, $"Gave {UserName(request.UserId)} the {RoleName(request.RoleId)} role.");
+    }
+
+    private async Task RevokeAsync(RoleAssignmentDto assignment)
+    {
+        var what = $"{UserName(assignment.UserId)}'s {RoleName(assignment.RoleId)} role";
+        var confirm = await Dialogs.ShowConfirmationAsync(
+            $"Revoke {what} at {TenantName(assignment.TenantId)}? It takes effect on their next request.", "Revoke role", "Revoke", "Cancel");
+        if (confirm.Cancelled)
+            return;
+
+        await RunAsync(async () =>
+        {
+            await Api.DeleteRoleAssignmentAsync(assignment.TenantId, assignment.Id);
+            await LoadAsync(pagination.CurrentPageIndex);
+        }, $"Revoked {what}.");
+    }
+
+    /// <summary>Runs a change, then says how it went.</summary>
+    private async Task RunAsync(Func<Task> change, string done)
+    {
+        notice = null;
+        try
+        {
+            await change();
+            error = null;
+            notice = done;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+    }
+
+    // Names come from the first page of each list; the rest show as an id.
+    private string TenantName(Guid id) => tenants.FirstOrDefault(t => t.Id == id)?.Name ?? id.ToString();
+
+    private string UserName(Guid? id) => users.FirstOrDefault(u => u.Id == id)?.DisplayName ?? id?.ToString() ?? "";
+
+    private string RoleName(Guid? id) => roles.FirstOrDefault(r => r.Id == id)?.Name ?? id?.ToString() ?? "";
+}

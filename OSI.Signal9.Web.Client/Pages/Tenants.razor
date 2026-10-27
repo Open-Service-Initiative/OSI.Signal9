@@ -1,0 +1,196 @@
+@page "/tenants"
+@attribute [Authorize]
+@inject Signal9ApiClient Api
+@inject IDialogService Dialogs
+
+<PageTitle>Tenants - Signal9</PageTitle>
+
+<div class="page-header">
+    <FluentText As="TextTag.H1" Size="TextSize.Size800">Tenants</FluentText>
+    <FluentSpacer />
+    <FluentButton Id="create-tenant" Appearance="ButtonAppearance.Primary" IconStart="@(new Icons.Regular.Size20.Add())"
+                  OnClick="CreateAsync">New tenant</FluentButton>
+</div>
+
+<ProblemBar Error="error" />
+@if (notice is not null)
+{
+    <FluentMessageBar Class="notice-bar" Intent="MessageBarIntent.Success">@notice</FluentMessageBar>
+}
+
+<FluentDataGrid Items="@tenants.AsQueryable()" TGridItem="TenantDto" Loading="loading" ItemKey="@(t => t.Id)">
+    <PropertyColumn Title="Name" Property="@(t => t.Name)" />
+    <TemplateColumn Title="Parent">@ParentName(context)</TemplateColumn>
+    <TemplateColumn Title="Status">
+        <span id="@($"status-{context.Id}")">
+            <FluentBadge Appearance="BadgeAppearance.Tint" Color="@StatusColor(context.Status)">@context.Status</FluentBadge>
+        </span>
+    </TemplateColumn>
+    <TemplateColumn Title="Devices">@context.DeviceCount / @context.MaxDevices</TemplateColumn>
+    <TemplateColumn Title="New agents">
+        <span id="@($"hold-{context.Id}")">
+            @(context.ApprovalHoldInherited ? "Held (inherited)" : context.HoldsNewAgentsForApproval ? "Held" : "Not held")
+        </span>
+    </TemplateColumn>
+    <PropertyColumn Title="Contact" Property="@(t => t.ContactEmail)" />
+    <TemplateColumn Title="Actions" Align="DataGridCellAlignment.End">
+        <FluentButton Id="@($"edit-{context.Id}")" IconOnly="true" Title="Edit" Appearance="ButtonAppearance.Subtle"
+                      IconStart="@(new Icons.Regular.Size20.Edit())" OnClick="@(() => EditAsync(context))" />
+        @if (context.Status == TenantStatus.Active)
+        {
+            <FluentButton Id="@($"suspend-{context.Id}")" Appearance="ButtonAppearance.Subtle"
+                          OnClick="@(() => TransitionAsync(context, "suspend"))">Suspend</FluentButton>
+        }
+        else
+        {
+            <FluentButton Id="@($"activate-{context.Id}")" Appearance="ButtonAppearance.Subtle"
+                          OnClick="@(() => TransitionAsync(context, "activate"))">Activate</FluentButton>
+        }
+        @if (context.Status != TenantStatus.Cancelled)
+        {
+            <FluentButton Id="@($"cancel-{context.Id}")" Appearance="ButtonAppearance.Subtle"
+                          OnClick="@(() => TransitionAsync(context, "cancel"))">Cancel</FluentButton>
+        }
+        <FluentButton Id="@($"delete-{context.Id}")" IconOnly="true" Title="Delete" Appearance="ButtonAppearance.Subtle"
+                      IconStart="@(new Icons.Regular.Size20.Delete())" OnClick="@(() => DeleteAsync(context))" />
+    </TemplateColumn>
+</FluentDataGrid>
+<FluentPaginator State="pagination" CurrentPageIndexChanged="LoadAsync" />
+
+@code {
+    private const int PageSize = 25;
+
+    private readonly PaginationState pagination = new() { ItemsPerPage = PageSize };
+    private List<TenantDto> tenants = [];
+    private bool loading = true;
+    private ApiException? error;
+    private string? notice;
+
+    protected override Task OnInitializedAsync() => LoadAsync(0);
+
+    private async Task LoadAsync(int pageIndex)
+    {
+        loading = true;
+        try
+        {
+            var page = await Api.ListTenantsAsync(pageIndex + 1, PageSize);
+            tenants = [.. page.Items];
+            await pagination.SetTotalItemCountAsync(page.TotalCount);
+            error = null;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        // TODO: a search picker once there can be more tenants than one page (the API's maximum is 100).
+        IReadOnlyList<TenantDto> parents;
+        try
+        {
+            parents = (await Api.ListTenantsAsync(1, 100)).Items;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+            return;
+        }
+
+        var form = await ShowEditorAsync("New tenant", new TenantForm(), parents);
+        if (form is null)
+            return;
+
+        await RunAsync(async () =>
+        {
+            await Api.CreateTenantAsync(form.ToCreateRequest());
+            await LoadAsync(pagination.CurrentPageIndex);
+        }, $"Created {form.Name}.");
+    }
+
+    private async Task EditAsync(TenantDto tenant)
+    {
+        var form = await ShowEditorAsync($"Edit {tenant.Name}", TenantForm.From(tenant), parents: null);
+        if (form is null)
+            return;
+
+        await RunAsync(async () => Replace(await Api.UpdateTenantAsync(tenant.Id, form.ToUpdateRequest())), $"Saved {form.Name}.");
+    }
+
+    private async Task<TenantForm?> ShowEditorAsync(string title, TenantForm form, IReadOnlyList<TenantDto>? parents)
+    {
+        var result = await Dialogs.ShowDialogAsync<TenantEditDialog>(options =>
+        {
+            options.Header.Title = title;
+            options.Parameters[nameof(TenantEditDialog.Form)] = form;
+            options.Parameters[nameof(TenantEditDialog.Parents)] = parents;
+        });
+        return result.Cancelled ? null : result.Value as TenantForm;
+    }
+
+    private async Task TransitionAsync(TenantDto tenant, string action)
+    {
+        if (action == "cancel")
+        {
+            var confirm = await Dialogs.ShowConfirmationAsync(
+                $"Cancel {tenant.Name}'s subscription? You can activate it again later.", "Cancel tenant", "Cancel tenant", "Keep");
+            if (confirm.Cancelled)
+                return;
+        }
+
+        await RunAsync(async () => Replace(await Api.TransitionTenantAsync(tenant.Id, action)), null);
+    }
+
+    private async Task DeleteAsync(TenantDto tenant)
+    {
+        var confirm = await Dialogs.ShowConfirmationAsync(
+            $"Delete {tenant.Name}? This can't be undone.", "Delete tenant", "Delete", "Cancel");
+        if (confirm.Cancelled)
+            return;
+
+        await RunAsync(async () =>
+        {
+            await Api.DeleteTenantAsync(tenant.Id);
+            await LoadAsync(pagination.CurrentPageIndex);
+        }, $"Deleted {tenant.Name}.");
+    }
+
+    /// <summary>Runs a change, then says how it went.</summary>
+    private async Task RunAsync(Func<Task> change, string? done)
+    {
+        notice = null;
+        try
+        {
+            await change();
+            error = null;
+            notice = done;
+        }
+        catch (ApiException ex)
+        {
+            error = ex;
+        }
+    }
+
+    private void Replace(TenantDto tenant)
+    {
+        var index = tenants.FindIndex(t => t.Id == tenant.Id);
+        if (index >= 0)
+            tenants[index] = tenant;
+    }
+
+    // Only parents on the same page can be named; the rest show as an id.
+    private string? ParentName(TenantDto tenant) =>
+        tenant.ParentTenantId is { } parentId ? tenants.FirstOrDefault(t => t.Id == parentId)?.Name ?? parentId.ToString() : null;
+
+    private static BadgeColor StatusColor(TenantStatus status) => status switch
+    {
+        TenantStatus.Active => BadgeColor.Success,
+        TenantStatus.Suspended => BadgeColor.Warning,
+        _ => BadgeColor.Subtle,
+    };
+}

@@ -1,17 +1,67 @@
-using Microsoft.AspNetCore.Components.Web;
-using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
-using OSI.Signal9.Web;
-using OSI.Signal9.Web.Services;
+using Microsoft.AspNetCore.Components.Forms;
+using OSI.Signal9.Server.Data;
+using OSI.Signal9.Server.Hosting;
+using OSI.Signal9.Server.Identity;
+using OSI.Signal9.Server.Keys;
+using OSI.Signal9.Web.Bff;
+using OSI.Signal9.Web.Components;
 
-var builder = WebAssemblyHostBuilder.CreateDefault(args);
-builder.RootComponents.Add<App>("#app");
-builder.RootComponents.Add<HeadOutlet>("head::after");
+var builder = WebApplication.CreateBuilder(args);
 
-// ApiBaseUrl is empty in production, where Static Web Apps routes /api to the linked backend.
-var apiBaseUrl = builder.Configuration["ApiBaseUrl"];
-var apiBaseAddress = new Uri(string.IsNullOrWhiteSpace(apiBaseUrl) ? builder.HostEnvironment.BaseAddress : apiBaseUrl);
+builder.AddServiceDefaults();
+builder.AddHostHardening();
+builder.AddSignal9Database();
+builder.AddSignal9ForwardedHeaders();
+builder.Services.AddSingleton(TimeProvider.System);
+// Sign-outs are audited (story 53).
+builder.Services.AddSignal9Audit();
 
-builder.Services.AddScoped(_ => new Signal9ApiClient(new HttpClient { BaseAddress = apiBaseAddress }));
-builder.Services.AddScoped(sp => new DashboardHubConnection(apiBaseAddress, sp.GetRequiredService<ILogger<DashboardHubConnection>>()));
+// web's client certificate and the Data Protection key ring, stored wrapped by the key-encryption key (ADR-0008).
+builder.Services.AddSignal9StoredKeys(builder.Configuration, StoredKeyUse.WebClient);
+// OpenIddict's stores only, for web's own registration; web runs no authorization server.
+builder.Services.AddSignal9OpenIddict();
+builder.Services.AddSingleton<WebClientRegistration>();
+builder.Services.AddSingleton<WebClientCertificate>();
+builder.Services.AddHostedService<WebClientCertificateStartup>();
+builder.Services.AddSingleton<IApiHandlerFactory, SocketsApiHandlerFactory>();
+builder.Services.AddSingleton<ApiChannel>();
 
-await builder.Build().RunAsync();
+builder.AddSignal9Bff();
+builder.Services.AddAuthorization();
+builder.Services.AddHttpForwarder();
+// On Azure SignalR Service, the dashboard reaches the service through web (ADR-0009).
+builder.Services.AddRealtimeServiceProxy(builder.Configuration);
+builder.Services.AddRazorComponents().AddInteractiveWebAssemblyComponents();
+builder.Services.AddScoped<AntiforgeryStateProvider, NoAntiforgeryState>();
+
+var app = builder.Build();
+
+app.UseHealthProbes();
+app.UseSignal9ForwardedHeaders();
+app.UseHostHardening();
+app.UseContentSecurityPolicy();
+app.UseCsrfHeader();
+app.UseHubOrigin();
+app.UseRateLimitingAndAuthentication();
+app.UseAuthorization();
+
+app.MapStaticAssets();
+app.MapBff();
+app.MapApiProxy();
+app.MapRealtimeServiceProxy();
+app.MapApiReference();
+// Every page is the same WebAssembly shell, which shows a sign-in prompt when there's no session; the data stays behind
+// the proxy's own checks. The shell takes no form posts, so it needs no antiforgery token: CSRF is the custom header.
+app.MapRazorComponents<App>()
+    .AddInteractiveWebAssemblyRenderMode()
+    .AddAdditionalAssemblies(typeof(OSI.Signal9.Web.Client.Routes).Assembly)
+    .AllowAnonymous()
+    .DisableAntiforgery();
+
+app.Run();
+
+namespace OSI.Signal9.Web
+{
+    /// <summary>Names the web host's entry assembly, for <c>WebApplicationFactory</c>.</summary>
+    public sealed class WebHost;
+}

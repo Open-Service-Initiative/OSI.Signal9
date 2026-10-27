@@ -1,42 +1,55 @@
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
-using System.Reflection;
 using System.Runtime.InteropServices;
-using Microsoft.Extensions.Options;
-using OSI.Signal9.Contracts.Agents;
+using OSI.Signal9.Agent.Platforms;
+using OSI.Signal9.Contracts.Devices;
 
 namespace OSI.Signal9.Agent.Services;
 
-/// <summary>
-/// Facts about this machine that the agent reports when it enrolls.
-/// </summary>
-public sealed class SystemInfoProvider(IOptions<AgentOptions> options)
+/// <summary>Where the agent's facts about its machine come from: the real machine, or a fake in tests.</summary>
+public interface IMachineFactsSource
 {
-    public static string AgentVersion { get; } =
-        typeof(SystemInfoProvider).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]
-        ?? "0.0.0";
+    /// <summary>What this machine is: the facts the agent reports when it enrolls, and in system info.</summary>
+    MachineFacts GetFacts();
 
-    public RegisterAgentRequest GetRegistration()
+    /// <summary>The machine's SMBIOS system identifiers, which identify a reinstalled agent's device (#131).</summary>
+    HardwareIdentity GetHardware();
+
+    /// <summary>When the operating system was installed, if the agent can tell.</summary>
+    DateTimeOffset? GetOsInstalledAt();
+
+    /// <summary>The IPv4 address of the interface with a default gateway, which heartbeats report.</summary>
+    string? GetPrimaryIpAddress();
+}
+
+/// <summary>The real machine's facts: what .NET reports on every OS, and the rest from its <see cref="IPlatform"/>.</summary>
+public sealed class SystemInfoProvider(IPlatform platform) : IMachineFactsSource
+{
+    public MachineFacts GetFacts()
     {
         var (ipAddress, macAddress) = GetPrimaryNetworkAddress();
-        return new RegisterAgentRequest
-        {
-            TenantCode = options.Value.TenantCode,
-            MachineName = Environment.MachineName,
-            Domain = OperatingSystem.IsWindows() ? Environment.UserDomainName : null,
-            OperatingSystem = RuntimeInformation.OSDescription,
-            OsVersion = Environment.OSVersion.Version.ToString(),
-            Architecture = RuntimeInformation.OSArchitecture.ToString(),
-            ProcessorName = GetProcessorName(),
-            ProcessorCores = Environment.ProcessorCount,
-            TotalMemoryMb = NativeMetrics.ReadMemory()?.TotalMb ?? 0,
-            IpAddress = ipAddress,
-            MacAddress = macAddress,
-            AgentVersion = AgentVersion,
-        };
+        return new MachineFacts(
+            MachineName: Environment.MachineName,
+            Domain: platform.ReadDomain(),
+            OsFamily: platform.Family,
+            OperatingSystem: RuntimeInformation.OSDescription,
+            OsVersion: Environment.OSVersion.Version.ToString(),
+            Architecture: RuntimeInformation.OSArchitecture.ToString(),
+            ProcessorName: platform.ReadProcessorName(),
+            ProcessorCores: Environment.ProcessorCount,
+            TotalMemoryMb: platform.ReadMemory()?.TotalMb ?? 0,
+            IpAddress: ipAddress,
+            MacAddress: macAddress,
+            AgentVersion: AgentVersion.Current.ToString());
     }
 
-    public static (string? IpAddress, string? MacAddress) GetPrimaryNetworkAddress()
+    public HardwareIdentity GetHardware() => platform.ReadHardware();
+
+    public DateTimeOffset? GetOsInstalledAt() => platform.ReadOsInstalledAt();
+
+    public string? GetPrimaryIpAddress() => GetPrimaryNetworkAddress().IpAddress;
+
+    private static (string? IpAddress, string? MacAddress) GetPrimaryNetworkAddress()
     {
         var nic = NetworkInterface.GetAllNetworkInterfaces()
             .Where(n => n.OperationalStatus == OperationalStatus.Up && n.NetworkInterfaceType != NetworkInterfaceType.Loopback)
@@ -50,27 +63,20 @@ public sealed class SystemInfoProvider(IOptions<AgentOptions> options)
         var mac = nic.Nic.GetPhysicalAddress().GetAddressBytes();
         return (nic.Address!.ToString(), mac.Length == 6 ? string.Join(':', mac.Select(b => b.ToString("X2"))) : null);
     }
-
-    private static string? GetProcessorName()
-    {
-        try
-        {
-            if (OperatingSystem.IsWindows())
-            {
-                using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"HARDWARE\DESCRIPTION\System\CentralProcessor\0");
-                return (key?.GetValue("ProcessorNameString") as string)?.Trim();
-            }
-            if (OperatingSystem.IsLinux())
-            {
-                return File.ReadLines("/proc/cpuinfo")
-                    .FirstOrDefault(line => line.StartsWith("model name", StringComparison.Ordinal))?
-                    .Split(':', 2)[1].Trim();
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
-        {
-            // Not worth failing enrollment over.
-        }
-        return null;
-    }
 }
+
+/// <summary>Facts about the machine an agent runs on.</summary>
+/// <param name="OperatingSystem">The OS's own description, uncut: enrollment cuts it to api's limit.</param>
+public sealed record MachineFacts(
+    string MachineName,
+    string? Domain,
+    OsFamily OsFamily,
+    string OperatingSystem,
+    string? OsVersion,
+    string? Architecture,
+    string? ProcessorName,
+    int ProcessorCores,
+    long TotalMemoryMb,
+    string? IpAddress,
+    string? MacAddress,
+    string AgentVersion);

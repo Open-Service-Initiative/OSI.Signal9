@@ -13,9 +13,12 @@ These are Open Service Initiative tenets. Hold every change to them:
 
 ## Projects
 
-- `OSI.Signal9.API`: ASP.NET Core controller API plus SignalR hubs, using EF Core. The code still uses SQL Server; the target is PostgreSQL (ADR-0011).
-- `OSI.Signal9.Web`: Blazor WebAssembly dashboard.
-- `OSI.Signal9.Agent`: Windows Service on managed devices. It enrolls, sends heartbeats and telemetry, and runs commands.
+- `OSI.Signal9.Auth`: the OpenIddict authorization server's browser-facing endpoints and discovery (ADR-0002, ADR-0003).
+- `OSI.Signal9.API`: ASP.NET Core controller API plus SignalR hubs and the mTLS token-endpoint aliases.
+- `OSI.Signal9.Server`: shared by Auth and API: the EF Core model and migrations on PostgreSQL (ADR-0011) and the OpenIddict token rules.
+- `OSI.Signal9.Web`: the dashboard's ASP.NET Core host and backend-for-frontend (ADR-0003): sign-in, the server-side token store, and the YARP proxy to `api`.
+- `OSI.Signal9.Web.Client`: the Blazor WebAssembly dashboard on Fluent UI Blazor v5. It holds no tokens and calls only `web`.
+- `OSI.Signal9.Agent`: the agent on managed devices: a Windows service, systemd service or launchd daemon, with per-OS code behind `IPlatform`. It enrolls, sends heartbeats and telemetry, and runs commands.
 - `OSI.Signal9.Contracts`: DTOs, enums and hub interfaces shared by the other projects. It has no server-side dependencies, because it ships in the WASM bundle.
 - `OSI.Signal9.AppHost` / `OSI.Signal9.ServiceDefaults`: Aspire orchestration, used for local development and deployment.
 
@@ -40,7 +43,16 @@ These rules are Signal9's own, drawn from Google's AIP-122, AIP-159 and AIP-216 
 - DELETE returns 204.
 - **Lifecycle transitions are actions, not field edits.** Status fields are read-only. Transitions are `POST {canonical-url}:{verb}` (`:acknowledge`, `:resolve`, `:cancel`, `:claim`), return 200, and return 409 if the transition isn't allowed from the current state. Don't model actions as sub-resources (`/cancellation`).
 - Return an `ETag`, honour `If-Match`, and return 412 when it doesn't match.
-- Errors are `application/problem+json`: 400 for validation, 404 when missing, 409 for state conflicts, 412 for failed preconditions. Never return 200 for a failure.
+- Errors are `application/problem+json`: 400 for validation, 401 without a valid access token, 403 when the token lacks the scope (with RFC 6750's `insufficient_scope` challenge), 404 when missing, 409 for state conflicts, 412 for failed preconditions. Never return 200 for a failure.
+
+### Scopes
+
+- Every action and hub requires a scope from the catalogue (`OSI.Signal9.Server/Identity/Scopes.cs`) with `[RequireScope(Scopes.Devices.Read)]` on the action, or is explicitly `[AllowAnonymous]`. An architecture test fails the build otherwise, and the OpenAPI document shows each operation's scopes.
+- Scopes are `{noun}.{verb}` with one of five verbs: `read`, `write`, `delete`, `transfer`, `execute` (ADR-0010). Add new ones to the catalogue, never ad hoc.
+
+### Agent endpoints
+
+- Endpoints and hubs agents call carry `[AgentEndpoint]` (an architecture test requires it alongside the agent scope): `api` refuses an agent whose `Signal9-Agent-Version` it doesn't support. Agent paths, the token endpoint and the `agent` scope come from `AgentProtocol` in Contracts on both sides. See `docs/agent-protocol.md`.
 
 ### Payloads
 
@@ -51,13 +63,18 @@ These rules are Signal9's own, drawn from Google's AIP-122, AIP-159 and AIP-216 
 
 ## Data
 
-- When you change the model, add a migration: `dotnet ef migrations add <Name> --project OSI.Signal9.API --output-dir Data/Migrations`.
+- When you change the model, add a migration: `dotnet ef migrations add <Name> --project OSI.Signal9.Server --output-dir Data/Migrations`.
 - Entities store UTC `DateTime`; contracts expose `DateTimeOffset`.
 
 ## Testing
 
-- `OSI.Signal9.API.Tests` hosts the API in memory, with a `FakeTimeProvider`. Every new endpoint gets a test covering its status codes.
-- Run the tests with `dotnet test --solution OSI.Signal9.slnx`.
+Unit and integration tests live in separate projects, all on MSTest. A new test goes in the unit suite for the project it covers; it goes in the integration suite only when it needs a host or the database.
+
+- `OSI.Signal9.Agent.Tests`: agent unit tests (command executor, collectors, session logic), with no API host or database. OS and machine interactions go behind fakes.
+- `OSI.Signal9.Web.Tests`: dashboard component tests with bUnit.
+- `OSI.Signal9.IntegrationTests`: hosts Auth and API in memory together against the shared Testcontainers PostgreSQL fixture, with a `FakeTimeProvider`; test clients carry a token minted at Auth. The end-to-end agent ↔ API tests, which drive the real agent session over the in-memory transport, live here too. Every new endpoint gets a test here covering its status codes.
+
+Run every suite with `dotnet test --solution OSI.Signal9.slnx`; CI publishes each suite's results separately.
 
 ## Commits and pull requests
 

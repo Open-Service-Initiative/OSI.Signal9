@@ -1,0 +1,61 @@
+@inherits FluentDialogInstance
+
+<FluentDialogBody>
+    <div class="dialog-form">
+        @if (Tenants is not null)
+        {
+            @* The owning tenant and Entra identity are set once: the owner changes only by a user transfer, and the identity never. *@
+            <FluentSelect Id="user-tenant" TOption="string" TValue="string" Label="Owning tenant" Required="true" @bind-Value="tenantId">
+                <FluentOption TValue="string" Value="@string.Empty">Choose a tenant</FluentOption>
+                @foreach (var tenant in Tenants)
+                {
+                    <FluentOption TValue="string" Value="@tenant.Id.ToString()">@tenant.Name</FluentOption>
+                }
+            </FluentSelect>
+            <FluentTextInput Id="user-entra-tenant" Label="Entra directory (tenant) ID" Required="true" @bind-Value="entraTenantId" />
+            <FluentTextInput Id="user-entra-object" Label="Entra object ID" Required="true" @bind-Value="entraObjectId" />
+        }
+        <FluentTextInput Id="user-display-name" Label="Display name" Required="true" MaxLength="200" @bind-Value="displayName" />
+        @if (Tenants is not null)
+        {
+            <FluentText>The person is matched by their Entra directory and object IDs, never by email. Creating a user grants no access; give them a role on the Role assignments page.</FluentText>
+        }
+    </div>
+</FluentDialogBody>
+
+@code {
+    /// <summary>The user to edit; null when adding one.</summary>
+    [Parameter] public UserDto? User { get; set; }
+
+    /// <summary>Tenants to offer as the owner, when adding; null when editing.</summary>
+    [Parameter] public IReadOnlyList<TenantDto>? Tenants { get; set; }
+
+    private string? tenantId = string.Empty;
+    private string? entraTenantId;
+    private string? entraObjectId;
+    private string? displayName;
+
+    protected override void OnInitializeDialog(DialogOptionsHeader header, DialogOptionsFooter footer)
+    {
+        footer.PrimaryAction.Label = User is null ? "Add" : "Save";
+        footer.SecondaryAction.Label = "Cancel";
+        displayName = User?.DisplayName;
+    }
+
+    protected override Task OnActionClickedAsync(bool primary)
+    {
+        if (!primary)
+            return DialogInstance.CancelAsync();
+        // The API validates; unparsable IDs are sent as missing so it says which field is wrong.
+        object result = User is null
+            ? new CreateUserRequest
+            {
+                TenantId = Guid.TryParse(tenantId, out var tenant) ? tenant : null,
+                EntraTenantId = Guid.TryParse(entraTenantId, out var directory) ? directory : null,
+                EntraObjectId = Guid.TryParse(entraObjectId, out var person) ? person : null,
+                DisplayName = displayName ?? string.Empty,
+            }
+            : new UpdateUserRequest { DisplayName = displayName ?? string.Empty };
+        return DialogInstance.CloseAsync(result);
+    }
+}

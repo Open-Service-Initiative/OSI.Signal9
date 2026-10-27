@@ -1,8 +1,12 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.ServiceDiscovery;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
@@ -61,13 +65,17 @@ public static class Extensions
             })
             .WithTracing(tracing =>
             {
-                tracing.AddSource(builder.Environment.ApplicationName)
+                // The host's own spans, and one per background job run (OSI.Signal9.Server.Hosting.BackgroundJobs).
+                tracing.AddSource(builder.Environment.ApplicationName, "OSI.Signal9.BackgroundJobs")
                     .AddAspNetCoreInstrumentation(tracing =>
+                    {
                         // Exclude health check requests from tracing
                         tracing.Filter = context =>
                             !context.Request.Path.StartsWithSegments(HealthEndpointPath)
-                            && !context.Request.Path.StartsWithSegments(AlivenessEndpointPath)
-                    )
+                            && !context.Request.Path.StartsWithSegments(AlivenessEndpointPath);
+                        // A secret in the path never reaches a trace (query values are already redacted by default).
+                        tracing.EnrichWithHttpRequest = RedactSecretPath;
+                    })
                     // Uncomment the following line to enable gRPC instrumentation (requires the OpenTelemetry.Instrumentation.GrpcNetClient package)
                     //.AddGrpcClientInstrumentation()
                     .AddHttpClientInstrumentation();
@@ -76,6 +84,35 @@ public static class Extensions
         builder.AddOpenTelemetryExporters();
 
         return builder;
+    }
+
+    /// <summary>
+    /// Marks every path under <paramref name="prefix"/> as carrying a secret, such as a bearer reference: request traces
+    /// record the prefix followed by <see cref="RedactedSegment"/> instead of the rest of the path.
+    /// </summary>
+    public static IServiceCollection RedactPathInTelemetry(this IServiceCollection services, PathString prefix) =>
+        services.Configure<SecretPaths>(paths => paths.Prefixes.Add(prefix));
+
+    /// <summary>What a trace records in place of a path's secret segments.</summary>
+    public const string RedactedSegment = "{redacted}";
+
+    /// <summary>The path prefixes whose remaining segments are secrets, set with <see cref="RedactPathInTelemetry"/>.</summary>
+    public sealed class SecretPaths
+    {
+        public List<PathString> Prefixes { get; } = [];
+    }
+
+    private static void RedactSecretPath(Activity activity, HttpRequest request)
+    {
+        var prefixes = request.HttpContext.RequestServices.GetService<IOptions<SecretPaths>>()?.Value.Prefixes ?? [];
+        foreach (var prefix in prefixes)
+        {
+            if (!request.Path.StartsWithSegments(prefix, StringComparison.OrdinalIgnoreCase, out var rest) || !rest.HasValue)
+                continue;
+            activity.SetTag("url.path", $"{prefix}/{RedactedSegment}");
+            activity.DisplayName = request.Method;
+            return;
+        }
     }
 
     private static TBuilder AddOpenTelemetryExporters<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
@@ -106,22 +143,38 @@ public static class Extensions
         return builder;
     }
 
-    public static WebApplication MapDefaultEndpoints(this WebApplication app)
+    /// <summary>
+    /// Serves the liveness (<c>/alive</c>) and readiness (<c>/health</c>) probes on the internal port in
+    /// <c>HealthProbes:Port</c>, in every environment, and nothing else on that port. The port is matched on the
+    /// connection's local port, never the Host header, and is never exposed publicly (story 134). Call it first, so
+    /// probes skip the rest of the pipeline.
+    /// </summary>
+    public static WebApplication UseHealthProbes(this WebApplication app)
     {
-        // Adding health checks endpoints to applications in non-development environments has security implications.
-        // See https://aka.ms/dotnet/aspire/healthchecks for details before enabling these endpoints in non-development environments.
-        if (app.Environment.IsDevelopment())
-        {
-            // All health checks must pass for app to be considered ready to accept traffic after starting
-            app.MapHealthChecks(HealthEndpointPath);
+        var port = app.Configuration.GetValue<int?>(HealthProbePortKey)
+            ?? throw new InvalidOperationException($"'{HealthProbePortKey}' must name the internal port for health probes.");
+        if (port is < 1 or > 65535)
+            throw new InvalidOperationException($"'{HealthProbePortKey}' must be a TCP port, not {port}.");
 
-            // Only health checks tagged with the "live" tag must pass for app to be considered alive
-            app.MapHealthChecks(AlivenessEndpointPath, new HealthCheckOptions
+        app.MapWhen(context => context.Connection.LocalPort == port, probes =>
+        {
+            // All health checks must pass for the app to be ready to accept traffic.
+            probes.UseHealthChecks(HealthEndpointPath);
+            // Only checks tagged "live" must pass for the app to be alive.
+            probes.UseHealthChecks(AlivenessEndpointPath, new HealthCheckOptions
             {
                 Predicate = r => r.Tags.Contains("live")
             });
-        }
+            probes.Run(context =>
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return Task.CompletedTask;
+            });
+        });
 
         return app;
     }
+
+    /// <summary>The configuration key of the internal port that serves health probes.</summary>
+    public const string HealthProbePortKey = "HealthProbes:Port";
 }

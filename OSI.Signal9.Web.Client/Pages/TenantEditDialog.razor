@@ -1,0 +1,44 @@
+@inherits FluentDialogInstance
+
+<FluentDialogBody>
+    <div class="dialog-form">
+        <FluentTextInput Id="tenant-name" Label="Name" Required="true" MaxLength="200" @bind-Value="Form.Name" />
+        <FluentTextArea Id="tenant-description" Label="Description" MaxLength="1000" @bind-Value="Form.Description" />
+        <FluentTextInput Id="tenant-email" Label="Contact email" Required="true" TextInputType="TextInputType.Email" @bind-Value="Form.ContactEmail" />
+        <FluentTextInput Id="tenant-phone" Label="Contact phone" TextInputType="TextInputType.Telephone" @bind-Value="Form.ContactPhone" />
+        <FluentTextInput Id="tenant-max-devices" Label="Max devices" TextInputType="TextInputType.Number" @bind-Value="Form.MaxDevices" />
+        @if (Parents is null)
+        {
+            @* Set when editing; a new tenant inherits its parent's hold. A descendant can't turn an inherited hold off. *@
+            <FluentSwitch Id="tenant-hold-agents" Label="@(Form.ApprovalHoldInherited ? "Hold new agents for approval (inherited from a parent tenant)" : "Hold new agents for approval")"
+                          Disabled="@Form.ApprovalHoldInherited" @bind-Value="Form.HoldsNewAgentsForApproval" />
+        }
+        @if (Parents is not null)
+        {
+            @* A tenant's parent changes later only by a tenant transfer, so it's chosen here or not at all. *@
+            <FluentSelect Id="tenant-parent" TOption="string" TValue="string" Label="Parent tenant" @bind-Value="Form.ParentTenantId">
+                <FluentOption TValue="string" Value="@string.Empty">None (top level)</FluentOption>
+                @foreach (var parent in Parents)
+                {
+                    <FluentOption TValue="string" Value="@parent.Id.ToString()">@parent.Name</FluentOption>
+                }
+            </FluentSelect>
+        }
+    </div>
+</FluentDialogBody>
+
+@code {
+    [Parameter] public TenantForm Form { get; set; } = default!;
+
+    /// <summary>Tenants to offer as the parent, when creating; null when editing.</summary>
+    [Parameter] public IReadOnlyList<TenantDto>? Parents { get; set; }
+
+    protected override void OnInitializeDialog(DialogOptionsHeader header, DialogOptionsFooter footer)
+    {
+        footer.PrimaryAction.Label = "Save";
+        footer.SecondaryAction.Label = "Cancel";
+    }
+
+    protected override Task OnActionClickedAsync(bool primary) =>
+        primary ? DialogInstance.CloseAsync(Form) : DialogInstance.CancelAsync();
+}

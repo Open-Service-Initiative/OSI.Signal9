@@ -1,0 +1,20 @@
+@inherits LayoutComponentBase
+
+<FluentLayout>
+    <FluentLayoutItem Area="LayoutArea.Header">
+        <FluentLayoutHamburger />
+        <FluentText Weight="TextWeight.Bold" Size="TextSize.Size600">Signal9</FluentText>
+        <FluentSpacer />
+        <LoginDisplay />
+    </FluentLayoutItem>
+    <FluentLayoutItem Area="LayoutArea.Navigation">
+        <NavMenu />
+    </FluentLayoutItem>
+    <FluentLayoutItem Area="LayoutArea.Content">
+        <main class="content">
+            @Body
+        </main>
+    </FluentLayoutItem>
+</FluentLayout>
+@* Self-closing: it hosts dialogs, toasts and tooltips, and takes no content. *@
+<FluentProviders />
